@@ -8,8 +8,8 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Readex+Pro:wght@500;600&display=swap" rel="stylesheet">
 <style>
 :root{
-  --paper:#EAEFEA; --card:#FFFFFF; --ink:#12201B; --muted:#5F7369; --line:#DCE5DE;
-  --green:#0B6E4F; --green-deep:#084C37; --green-soft:#E3F0E9;
+  --paper:#EFF4F1; --card:#FFFFFF; --ink:#12201B; --muted:#5F7369; --line:#E0E9E4;
+  --green:#1F9B76; --green-deep:#15805F; --green-soft:#EDF7F2;
   --amber:#B0761F; --amber-soft:#FAF1DF; --red:#A32E1E; --red-soft:#FBE9E5;
   --shadow:0 1px 2px rgba(18,32,27,.05), 0 8px 24px -16px rgba(18,32,27,.28);
   padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
@@ -38,7 +38,7 @@ body{
 
 h1,h2,.net .v,.tabs button{font-family:"Readex Pro","IBM Plex Sans Arabic",sans-serif}
 h1{font-size:21px;font-weight:600;letter-spacing:-.01em;margin:0 0 3px}
-h2{font-size:15.5px;font-weight:600;color:var(--green);margin:0 0 14px;
+h2{font-size:15.5px;font-weight:600;color:var(--green-deep);margin:0 0 14px;
    display:flex;align-items:center;gap:9px}
 h2::before{content:"";width:3px;height:15px;border-radius:2px;background:var(--green);flex:0 0 auto}
 .sub{color:var(--muted);font-size:13px;margin:0}
@@ -48,9 +48,9 @@ h2::before{content:"";width:3px;height:15px;border-radius:2px;background:var(--g
 /* شاشة الدخول: شريط أخضر زي لصقة الروشتة */
 #login{overflow:hidden}
 #login>h1{margin:calc(var(--pad)*-1) calc(var(--pad)*-1) 0;padding:26px var(--pad) 5px;
-  background:var(--green);color:#fff;font-size:20px}
-#login>.sub{margin:0 calc(var(--pad)*-1) 8px;padding:0 var(--pad) 24px;
-  background:var(--green);color:rgba(255,255,255,.8)}
+  background:linear-gradient(160deg,var(--green) 0%,#2AAE86 100%);color:#fff;font-size:20px}
+#login>.sub{margin:0 calc(var(--pad)*-1) 8px;padding:0 var(--pad) 22px;
+  background:linear-gradient(160deg,#219E79 0%,#2AAE86 100%);color:rgba(255,255,255,.88)}
 #login>label:first-of-type{margin-top:4px}
 
 label{display:block;font-size:12.5px;color:var(--muted);margin:14px 0 5px;font-weight:500}
@@ -114,7 +114,7 @@ button.sm{padding:6px 13px;font-size:13px}
 .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:10px}
 table{width:100%;border-collapse:collapse;font-size:13.5px;min-width:540px}
 th,td{padding:9px 11px;text-align:center;white-space:nowrap}
-th{background:var(--green-soft);color:var(--green);font-weight:600;font-size:12.5px;
+th{background:var(--green-soft);color:var(--green-deep);font-weight:600;font-size:12.5px;
   position:sticky;top:0;z-index:1}
 td{border-top:1px solid var(--line)}
 tbody tr:nth-child(even) td,table tr:nth-child(even) td{background:color-mix(in srgb,var(--paper) 45%,transparent)}
@@ -150,6 +150,41 @@ td.num{font-variant-numeric:tabular-nums}
 code{background:var(--green-soft);color:var(--green);padding:2px 7px;border-radius:5px;
   font-size:12.5px;font-family:"IBM Plex Sans Arabic",monospace;font-weight:600}
 .foot{text-align:center;color:var(--muted);font-size:11.5px;padding:14px 0 28px;letter-spacing:.01em}
+
+
+/* ===== بطاقات الأرقام والرسومات ===== */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:14px 0}
+.stat{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:13px 14px;
+  display:flex;flex-direction:column;gap:3px}
+.stat.hi{background:var(--green-soft);border-color:color-mix(in srgb,var(--green) 30%,transparent)}
+.stat .sl{font-size:12px;color:var(--muted)}
+.stat .sv{font-family:"Readex Pro",sans-serif;font-size:22px;font-weight:600;letter-spacing:-.02em;line-height:1.25}
+.stat.hi .sv{color:var(--green-deep)}
+.stat .ss{font-size:11.5px;color:var(--muted)}
+
+.bars{display:flex;flex-direction:column;gap:11px;margin-top:6px}
+.bar-head{display:flex;justify-content:space-between;gap:10px;font-size:13px;margin-bottom:4px}
+.bar-head .bn{font-weight:500}
+.bar-head .bv{color:var(--muted);font-variant-numeric:tabular-nums}
+.bar-track{height:9px;border-radius:5px;background:var(--paper);overflow:hidden}
+.bar-fill{height:100%;border-radius:5px;transform-origin:right center;
+  animation:grow .55s cubic-bezier(.2,.7,.3,1) both}
+.bar-note{font-size:11.5px;color:var(--muted);margin-top:3px}
+@keyframes grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+
+.chart{margin:10px 0 4px}
+.chart svg{width:100%;height:auto;display:block;overflow:visible}
+.spark{stroke-dasharray:1400;stroke-dashoffset:1400;animation:draw 1s ease-out .1s forwards}
+@keyframes draw{to{stroke-dashoffset:0}}
+.ring{animation:ring .8s cubic-bezier(.2,.7,.3,1) both}
+@keyframes ring{from{stroke-dasharray:0 999}}
+.donut{display:flex;flex-direction:column;align-items:center;gap:4px}
+.donut svg{max-width:150px}
+.dlabel{font-size:12.5px;color:var(--muted);text-align:center}
+.split{display:grid;grid-template-columns:1.6fr 1fr;gap:18px;align-items:center}
+@media (max-width:620px){.split{grid-template-columns:1fr}}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:var(--muted);margin-top:6px}
+.legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-inline-end:5px}
 
 @media (max-width:520px){
   .wrap{padding:14px 12px 4px}
@@ -614,7 +649,8 @@ async function renderEmp(){
       ${lrows}</table></div>
     <div class="note">التأخير من ١٦ دقيقة فأكثر بيتحسب. أكبر تأخيرين في أول ٦ تأخيرات في الشهر معفيين،
     الباقي ربع يوم، ومن التأخير السابع نص يوم.</div></div>
-  <div id="ep3" class="card hide"><h2>أيام الشهر</h2><div class="scroll"><table>
+  <div id="ep3" class="card hide"><h2>ساعات كل يوم</h2>${dayColumns(days)}
+    <h2 style="margin-top:18px">تفاصيل الأيام</h2><div class="scroll"><table>
     <tr><th>اليوم</th><th>الحالة</th><th>حضور</th><th>انصراف</th><th>ساعات</th><th>ملاحظة</th></tr>
     ${drows}</table></div></div>
   ${d.sales ? `<div id="ep5" class="card hide"><h2>مبيعاتي في الفترة</h2>
@@ -671,6 +707,109 @@ window.sendQ = async period => {
     $('qt').value = ''; $('qOk').textContent = 'اتبعت لمدير الفرع.';
   } catch (e) { $('qOk').style.color = 'var(--warn)'; $('qOk').textContent = 'مبعتش: ' + e.code; }
 };
+
+/* ================= رسومات بسيطة بدون مكتبات ================= */
+const PAL = ['#1F9B76','#2AAE86','#5FBF9E','#B0761F','#E0B25A','#7FA8C9','#9C7BB8'];
+
+function statTiles(items){
+  return `<div class="stats">${items.map(s => `<div class="stat${s.hi ? ' hi' : ''}">
+    <span class="sl">${esc(s.label)}</span><span class="sv">${s.value}</span>
+    ${s.sub ? `<span class="ss">${esc(s.sub)}</span>` : ''}</div>`).join('')}</div>`;
+}
+
+function barList(items, fmt){
+  const mx = Math.max(1, ...items.map(i => Math.abs(i.value)));
+  return `<div class="bars">${items.map((i, n) => `<div class="bar-row">
+    <div class="bar-head"><span class="bn">${esc(i.label)}</span><span class="bv">${fmt(i.value)}</span></div>
+    <div class="bar-track"><div class="bar-fill" style="width:${(Math.abs(i.value)/mx*100).toFixed(1)}%;
+      background:${i.color || PAL[n % 3]};animation-delay:${Math.min(n*45,500)}ms"></div></div>
+    ${i.note ? `<div class="bar-note">${esc(i.note)}</div>` : ''}</div>`).join('')}</div>`;
+}
+
+function areaSVG(pts, fmt){
+  if (!pts.length) return '';
+  const W = 640, H = 170, P = { t:14, r:10, b:26, l:10 };
+  const mx = Math.max(...pts.map(p => p.v)) || 1;
+  const n = pts.length;
+  const X = i => W - P.r - (i * (W - P.l - P.r) / Math.max(1, n - 1));
+  const Y = v => P.t + (1 - v / mx) * (H - P.t - P.b);
+  const line = pts.map((p, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)},${Y(p.v).toFixed(1)}`).join(' ');
+  const area = `${line} L${X(n-1).toFixed(1)},${H-P.b} L${X(0).toFixed(1)},${H-P.b} Z`;
+  const dots = pts.map((p, i) => `<circle cx="${X(i).toFixed(1)}" cy="${Y(p.v).toFixed(1)}" r="2.6"
+      fill="var(--card)" stroke="${PAL[0]}" stroke-width="1.6"><title>${esc(p.k)} — ${fmt(p.v)}</title></circle>`).join('');
+  const step = Math.ceil(n / 8);
+  const labs = pts.map((p, i) => i % step ? '' :
+    `<text x="${X(i).toFixed(1)}" y="${H-8}" text-anchor="middle" font-size="10" fill="var(--muted)">${esc(p.k)}</text>`).join('');
+  return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img">
+    <defs><linearGradient id="ag" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="${PAL[0]}" stop-opacity=".28"/>
+      <stop offset="1" stop-color="${PAL[0]}" stop-opacity="0"/></linearGradient></defs>
+    <path d="${area}" fill="url(#ag)"/>
+    <path d="${line}" fill="none" stroke="${PAL[0]}" stroke-width="2" stroke-linejoin="round" class="spark"/>
+    ${dots}${labs}</svg></div>`;
+}
+
+function donut(pct, label, sub){
+  const r = 52, c = 2 * Math.PI * r, on = c * Math.max(0, Math.min(1, pct));
+  return `<div class="donut"><svg viewBox="0 0 140 140" role="img">
+    <circle cx="70" cy="70" r="${r}" fill="none" stroke="var(--line)" stroke-width="15"/>
+    <circle cx="70" cy="70" r="${r}" fill="none" stroke="${PAL[0]}" stroke-width="15" stroke-linecap="round"
+      stroke-dasharray="${on.toFixed(1)} ${(c-on).toFixed(1)}" transform="rotate(-90 70 70)" class="ring"/>
+    <text x="70" y="68" text-anchor="middle" font-size="26" font-weight="600" fill="var(--ink)">${(pct*100).toFixed(0)}٪</text>
+    <text x="70" y="88" text-anchor="middle" font-size="11" fill="var(--muted)">${esc(sub||'')}</text>
+  </svg><div class="dlabel">${esc(label)}</div></div>`;
+}
+
+function dayColumns(days){
+  if (!days.length) return '';
+  const W = 640, H = 130, P = { t:10, b:24 };
+  const mx = Math.max(1, ...days.map(d => +d.hours || 0));
+  const bw = (W - 8) / days.length;
+  const bars = days.map((d, i) => {
+    const h = ((+d.hours||0) / mx) * (H - P.t - P.b);
+    const x = W - 4 - (i+1)*bw;
+    const col = (+d.hours) ? (d.lateDed || d.earlyDed ? 'var(--red)' : (d.exempt ? 'var(--amber)' : PAL[0]))
+                           : 'var(--line)';
+    return `<rect x="${(x+bw*.16).toFixed(1)}" y="${(H-P.b-h).toFixed(1)}" width="${(bw*.68).toFixed(1)}"
+      height="${Math.max(h,1).toFixed(1)}" rx="2" fill="${col}"><title>${esc(d.date)} — ${F(d.hours)} ساعة ${esc(d.state)}</title></rect>
+      ${i % Math.ceil(days.length/10) ? '' : `<text x="${(x+bw*.5).toFixed(1)}" y="${H-7}" text-anchor="middle"
+      font-size="9.5" fill="var(--muted)">${esc(String(d.date).slice(0,2))}</text>`}`;
+  }).join('');
+  return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img">${bars}</svg></div>
+    <div class="legend"><span><i style="background:${PAL[0]}"></i>يوم عادي</span>
+    <span><i style="background:var(--red)"></i>عليه خصم</span>
+    <span><i style="background:var(--amber)"></i>تأخير معفى</span>
+    <span><i style="background:var(--line)"></i>بدون ساعات</span></div>`;
+}
+
+
+function chartsBlock(rows, hasSales, P){
+  let out = '';
+  if (hasSales){
+    const rk = rows.filter(r => r.sales).sort((a,b) => b.sales.net - a.sales.net);
+    if (rk.length) out += `<h2 style="margin-top:20px">مبيعات كل موظف</h2>` +
+      barList(rk.map(r => ({ label: r.name, value: +r.sales.net || 0,
+        note: `${r.sales.invoices} فاتورة · وسيط ${F(r.sales.medInv)} ج · تسجيل عميل ${(r.sales.custPct*100).toFixed(0)}٪`,
+        color: r.sales.include ? null : 'var(--line)' })), v => F(v) + ' ج');
+    const sc = rows.filter(r => r.sales && r.sales.include && r.sales.score != null)
+                   .sort((a,b) => b.sales.score - a.sales.score);
+    const cust = rows.reduce((a,r) => a + (r.sales ? r.sales.custPct * r.sales.invoices : 0), 0);
+    const inv = rows.reduce((a,r) => a + (r.sales ? r.sales.invoices : 0), 0);
+    out += `<div class="split" style="margin-top:20px">
+      <div><h2>درجة التقييم</h2>${sc.length
+        ? barList(sc.map(r => ({ label: r.name, value: r.sales.score, color: PAL[1] })), v => F(v))
+        : '<p class="sub">مفيش درجات محسوبة.</p>'}</div>
+      <div>${donut(inv ? cust/inv : 0, 'فواتير مسجل لها اسم عميل', 'من ' + inv)}</div></div>`;
+  }
+  if (P.daily && P.daily.length)
+    out += `<h2 style="margin-top:20px">مبيعات الفرع يوم بيوم</h2>` +
+      areaSVG(P.daily.map(d => ({ k: String(d.d).slice(5).replace('-','/'), v: +d.net || 0 })), v => F(v) + ' ج');
+  const pay = rows.filter(r => +r.net > 0).sort((a,b) => b.net - a.net);
+  if (pay.length) out += `<h2 style="margin-top:20px">صافي المرتب لكل موظف</h2>` +
+    barList(pay.map(r => ({ label: r.name, value: +r.net || 0, color: PAL[2],
+      note: `${F(r.hours)} ساعة${+r.totalDed ? ' · خصومات ' + F(r.totalDed) + ' ج' : ''}` })), v => F(v) + ' ج');
+  return out;
+}
 
 /* ================= لوحة الإدارة والاطلاع ================= */
 let ROLE = 'emp', DASH = { periods: [], staff: [], rows: [], period: null };
@@ -760,6 +899,16 @@ async function loadPeriod(pid){
       <button class="sm ghost" onclick="exportDash()">تصدير Excel</button></div>
     <label>الفترة</label>
     <select onchange="loadPeriod(this.value)">${opts}</select>
+    ${statTiles([
+      {label:'صافي المرتبات', value:F(sum('net'))+' ج', hi:true, sub:rows.length+' كشف'},
+      ...(hasSales ? [{label:'مبيعات الفريق', value:F(sNet)+' ج', hi:true, sub:sInv+' فاتورة'},
+        {label:'تكلفة الأجور', value:(sNet ? ((sum('net')/sNet)*100).toFixed(1)+'٪' : '—'), sub:'من المبيعات'},
+        {label:'متوسط الفاتورة', value:(sInv ? F(sNet/sInv)+' ج' : '—')}] : []),
+      {label:'ساعات العمل', value:F(sum('hours'))},
+      {label:'الخصومات', value:F(sum('totalDed'))+' ج'},
+      {label:'الحوافز', value:F(sum('bonus'))+' ج'}
+    ])}
+    ${chartsBlock(rows, hasSales, P)}
     <div class="rows" style="margin-top:12px">
       <div class="row"><span class="k">عدد الكشوف</span><span class="v">${rows.length}</span></div>
       <div class="row"><span class="k">إجمالي الساعات</span><span class="v">${F(sum('hours'))}</span></div>
@@ -997,8 +1146,14 @@ window.publish = async () => {
   }
 
   try {
+    const daily = {};
+    if (SALES) SALES.rows.forEach(r => { const d = r.key.split('|')[0];
+      daily[d] = daily[d] || { d, net:0, inv:0 }; daily[d].net += r.total; if (!r.ret) daily[d].inv++; });
+    const dailyArr = Object.values(daily).sort((a,b) => a.d < b.d ? -1 : 1)
+      .map(x => ({ d:x.d, net: Math.round(x.net*100)/100, inv:x.inv }));
     await setDoc(doc(db, 'periods', P.period),
-      { label: P.label, published: true, count: done, at: serverTimestamp() }, { merge:true });
+      { label: P.label, published: true, count: done, at: serverTimestamp(),
+        daily: dailyArr, branchNet: KPI ? Math.round(KPI.tot.net*100)/100 : null }, { merge:true });
   } catch (e) { msg.style.color = 'var(--warn)'; msg.textContent = 'مقدرتش أعلّم الفترة كمنشورة: ' + e.code;
     btn.disabled = false; return; }
 
