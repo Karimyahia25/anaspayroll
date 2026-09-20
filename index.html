@@ -82,7 +82,7 @@ code{background:rgba(127,127,127,.12);padding:1px 6px;border-radius:5px;font-siz
   <input id="p" type="password" autocomplete="off">
   <button class="full" onclick="doLogin()">دخول</button>
   <div class="err" id="loginErr"></div>
-  <div class="note">مدير الفرع بيدخل بكلمة <code>admin</code> بدل الكود.</div>
+  <div class="note">مدير الفرع بيدخل بكلمة <code>admin</code>، وصاحب الصيدلية أو المراجع المالي باسم حسابه بدل الكود.</div>
 </div>
 
 <div id="emp" class="hide"></div>
@@ -266,9 +266,13 @@ onAuthStateChanged(auth, async user => {
   ['login','emp','adm'].forEach(x => $(x).classList.add('hide'));
   if (!user) { $('p').value = ''; $('login').classList.remove('hide'); return; }
   ME = user;
-  try { IS_ADMIN = (await getDoc(doc(db, 'admins', user.uid))).exists(); }
-  catch (e) { IS_ADMIN = false; }
-  if (IS_ADMIN) { $('adm').classList.remove('hide'); renderAdmin(); }
+  ROLE = 'emp'; IS_ADMIN = false;
+  try { if ((await getDoc(doc(db, 'admins', user.uid))).exists()) { ROLE = 'admin'; IS_ADMIN = true; } } catch(e){}
+  if (ROLE === 'emp'){
+    try { if ((await getDoc(doc(db, 'viewers', user.uid))).exists()) ROLE = 'viewer'; } catch(e){}
+  }
+  DASH = { periods: [], staff: [], rows: [], period: null };
+  if (ROLE === 'admin' || ROLE === 'viewer') { $('adm').classList.remove('hide'); renderAdmin(); }
   else { $('emp').classList.remove('hide'); await renderEmp(); }
 });
 
@@ -404,32 +408,140 @@ window.sendQ = async period => {
   } catch (e) { $('qOk').style.color = 'var(--warn)'; $('qOk').textContent = 'مبعتش: ' + e.code; }
 };
 
-/* ================= لوحة الإدارة ================= */
+/* ================= لوحة الإدارة والاطلاع ================= */
+let ROLE = 'emp', DASH = { periods: [], staff: [], rows: [], period: null };
+
 function renderAdmin(){
+  const isAdm = ROLE === 'admin';
   $('adm').innerHTML = `
-  <div class="card"><div class="hdr"><div><h1>لوحة مدير الفرع</h1>
-    <p class="sub">رفع كشف المرتب واعتماده ونشره للفريق</p></div>
+  <div class="card"><div class="hdr"><div><h1>${isAdm ? 'لوحة مدير الفرع' : 'لوحة الاطلاع'}</h1>
+    <p class="sub">${isAdm ? 'رفع كشف المرتب واعتماده ونشره للفريق' : 'اطلاع على الكشوف المنشورة — بدون تعديل'}</p></div>
     <button class="ghost sm" onclick="doOut()">خروج</button></div></div>
   <div class="tabs">
-    <button id="at1" class="on" onclick="atab(1)">نشر كشف</button>
+    <button id="at0" class="on" onclick="atab(0)">الكشوف المنشورة</button>
+    ${isAdm ? `<button id="at1" onclick="atab(1)">نشر كشف جديد</button>
     <button id="at2" onclick="atab(2)">الموظفين</button>
-    <button id="at3" onclick="atab(3)">الاستفسارات</button>
+    <button id="at3" onclick="atab(3)">الاستفسارات</button>` : ''}
   </div>
-  <div id="ap1" class="card">
+  <div id="ap0" class="card"><p class="sub">جاري التحميل…</p></div>
+  ${isAdm ? `
+  <div id="ap1" class="card hide">
     <h2>١. ارفع ملف الإكسيل</h2>
     <div class="drop" id="drop">اضغط هنا واختار ملف نظام المرتبات (.xlsx)</div>
     <input id="file" type="file" accept=".xlsx,.xlsm" class="hide">
-    <div class="err" id="upErr"></div>
-    <div id="preview"></div>
+    <div class="err" id="upErr"></div><div id="preview"></div>
   </div>
   <div id="ap2" class="card hide"><h2>الموظفين وحساباتهم</h2><div id="staffBox"><p class="sub">جاري التحميل…</p></div></div>
-  <div id="ap3" class="card hide"><h2>استفسارات الموظفين</h2><div id="qBox"><p class="sub">جاري التحميل…</p></div></div>`;
-  $('drop').onclick = () => $('file').click();
-  $('file').onchange = onFile;
+  <div id="ap3" class="card hide"><h2>استفسارات الموظفين</h2><div id="qBox"><p class="sub">جاري التحميل…</p></div></div>` : ''}`;
+  if (isAdm){ $('drop').onclick = () => $('file').click(); $('file').onchange = onFile; }
+  loadDash();
 }
-window.atab = n => { [1,2,3].forEach(i => {
-    $('ap'+i).classList.toggle('hide', i !== n); $('at'+i).classList.toggle('on', i === n); });
-  if (n === 2) loadStaff(); if (n === 3) loadQ(); };
+
+window.atab = n => {
+  const ids = ROLE === 'admin' ? [0,1,2,3] : [0];
+  ids.forEach(i => { const p = $('ap'+i), t = $('at'+i);
+    if (p) p.classList.toggle('hide', i !== n); if (t) t.classList.toggle('on', i === n); });
+  if (n === 0) loadDash(); if (n === 2) loadStaff(); if (n === 3) loadQ();
+};
+
+/* ---------- الكشوف المنشورة ---------- */
+async function loadDash(force){
+  const box = $('ap0'); if (!box) return;
+  if (!DASH.periods.length || force){
+    box.innerHTML = '<p class="sub">جاري تحميل الكشوف المنشورة…</p>';
+    try {
+      const ps = await getDocs(collection(db, 'periods'));
+      DASH.periods = []; ps.forEach(d => DASH.periods.push({ id: d.id, ...d.data() }));
+      DASH.periods.sort((a,b) => a.id < b.id ? 1 : -1);
+      const st = await getDocs(collection(db, 'staff'));
+      DASH.staff = []; st.forEach(d => DASH.staff.push({ uid: d.id, ...d.data() }));
+    } catch (e) { box.innerHTML = `<p class="err">مقدرتش أقرا البيانات: ${esc(e.code || e.message)}</p>`; return; }
+  }
+  if (!DASH.periods.length){
+    box.innerHTML = `<h2>الكشوف المنشورة</h2><p class="sub">لسه مفيش أي كشف منشور.</p>`; return;
+  }
+  if (!DASH.period || !DASH.periods.some(p => p.id === DASH.period)) DASH.period = DASH.periods[0].id;
+  await loadPeriod(DASH.period);
+}
+
+async function loadPeriod(pid){
+  const box = $('ap0');
+  DASH.period = pid;
+  const P = DASH.periods.find(p => p.id === pid) || { id: pid };
+  box.innerHTML = `<h2>الكشوف المنشورة</h2><p class="sub">جاري تحميل ${esc(P.label || pid)}…</p>`;
+  const rows = [];
+  for (const s of DASH.staff){
+    try { const d = await getDoc(doc(db, 'payslips', pid, 'employees', s.uid));
+      if (d.exists()) rows.push(d.data()); } catch(e){}
+  }
+  rows.sort((a,b) => (+a.code||0) - (+b.code||0));
+  DASH.rows = rows;
+
+  const sum = k => rows.reduce((a,r) => a + (+r[k] || 0), 0);
+  const opts = DASH.periods.map(p =>
+    `<option value="${esc(p.id)}" ${p.id === pid ? 'selected' : ''}>${esc(p.label || p.id)}</option>`).join('');
+
+  const tr = rows.map(r => `<tr style="cursor:pointer" onclick="drill('${esc(r.uid)}')">
+    <td>${esc(r.code)}</td><td>${esc(r.name)}</td><td class="num">${F(r.hours)}</td>
+    <td class="num">${F(r.wage)}</td><td class="num">${r.lates||0}</td>
+    <td class="num">${F(r.totalDed)}</td><td class="num">${F(r.bonus)}</td>
+    <td class="num"><b>${F(r.net)}</b></td>
+    <td>${r.flags ? `<span class="tag late">${r.flags}</span>` : '—'}</td></tr>`).join('');
+
+  box.innerHTML = `
+    <div class="hdr"><h2 style="margin:0">الكشوف المنشورة</h2>
+      <button class="sm ghost" onclick="exportDash()">تصدير Excel</button></div>
+    <label>الفترة</label>
+    <select onchange="loadPeriod(this.value)">${opts}</select>
+    <div class="rows" style="margin-top:12px">
+      <div class="row"><span class="k">عدد الكشوف</span><span class="v">${rows.length}</span></div>
+      <div class="row"><span class="k">إجمالي الساعات</span><span class="v">${F(sum('hours'))}</span></div>
+      <div class="row"><span class="k">إجمالي الأجور</span><span class="v">${F(sum('wage'))} ج</span></div>
+      <div class="row"><span class="k">إجمالي الخصومات</span><span class="v">${F(sum('totalDed'))} ج</span></div>
+      <div class="row"><span class="k">إجمالي الحوافز</span><span class="v">${F(sum('bonus'))} ج</span></div>
+      <div class="row"><span class="k">إجمالي المسحوبات</span><span class="v">${F(sum('adv'))} ج</span></div>
+      <div class="row total"><span class="k">إجمالي الصافي المستحق</span><span class="v">${F(sum('net'))} ج</span></div>
+    </div>
+    <div class="scroll" style="margin-top:12px"><table>
+      <tr><th>الكود</th><th>الاسم</th><th>ساعات</th><th>أجر</th><th>تأخيرات</th><th>خصومات</th><th>حوافز</th><th>الصافي</th><th>مراجعة</th></tr>
+      ${tr || '<tr><td colspan="9">مفيش كشوف في الفترة دي</td></tr>'}</table></div>
+    <div class="note">اضغط على أي موظف تشوف تفاصيل أيامه. آخر نشر: ${P.at?.seconds ? new Date(P.at.seconds*1000).toLocaleString('ar-EG') : '—'}</div>
+    <div id="drillBox"></div>`;
+}
+
+window.drill = uid => {
+  const r = DASH.rows.find(x => x.uid === uid); if (!r) return;
+  const days = r.days || [];
+  const rows = days.map(x => `<tr><td>${esc(x.date)} ${esc(x.dow)}</td><td>${esc(x.state)}</td>
+    <td class="num">${esc(x.tin)||'—'}</td><td class="num">${esc(x.pin)||'—'}</td><td class="num">${esc(x.pout)||'—'}</td>
+    <td class="num">${x.hours ? F(x.hours) : '—'}</td>
+    <td class="num">${x.late ? x.late+' د' : '—'}</td>
+    <td>${x.exempt ? '<span class="tag ok">معفى</span>' : (x.pct ? `<span class="tag late">${x.pct>=0.5?'نص يوم':'ربع يوم'}</span>` : '—')}</td>
+    <td class="num">${(x.lateDed+x.earlyDed) ? F(x.lateDed+x.earlyDed) : '—'}</td>
+    <td style="white-space:normal">${esc(x.note)}</td></tr>`).join('');
+  $('drillBox').innerHTML = `<div style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px">
+    <div class="hdr"><h2 style="margin:0">${esc(r.name)} — تفاصيل الأيام</h2>
+      <button class="sm ghost" onclick="document.getElementById('drillBox').innerHTML=''">إغلاق</button></div>
+    <div class="scroll"><table>
+      <tr><th>اليوم</th><th>الحالة</th><th>الميعاد</th><th>حضور</th><th>انصراف</th><th>ساعات</th><th>تأخير</th><th>الخصم</th><th>قيمة</th><th>ملاحظة</th></tr>
+      ${rows}</table></div></div>`;
+  $('drillBox').scrollIntoView({ behavior:'smooth', block:'start' });
+};
+
+window.exportDash = () => {
+  const P = DASH.periods.find(p => p.id === DASH.period) || {};
+  const head = ['الكود','الاسم','الوظيفة','سعر الساعة الشهري','معدل الساعة','الساعات الفعلية','ساعات مرحّلة',
+    'أجر الساعات','عدد التأخيرات','المعفاة','ربع يوم','نص يوم','خصم التأخير','مرات انصراف مبكر',
+    'خصم الانصراف المبكر','أيام غياب','جزاء الغياب','جزاءات إدارية','إجمالي الخصومات','إجمالي الحوافز',
+    'مسحوبات آجلة','صافي المستحق','أيام محتاجة مراجعة'];
+  const body = DASH.rows.map(r => [r.code, r.name, r.job||'', r.rate||0, r.hourly||0, r.hours||0, r.carried||0,
+    r.wage||0, r.lates||0, r.exempt||0, r.q||0, r.half||0, r.lateDed||0, r.early||0, r.earlyDed||0,
+    r.absDays||0, r.absPen||0, r.adminPen||0, r.totalDed||0, r.bonus||0, r.adv||0, r.net||0, r.flags||0]);
+  const ws = XLSX.utils.aoa_to_sheet([[`كشف المرتبات — ${P.label || DASH.period}`], [], head, ...body]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'كشف المرتب');
+  XLSX.writeFile(wb, `كشف_المرتبات_${DASH.period}.xlsx`);
+};
 
 function onFile(ev){
   const f = ev.target.files[0]; if (!f) return;
@@ -534,8 +646,9 @@ window.publish = async () => {
   } catch (e) { msg.style.color = 'var(--warn)'; msg.textContent = 'مقدرتش أعلّم الفترة كمنشورة: ' + e.code;
     btn.disabled = false; return; }
 
+  DASH.periods = [];
   msg.style.color = 'var(--good)';
-  msg.textContent = `تم نشر ${done} كشف. الموظفين يقدروا يدخلوا دلوقتي.`;
+  msg.textContent = `تم نشر ${done} كشف. الموظفين يقدروا يدخلوا دلوقتي، والكشوف ظهرت في تبويب (الكشوف المنشورة).`;
   btn.disabled = false;
 
   if (news.length){
