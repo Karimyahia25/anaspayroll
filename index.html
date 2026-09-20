@@ -204,10 +204,12 @@ function parseBook(wb){
       const si = H.findIndex(c => norm(c) === norm('الحالة'));
       const pi = H.findIndex(c => norm(c) === norm('اسم البائع في نظام الكاشير'));
       const ii = H.findIndex(c => norm(c) === norm('مشمول في تقييم المبيعات'));
+      const mi = H.findIndex(c => norm(c) === norm('مستحق عمولة البوشينج'));
       for (let i = eh+1; i < empG.length; i++){
         const r = empG[i] || []; if (!r[ci]) continue;
         jobs[String(r[ci]).trim()] = { job: ji >= 0 ? r[ji] : '', status: si >= 0 ? r[si] : '',
-          posName: pi >= 0 ? r[pi] : '', include: ii >= 0 ? r[ii] : '' };
+          posName: pi >= 0 ? r[pi] : '', include: ii >= 0 ? r[ii] : '',
+          comm: mi >= 0 ? r[mi] : (ii >= 0 ? r[ii] : '') };
       }
     }
   }
@@ -228,7 +230,7 @@ function parseBook(wb){
     if (!has) continue;
     const j = jobs[String(o.code).trim()] || {};
     o.job = j.job || ''; o.status = j.status || '';
-    o.posName = j.posName || ''; o.include = j.include || '';
+    o.posName = j.posName || ''; o.include = j.include || ''; o.comm = j.comm || '';
     o.days = [];
     people.push(o);
   }
@@ -360,8 +362,9 @@ function buildKPI(people, sales, items, W0){
     if (pos){ const i = unmapped.indexOf(pos); if (i >= 0) unmapped.splice(i, 1); }
     if (!b) return;
     const it = (items && items.per[pos]) || { pushValue:0, pushComm:0 };
+    const commOK = String(p.comm || '').includes('نعم');
     rows.push({ code: p.code, name: p.name, pos, hours: +p.hours || 0,
-      include: String(p.include || '').includes('نعم'),
+      include: String(p.include || '').includes('نعم'), commOK,
       invoices: b.invoices, net: Math.round(b.net*100)/100, gross: b.gross,
       rets: b.rets, retVal: b.retVal,
       medInv: Math.round(median(b.vals)*100)/100,
@@ -369,7 +372,7 @@ function buildKPI(people, sales, items, W0){
       delivPct: b.invoices ? b.deliv / b.invoices : 0,
       perHour: (+p.hours) ? b.net / p.hours : 0,
       pushValue: Math.round(it.pushValue*100)/100,
-      pushComm: Math.round(it.pushComm*100)/100,
+      pushComm: commOK ? Math.round(it.pushComm*100)/100 : 0,
       pushPct: b.gross ? it.pushValue / b.gross : 0 });
   });
 
@@ -806,7 +809,7 @@ function kpiBlock(){
     <td class="num">${r.invoices}</td><td class="num">${F(r.net)}</td>
     <td class="num">${F(r.medInv)}</td><td class="num">${F(r.perHour)}</td>
     <td class="num">${pc(r.custPct)}</td><td class="num">${ITEMS ? F(r.pushValue) : '—'}</td>
-    <td class="num">${ITEMS ? F(r.pushComm) : '—'}</td>
+    <td class="num">${ITEMS ? (r.commOK ? F(r.pushComm) : 'غير مستحق') : '—'}</td>
     <td class="num"><b>${r.include ? F(r.score) : 'مستبعد'}</b></td></tr>`).join('');
   return `
     <h2 style="margin-top:22px">مؤشرات المبيعات</h2>
@@ -888,7 +891,7 @@ window.publish = async () => {
         rec.sales = { invoices:k.invoices, net:k.net, medInv:k.medInv, perHour:Math.round(k.perHour*100)/100,
           custPct:Math.round(k.custPct*1000)/1000, delivPct:Math.round(k.delivPct*1000)/1000,
           rets:k.rets, retVal:Math.round(k.retVal*100)/100, pushValue:k.pushValue, pushComm:k.pushComm,
-          pushPct:Math.round(k.pushPct*1000)/1000, include:k.include,
+          pushPct:Math.round(k.pushPct*1000)/1000, include:k.include, commOK:k.commOK,
           score:k.score, rank: rank >= 0 ? rank+1 : null,
           branchNet:Math.round(KPI.tot.net*100)/100, branchInv:KPI.tot.invoices,
           sharePct: KPI.tot.net ? Math.round((k.net/KPI.tot.net)*1000)/1000 : 0 }; }
