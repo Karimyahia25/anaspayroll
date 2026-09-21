@@ -393,7 +393,7 @@ function parseBook(wb){
 const SAL_MAP = {};
 [['كود البيع','id'],['مبيعات؟','kind'],['نوعية البيع','type'],['كود العميل','custCode'],
  ['اسم العميل','cust'],['التاريخ','date'],['الوقت','time'],['المجموع','total'],
- ['الخصم','disc'],['المدفوع','paid'],['اسم البائع','seller']].forEach(([a,k]) => SAL_MAP[norm(a)] = k);
+ ['الخصم','disc'],['المدفوع','paid'],['اسم البائع','seller'],['الصنف','item']].forEach(([a,k]) => SAL_MAP[norm(a)] = k);
 
 const ITM_MAP = {};
 [['الصنف','item'],['الكمية','qty'],['سعر البيع','price'],['المجموع','total'],
@@ -417,11 +417,13 @@ function gridOf(wb, want){
   return null;
 }
 
-function parseSales(wb, ps, pe){
+function parseSales(wb, ps, pe, rates){
   const found = gridOf(wb, 'اسم البائع');
-  if (!found) throw new Error('مش لاقي عمود "اسم البائع" — ده مش تقرير الفواتير');
-  const { g, h } = found, H = g[h], out = [];
-  let outside = 0;
+  if (!found) throw new Error('مش لاقي عمود "اسم البائع" — ده مش تقرير المبيعات');
+  const { g, h } = found, H = g[h];
+  const hasItem = H.some(c => norm(c) === norm('الصنف'));
+  const inv = new Map(), push = {};
+  let outside = 0, lines = 0;
   for (let i = h+1; i < g.length; i++){
     const r = g[i] || [], o = {};
     H.forEach((c, j) => { const k = SAL_MAP[norm(c)]; if (k) o[k] = r[j]; });
@@ -429,12 +431,25 @@ function parseSales(wb, ps, pe){
     const dt = o.date instanceof Date ? o.date : (o.date ? new Date(o.date) : null);
     if (!dt) continue;
     if (ps && pe && (dt < ps || dt > new Date(pe.getTime()+86399000))) { outside++; continue; }
-    out.push({ id: o.id, ret: String(o.kind||'').includes('مرتج'),
-      type: cNorm(o.type), hasCust: !!(o.custCode || cNorm(o.cust)),
-      cust: cNorm(o.cust), key: ymd(dt) + '|' + hhmm(o.time) + '|' + cNorm(o.cust),
-      total: nz(o.total), disc: nz(o.disc), seller: cNorm(o.seller) });
+    lines++;
+    const seller = cNorm(o.seller);
+    const id = (o.id != null && o.id !== '') ? String(o.id) : ('row' + i);
+    let x = inv.get(id);
+    if (!x){ x = { id, ret: String(o.kind||'').includes('مرتج'), type: cNorm(o.type),
+      hasCust: !!(o.custCode || cNorm(o.cust)), cust: cNorm(o.cust),
+      key: ymd(dt) + '|' + hhmm(o.time) + '|' + cNorm(o.cust), total: 0, seller };
+      inv.set(id, x); }
+    const v = nz(o.total); x.total += v;
+    if (hasItem && o.item){
+      const name = String(o.item).toUpperCase();
+      if (name.includes('$$')){
+        const rate = name.includes('XICLAV') ? rates.xic : (name.includes('NEBULA') ? rates.neb : rates.gen);
+        push[seller] = push[seller] || { pushValue:0, pushComm:0, pushLines:0 };
+        push[seller].pushValue += v; push[seller].pushComm += v * rate; push[seller].pushLines++;
+      }
+    }
   }
-  return { rows: out, outside };
+  return { rows: [...inv.values()], outside, lines, itemLevel: hasItem, push: hasItem ? push : null };
 }
 
 function parseItems(wb, salesRows, rates){
@@ -459,7 +474,7 @@ function parseItems(wb, salesRows, rates){
     matched++;
     const name = String(o.item).toUpperCase();
     if (!name.includes('$$')) continue;
-    const rate = name.includes('XICLAVE') ? rates.xic : (name.includes('NEBULA') ? rates.neb : rates.gen);
+    const rate = name.includes('XICLAV') ? rates.xic : (name.includes('NEBULA') ? rates.neb : rates.gen);
     const v = nz(o.total);
     per[s] = per[s] || { pushValue: 0, pushComm: 0, pushLines: 0 };
     per[s].pushValue += v; per[s].pushComm += v * rate; per[s].pushLines++;
@@ -598,6 +613,8 @@ async function renderEmp(){
   br += R('أجر الساعات', F(d.wage) + ' ج', 'plus');
   (d.extra || []).forEach(x => br += R(x.label, (x.value < 0 ? '− ' : '+ ') + F(Math.abs(x.value)) + ' ج',
     x.value < 0 ? 'minus' : 'plus'));
+  if (d.pushAuto) br += R('عمولة البوشينج', (d.pushAuto < 0 ? '− ' : '+ ') + F(Math.abs(d.pushAuto)) + ' ج',
+    d.pushAuto < 0 ? 'minus' : 'plus');
   if (d.lateDed) br += R(`خصم التأخير (${(d.q||0)+(d.half||0)} مرة)`, '− ' + F(d.lateDed) + ' ج', 'minus');
   if (d.earlyDed) br += R(`خصم الانصراف المبكر (${d.early||0} مرة)`, '− ' + F(d.earlyDed) + ' ج', 'minus');
   if (d.absPen) br += R(`جزاء غياب (${d.absDays||0} يوم)`, '− ' + F(d.absPen) + ' ج', 'minus');
@@ -783,34 +800,6 @@ function dayColumns(days){
 }
 
 
-function chartsBlock(rows, hasSales, P){
-  let out = '';
-  if (hasSales){
-    const rk = rows.filter(r => r.sales).sort((a,b) => b.sales.net - a.sales.net);
-    if (rk.length) out += `<h2 style="margin-top:20px">مبيعات كل موظف</h2>` +
-      barList(rk.map(r => ({ label: r.name, value: +r.sales.net || 0,
-        note: `${r.sales.invoices} فاتورة · وسيط ${F(r.sales.medInv)} ج · تسجيل عميل ${(r.sales.custPct*100).toFixed(0)}٪`,
-        color: r.sales.include ? null : 'var(--line)' })), v => F(v) + ' ج');
-    const sc = rows.filter(r => r.sales && r.sales.include && r.sales.score != null)
-                   .sort((a,b) => b.sales.score - a.sales.score);
-    const cust = rows.reduce((a,r) => a + (r.sales ? r.sales.custPct * r.sales.invoices : 0), 0);
-    const inv = rows.reduce((a,r) => a + (r.sales ? r.sales.invoices : 0), 0);
-    out += `<div class="split" style="margin-top:20px">
-      <div><h2>درجة التقييم</h2>${sc.length
-        ? barList(sc.map(r => ({ label: r.name, value: r.sales.score, color: PAL[1] })), v => F(v))
-        : '<p class="sub">مفيش درجات محسوبة.</p>'}</div>
-      <div>${donut(inv ? cust/inv : 0, 'فواتير مسجل لها اسم عميل', 'من ' + inv)}</div></div>`;
-  }
-  if (P.daily && P.daily.length)
-    out += `<h2 style="margin-top:20px">مبيعات الفرع يوم بيوم</h2>` +
-      areaSVG(P.daily.map(d => ({ k: String(d.d).slice(5).replace('-','/'), v: +d.net || 0 })), v => F(v) + ' ج');
-  const pay = rows.filter(r => +r.net > 0).sort((a,b) => b.net - a.net);
-  if (pay.length) out += `<h2 style="margin-top:20px">صافي المرتب لكل موظف</h2>` +
-    barList(pay.map(r => ({ label: r.name, value: +r.net || 0, color: PAL[2],
-      note: `${F(r.hours)} ساعة${+r.totalDed ? ' · خصومات ' + F(r.totalDed) + ' ج' : ''}` })), v => F(v) + ' ج');
-  return out;
-}
-
 /* ================= لوحة الإدارة والاطلاع ================= */
 let ROLE = 'emp', DASH = { periods: [], staff: [], rows: [], period: null };
 
@@ -818,15 +807,18 @@ function renderAdmin(){
   const isAdm = ROLE === 'admin';
   $('adm').innerHTML = `
   <div class="card"><div class="hdr"><div><h1>${isAdm ? 'لوحة مدير الفرع' : 'لوحة الاطلاع'}</h1>
-    <p class="sub">${isAdm ? 'رفع كشف المرتب واعتماده ونشره للفريق' : 'اطلاع على الكشوف المنشورة — بدون تعديل'}</p></div>
-    <button class="ghost sm" onclick="doOut()">خروج</button></div></div>
+    <p class="sub">${isAdm ? 'المرتبات والمبيعات والنشر للفريق' : 'اطلاع على المرتبات والمبيعات — بدون تعديل'}</p></div>
+    <button class="ghost sm" onclick="doOut()">خروج</button></div>
+    <div id="perBox"></div></div>
   <div class="tabs">
-    <button id="at0" class="on" onclick="atab(0)">الكشوف المنشورة</button>
+    <button id="at0" class="on" onclick="atab(0)">المرتبات</button>
+    <button id="at4" onclick="atab(4)">المبيعات والتقييم</button>
     ${isAdm ? `<button id="at1" onclick="atab(1)">نشر كشف جديد</button>
     <button id="at2" onclick="atab(2)">الموظفين</button>
     <button id="at3" onclick="atab(3)">الاستفسارات</button>` : ''}
   </div>
   <div id="ap0" class="card"><p class="sub">جاري التحميل…</p></div>
+  <div id="ap4" class="card hide"><p class="sub">جاري التحميل…</p></div>
   ${isAdm ? `
   <div id="ap1" class="card hide">${adminUploadUI()}</div>
   <div id="ap2" class="card hide"><h2>الموظفين وحساباتهم</h2><div id="staffBox"><p class="sub">جاري التحميل…</p></div></div>
@@ -836,37 +828,43 @@ function renderAdmin(){
 }
 
 window.atab = n => {
-  const ids = ROLE === 'admin' ? [0,1,2,3] : [0];
-  ids.forEach(i => { const p = $('ap'+i), t = $('at'+i);
+  [0,4,1,2,3].forEach(i => { const p = $('ap'+i), t = $('at'+i);
     if (p) p.classList.toggle('hide', i !== n); if (t) t.classList.toggle('on', i === n); });
-  if (n === 0) loadDash(); if (n === 2) loadStaff(); if (n === 3) loadQ();
+  $('perBox').style.display = (n === 0 || n === 4) ? '' : 'none';
+  if ((n === 0 || n === 4) && !DASH.periods.length) loadDash();
+  if (n === 2) loadStaff(); if (n === 3) loadQ();
 };
 
-/* ---------- الكشوف المنشورة ---------- */
 async function loadDash(force){
-  const box = $('ap0'); if (!box) return;
   if (!DASH.periods.length || force){
-    box.innerHTML = '<p class="sub">جاري تحميل الكشوف المنشورة…</p>';
+    $('ap0').innerHTML = '<p class="sub">جاري تحميل الكشوف المنشورة…</p>';
     try {
       const ps = await getDocs(collection(db, 'periods'));
       DASH.periods = []; ps.forEach(d => DASH.periods.push({ id: d.id, ...d.data() }));
       DASH.periods.sort((a,b) => a.id < b.id ? 1 : -1);
       const st = await getDocs(collection(db, 'staff'));
       DASH.staff = []; st.forEach(d => DASH.staff.push({ uid: d.id, ...d.data() }));
-    } catch (e) { box.innerHTML = `<p class="err">مقدرتش أقرا البيانات: ${esc(e.code || e.message)}</p>`; return; }
+    } catch (e) { $('ap0').innerHTML = `<p class="err">مقدرتش أقرا البيانات: ${esc(e.code || e.message)}</p>`; return; }
   }
   if (!DASH.periods.length){
-    box.innerHTML = `<h2>الكشوف المنشورة</h2><p class="sub">لسه مفيش أي كشف منشور.</p>`; return;
+    $('perBox').innerHTML = '';
+    $('ap0').innerHTML = $('ap4').innerHTML = `<p class="sub">لسه مفيش أي كشف منشور.</p>`; return;
   }
   if (!DASH.period || !DASH.periods.some(p => p.id === DASH.period)) DASH.period = DASH.periods[0].id;
   await loadPeriod(DASH.period);
 }
 
 async function loadPeriod(pid){
-  const box = $('ap0');
   DASH.period = pid;
   const P = DASH.periods.find(p => p.id === pid) || { id: pid };
-  box.innerHTML = `<h2>الكشوف المنشورة</h2><p class="sub">جاري تحميل ${esc(P.label || pid)}…</p>`;
+  $('perBox').innerHTML = `<div style="display:flex;gap:10px;align-items:end;margin-top:14px;flex-wrap:wrap">
+    <div style="flex:1;min-width:200px"><label style="margin-top:0">الفترة</label>
+      <select onchange="loadPeriod(this.value)">${DASH.periods.map(p =>
+        `<option value="${esc(p.id)}" ${p.id === pid ? 'selected' : ''}>${esc(p.label || p.id)}</option>`).join('')}</select></div>
+    <button class="sm ghost" onclick="exportDash()">تصدير Excel</button></div>
+    <p class="sub" style="margin-top:8px">آخر نشر: ${P.at?.seconds ? new Date(P.at.seconds*1000).toLocaleString('ar-EG') : '—'}</p>`;
+  $('ap0').innerHTML = $('ap4').innerHTML = '<p class="sub">جاري التحميل…</p>';
+
   const rows = [];
   for (const s of DASH.staff){
     try { const d = await getDoc(doc(db, 'payslips', pid, 'employees', s.uid));
@@ -874,62 +872,77 @@ async function loadPeriod(pid){
   }
   rows.sort((a,b) => (+a.code||0) - (+b.code||0));
   DASH.rows = rows;
+  $('ap0').innerHTML = payPanel(rows);
+  $('ap4').innerHTML = salesPanel(rows, P);
+}
 
+function payPanel(rows){
   const sum = k => rows.reduce((a,r) => a + (+r[k] || 0), 0);
-  const opts = DASH.periods.map(p =>
-    `<option value="${esc(p.id)}" ${p.id === pid ? 'selected' : ''}>${esc(p.label || p.id)}</option>`).join('');
-
-  const hasSales = rows.some(r => r.sales);
+  const pay = rows.filter(r => +r.net > 0).sort((a,b) => b.net - a.net);
   const tr = rows.map(r => `<tr style="cursor:pointer" onclick="drill('${esc(r.uid)}')">
     <td>${esc(r.code)}</td><td>${esc(r.name)}</td><td class="num">${F(r.hours)}</td>
     <td class="num">${F(r.wage)}</td><td class="num">${r.lates||0}</td>
     <td class="num">${F(r.totalDed)}</td><td class="num">${F(r.bonus)}</td>
     <td class="num"><b>${F(r.net)}</b></td>
-    ${hasSales ? `<td class="num">${r.sales ? F(r.sales.net) : '—'}</td>
-      <td class="num">${r.sales ? F(r.sales.medInv) : '—'}</td>
-      <td class="num">${r.sales ? (r.sales.custPct*100).toFixed(0)+'٪' : '—'}</td>
-      <td class="num"><b>${r.sales && r.sales.include && r.sales.score != null ? F(r.sales.score) : '—'}</b></td>` : ''}
     <td>${r.flags ? `<span class="tag late">${r.flags}</span>` : '—'}</td></tr>`).join('');
-  const sNet = rows.reduce((a,r)=>a+(r.sales?+r.sales.net||0:0),0);
-  const sInv = rows.reduce((a,r)=>a+(r.sales?+r.sales.invoices||0:0),0);
-  const sPush = rows.reduce((a,r)=>a+(r.sales?+r.sales.pushComm||0:0),0);
-
-  box.innerHTML = `
-    <div class="hdr"><h2 style="margin:0">الكشوف المنشورة</h2>
-      <button class="sm ghost" onclick="exportDash()">تصدير Excel</button></div>
-    <label>الفترة</label>
-    <select onchange="loadPeriod(this.value)">${opts}</select>
+  return `
     ${statTiles([
       {label:'صافي المرتبات', value:F(sum('net'))+' ج', hi:true, sub:rows.length+' كشف'},
-      ...(hasSales ? [{label:'مبيعات الفريق', value:F(sNet)+' ج', hi:true, sub:sInv+' فاتورة'},
-        {label:'تكلفة الأجور', value:(sNet ? ((sum('net')/sNet)*100).toFixed(1)+'٪' : '—'), sub:'من المبيعات'},
-        {label:'متوسط الفاتورة', value:(sInv ? F(sNet/sInv)+' ج' : '—')}] : []),
       {label:'ساعات العمل', value:F(sum('hours'))},
       {label:'الخصومات', value:F(sum('totalDed'))+' ج'},
-      {label:'الحوافز', value:F(sum('bonus'))+' ج'}
-    ])}
-    ${chartsBlock(rows, hasSales, P)}
-    <div class="rows" style="margin-top:12px">
-      <div class="row"><span class="k">عدد الكشوف</span><span class="v">${rows.length}</span></div>
-      <div class="row"><span class="k">إجمالي الساعات</span><span class="v">${F(sum('hours'))}</span></div>
-      <div class="row"><span class="k">إجمالي الأجور</span><span class="v">${F(sum('wage'))} ج</span></div>
-      <div class="row"><span class="k">إجمالي الخصومات</span><span class="v">${F(sum('totalDed'))} ج</span></div>
-      <div class="row"><span class="k">إجمالي الحوافز</span><span class="v">${F(sum('bonus'))} ج</span></div>
-      <div class="row"><span class="k">إجمالي المسحوبات</span><span class="v">${F(sum('adv'))} ج</span></div>
-      <div class="row total"><span class="k">إجمالي الصافي المستحق</span><span class="v">${F(sum('net'))} ج</span></div>
-    </div>
-    ${hasSales ? `<div class="rows" style="margin-top:10px">
-      <div class="row"><span class="k">مبيعات الفريق في الفترة</span><span class="v">${F(sNet)} ج</span></div>
-      <div class="row"><span class="k">عدد الفواتير</span><span class="v">${sInv}</span></div>
-      ${sPush ? `<div class="row"><span class="k">عمولة البوشينج المستحقة</span><span class="v">${F(sPush)} ج</span></div>` : ''}
-      <div class="row"><span class="k">تكلفة الأجور من المبيعات</span><span class="v">${sNet ? ((sum('net')/sNet)*100).toFixed(1)+'٪' : '—'}</span></div>
-    </div>` : ''}
-    <div class="scroll" style="margin-top:12px"><table>
-      <tr><th>الكود</th><th>الاسم</th><th>ساعات</th><th>أجر</th><th>تأخيرات</th><th>خصومات</th><th>حوافز</th><th>الصافي</th>
-      ${hasSales ? '<th>مبيعات</th><th>وسيط الفاتورة</th><th>تسجيل عميل</th><th>الدرجة</th>' : ''}<th>مراجعة</th></tr>
+      {label:'الحوافز', value:F(sum('bonus'))+' ج'},
+      {label:'المسحوبات', value:F(sum('adv'))+' ج'}])}
+    ${pay.length ? `<h2 style="margin-top:20px">صافي المرتب لكل موظف</h2>` +
+      barList(pay.map(r => ({ label: r.name, value: +r.net || 0, color: PAL[2],
+        note: `${F(r.hours)} ساعة${+r.totalDed ? ' · خصومات ' + F(r.totalDed) + ' ج' : ''}` })), v => F(v) + ' ج') : ''}
+    <h2 style="margin-top:22px">الكشوف بالتفصيل</h2>
+    <div class="scroll"><table>
+      <tr><th>الكود</th><th>الاسم</th><th>ساعات</th><th>أجر</th><th>تأخيرات</th><th>خصومات</th><th>حوافز</th><th>الصافي</th><th>مراجعة</th></tr>
       ${tr || '<tr><td colspan="9">مفيش كشوف في الفترة دي</td></tr>'}</table></div>
-    <div class="note">اضغط على أي موظف تشوف تفاصيل أيامه. آخر نشر: ${P.at?.seconds ? new Date(P.at.seconds*1000).toLocaleString('ar-EG') : '—'}</div>
+    <div class="note">اضغط على أي موظف تشوف تفاصيل أيامه.</div>
     <div id="drillBox"></div>`;
+}
+
+function salesPanel(rows, P){
+  const S = rows.filter(r => r.sales);
+  if (!S.length) return `<p class="sub">مفيش بيانات مبيعات في الفترة دي. ارفع ملف المبيعات مع المرتبات وانشر.</p>`;
+  const net = S.reduce((a,r)=>a+(+r.sales.net||0),0), inv = S.reduce((a,r)=>a+(+r.sales.invoices||0),0);
+  const cust = S.reduce((a,r)=>a+(r.sales.custPct*r.sales.invoices),0);
+  const comm = S.reduce((a,r)=>a+(+r.sales.pushComm||0),0), push = S.reduce((a,r)=>a+(+r.sales.pushValue||0),0);
+  const payNet = rows.reduce((a,r)=>a+(+r.net||0),0);
+  const bySales = [...S].sort((a,b) => b.sales.net - a.sales.net);
+  const sc = S.filter(r => r.sales.include && r.sales.score != null).sort((a,b) => b.sales.score - a.sales.score);
+  const pc = v => (v*100).toFixed(1) + '٪';
+  const tr = bySales.map(r => `<tr${r.sales.include ? '' : ' style="opacity:.6"'}>
+    <td>${esc(r.name)}</td><td class="num">${r.sales.invoices}</td><td class="num">${F(r.sales.net)}</td>
+    <td class="num">${net ? pc(r.sales.net/net) : '—'}</td><td class="num">${F(r.sales.medInv)}</td>
+    <td class="num">${F(r.sales.perHour)}</td><td class="num">${pc(r.sales.custPct)}</td>
+    <td class="num">${F(r.sales.pushValue)}</td>
+    <td class="num">${r.sales.commOK === false ? 'غير مستحق' : F(r.sales.pushComm)}</td>
+    <td class="num"><b>${r.sales.include && r.sales.score != null ? F(r.sales.score) : '—'}</b></td></tr>`).join('');
+  return `
+    ${statTiles([
+      {label:'مبيعات الفريق', value:F(net)+' ج', hi:true, sub:inv+' فاتورة'},
+      {label:'متوسط الفاتورة', value:inv ? F(net/inv)+' ج' : '—'},
+      {label:'تسجيل اسم العميل', value:inv ? pc(cust/inv) : '—', sub:'من الفواتير'},
+      {label:'قيمة البوشينج', value:F(push)+' ج', sub: net ? pc(push/net)+' من المبيعات' : ''},
+      {label:'عمولة البوشينج', value:F(comm)+' ج'},
+      {label:'تكلفة الأجور', value:net ? pc(payNet/net) : '—', sub:'من المبيعات'}])}
+    ${P.daily && P.daily.length ? `<h2 style="margin-top:20px">مبيعات الفرع يوم بيوم</h2>` +
+      areaSVG(P.daily.map(d => ({ k: String(d.d).slice(5).split('-').reverse().join('/'), v: +d.net || 0 })), v => F(v)+' ج') : ''}
+    <div class="split" style="margin-top:20px">
+      <div><h2>درجة التقييم</h2>${sc.length
+        ? barList(sc.map(r => ({ label: r.name, value: r.sales.score, color: PAL[1] })), v => F(v))
+        : '<p class="sub">مفيش درجات محسوبة.</p>'}</div>
+      <div>${donut(inv ? cust/inv : 0, 'فواتير مسجل لها اسم عميل', 'من ' + inv)}</div></div>
+    <h2 style="margin-top:22px">مبيعات كل موظف</h2>
+    ${barList(bySales.map(r => ({ label: r.name, value: +r.sales.net || 0,
+      color: r.sales.include ? null : 'var(--line)' })), v => F(v) + ' ج')}
+    <h2 style="margin-top:22px">المؤشرات بالتفصيل</h2>
+    <div class="scroll"><table>
+      <tr><th>الاسم</th><th>فواتير</th><th>المبيعات</th><th>من الفرع</th><th>وسيط الفاتورة</th>
+      <th>مبيعات/ساعة</th><th>تسجيل عميل</th><th>بوشينج</th><th>عمولة</th><th>الدرجة</th></tr>${tr}</table></div>
+    <div class="note">الشفافية في الصف = مستبعد من التقييم. الدرجة من ١٠٠، محسوبة بالأوزان المسجلة في شيت الافتراضات.</div>`;
 }
 
 window.drill = uid => {
@@ -956,12 +969,12 @@ window.exportDash = () => {
   const head = ['الكود','الاسم','الوظيفة','سعر الساعة الشهري','معدل الساعة','الساعات الفعلية','ساعات مرحّلة',
     'أجر الساعات','عدد التأخيرات','المعفاة','ربع يوم','نص يوم','خصم التأخير','مرات انصراف مبكر',
     'خصم الانصراف المبكر','أيام غياب','جزاء الغياب','جزاءات إدارية','إجمالي الخصومات','إجمالي الحوافز',
-    'مسحوبات آجلة','صافي المستحق','أيام محتاجة مراجعة',
+    'مسحوبات آجلة','عمولة البوشينج (تلقائي)','صافي المستحق','أيام محتاجة مراجعة',
     'عدد الفواتير','صافي المبيعات','نسبته من مبيعات الفرع','وسيط قيمة الفاتورة','مبيعات لكل ساعة',
     'نسبة تسجيل العميل','قيمة البوشينج','عمولة البوشينج','درجة التقييم'];
   const body = DASH.rows.map(r => [r.code, r.name, r.job||'', r.rate||0, r.hourly||0, r.hours||0, r.carried||0,
     r.wage||0, r.lates||0, r.exempt||0, r.q||0, r.half||0, r.lateDed||0, r.early||0, r.earlyDed||0,
-    r.absDays||0, r.absPen||0, r.adminPen||0, r.totalDed||0, r.bonus||0, r.adv||0, r.net||0, r.flags||0,
+    r.absDays||0, r.absPen||0, r.adminPen||0, r.totalDed||0, r.bonus||0, r.adv||0, r.pushAuto||0, r.net||0, r.flags||0,
     r.sales?.invoices||0, r.sales?.net||0, r.sales?.sharePct||0, r.sales?.medInv||0, r.sales?.perHour||0,
     r.sales?.custPct||0, r.sales?.pushValue||0, r.sales?.pushComm||0, r.sales?.score||'']);
   const ws = XLSX.utils.aoa_to_sheet([[`كشف المرتبات — ${P.label || DASH.period}`], [], head, ...body]);
@@ -977,9 +990,9 @@ function adminUploadUI(){
     <h2>١. ارفع الملفات</h2>
     <div class="drop" id="dropPay">١) ملف نظام المرتبات (.xlsx) — مطلوب</div>
     <input id="filePay" type="file" accept=".xlsx,.xlsm" class="hide">
-    <div class="drop" id="dropSal" style="margin-top:8px">٢) تقرير الفواتير بالبائع (.xlsx) — اختياري</div>
+    <div class="drop" id="dropSal" style="margin-top:8px">٢) تقرير المبيعات بالبائع (.xlsx) — اختياري</div>
     <input id="fileSal" type="file" accept=".xlsx,.xlsm" class="hide">
-    <div class="drop" id="dropItm" style="margin-top:8px">٣) تقرير الأصناف (.xlsx) — اختياري، للبوشينج</div>
+    <div class="drop" id="dropItm" style="margin-top:8px">٣) تقرير الأصناف (.xlsx) — بس لو ملف المبيعات مفيهوش أصناف</div>
     <input id="fileItm" type="file" accept=".xlsx,.xlsm" class="hide">
     <div class="err" id="upErr"></div>
     <div id="upState" class="note"></div>
@@ -1000,7 +1013,9 @@ function readXlsx(ev, fn){
 }
 const rdPay = wb => { PARSED = parseBook(wb); recompute(); };
 const rdSal = wb => { if (!PARSED) throw new Error('ارفع ملف المرتبات الأول');
-  SALES = parseSales(wb, PARSED.ps, PARSED.pe); recompute(); };
+  SALES = parseSales(wb, PARSED.ps, PARSED.pe, PARSED.RATES);
+  ITEMS = SALES.push ? { per: SALES.push, matched: SALES.lines, unmatched: 0, ambiguous: 0, direct: true } : null;
+  recompute(); };
 const rdItm = wb => { if (!SALES) throw new Error('ارفع تقرير الفواتير الأول');
   ITEMS = parseItems(wb, SALES.rows, PARSED.RATES); recompute(); };
 
@@ -1008,11 +1023,20 @@ function recompute(){
   KPI = (PARSED && SALES) ? buildKPI(PARSED.people, SALES.rows, ITEMS, PARSED.W) : null;
   $('upState').innerHTML = [
     PARSED ? `✔ المرتبات: ${PARSED.people.length} موظف — ${esc(PARSED.label)}` : '',
-    SALES ? `✔ الفواتير: ${SALES.rows.length} فاتورة داخل الفترة${SALES.outside ? ` (${SALES.outside} بره الفترة اتشالوا)` : ''}` : '',
-    ITEMS ? `✔ الأصناف: ${ITEMS.matched} صف اتنسب لبائع${ITEMS.unmatched ? ` — ${ITEMS.unmatched} مش متطابق` : ''}${ITEMS.ambiguous ? ` — ${ITEMS.ambiguous} ملتبس` : ''}` : ''
+    SALES ? `✔ المبيعات: ${SALES.rows.length} فاتورة${SALES.itemLevel ? ` (من ${SALES.lines} سطر صنف)` : ''} داخل الفترة${SALES.outside ? ` — ${SALES.outside} سطر بره الفترة اتشالوا` : ''}` : '',
+    ITEMS ? (ITEMS.direct ? '✔ البوشينج اتحسب من نفس ملف المبيعات (فيه الأصناف والبائع)'
+      : `✔ الأصناف: ${ITEMS.matched} صف اتنسب لبائع${ITEMS.unmatched ? ` — ${ITEMS.unmatched} مش متطابق` : ''}${ITEMS.ambiguous ? ` — ${ITEMS.ambiguous} ملتبس` : ''}`) : ''
   ].filter(Boolean).join('<br>');
   showPreview();
 }
+
+const autoComm = code => {
+  if (!KPI || !ITEMS) return 0;
+  const k = KPI.rows.find(x => String(x.code) === String(code));
+  return k && k.commOK ? Math.round(k.pushComm * 100) / 100 : 0;
+};
+const manualPush = p => (p.extra || []).filter(x => /pushing|بوشينج/i.test(String(x.label)))
+  .reduce((a, x) => a + (+x.value || 0), 0);
 
 function showPreview(){
   if (!PARSED) return;
@@ -1023,21 +1047,29 @@ function showPreview(){
   if (bad.length) w += `<div class="banner bad">${bad.length} موظف من غير سعر ساعة (${bad.map(x=>esc(x.name)).join('، ')}) — مرتبهم صفر.</div>`;
   if (flag.length) w += `<div class="banner">أيام تحت المراجعة: ${flag.map(x=>esc(x.name)+' ('+x.flags+')').join('، ')}</div>`;
   if (left.length) w += `<div class="banner">${left.map(x=>esc(x.name)).join('، ')} — الحالة "ترك العمل".</div>`;
-  if (KPI && KPI.unmapped.length) w += `<div class="banner bad">بائعين في تقرير الفواتير مش مربوطين بأي موظف: ${KPI.unmapped.map(esc).join('، ')} — املا عمود (اسم البائع في نظام الكاشير) في شيت الموظفين.</div>`;
+  if (KPI && KPI.unmapped.length) w += `<div class="banner">بائعين مش مربوطين بموظف (مبيعاتهم في إجمالي الفرع بس): ${KPI.unmapped.map(esc).join('، ')}</div>`;
+  const dup = P.people.filter(p => autoComm(p.code) && manualPush(p));
+  if (dup.length) w += `<div class="banner bad">⚠ عمولة البوشينج هتتحسب مرتين لـ: ${dup.map(x => esc(x.name) + ' (' + F(manualPush(x)) + ' ج يدوي)').join('، ')}.
+    العمولة بقت بتتضاف تلقائياً من ملف المبيعات — امسح "حافز Pushing" من شيت الحوافز في الإكسيل وارفع تاني.</div>`;
+  if (!ITEMS) w += `<div class="banner">ملف المبيعات بالأصناف مش مرفوع — عمولة البوشينج مش هتتضاف للكشوف.</div>`;
 
-  const rows = P.people.map(p => `<tr><td>${p.code}</td><td>${esc(p.name)}</td>
+  const rows = P.people.map(p => { const c = autoComm(p.code);
+    return `<tr><td>${p.code}</td><td>${esc(p.name)}</td>
     <td class="num">${F(p.hours)}</td><td class="num">${F(p.wage)}</td><td class="num">${p.lates||0}</td>
-    <td class="num">${F(p.totalDed)}</td><td class="num"><b>${F(p.net)}</b></td>
-    <td>${p.flags ? `<span class="tag late">${p.flags}</span>` : '—'}</td></tr>`).join('');
-  const tot = P.people.reduce((a,p)=>a+(+p.net||0),0);
+    <td class="num">${F(p.totalDed)}</td><td class="num">${F(p.net)}</td>
+    <td class="num">${c ? '+ ' + F(c) : '—'}</td><td class="num"><b>${F((+p.net||0) + c)}</b></td>
+    <td>${p.flags ? `<span class="tag late">${p.flags}</span>` : '—'}</td></tr>`; }).join('');
+  const tot = P.people.reduce((a,p)=>a+(+p.net||0)+autoComm(p.code),0);
 
   $('preview').innerHTML = `
     <h2 style="margin-top:18px">٢. راجع قبل النشر</h2>
     <p class="sub">الفترة: <b>${esc(P.label)}</b> — ${P.people.length} موظف — إجمالي الصافي: <b>${F(tot)} ج</b></p>
     ${w}
     <div class="scroll"><table>
-      <tr><th>الكود</th><th>الاسم</th><th>ساعات</th><th>أجر</th><th>تأخيرات</th><th>خصومات</th><th>الصافي</th><th>مراجعة</th></tr>
+      <tr><th>الكود</th><th>الاسم</th><th>ساعات</th><th>أجر</th><th>تأخيرات</th><th>خصومات</th>
+      <th>صافي الإكسيل</th><th>عمولة بوشينج</th><th>الصافي النهائي</th><th>مراجعة</th></tr>
       ${rows}</table></div>
+    <div class="note">الصافي النهائي = صافي الإكسيل + عمولة البوشينج المحسوبة تلقائياً من ملف المبيعات. ده اللي هيتنشر للموظف.</div>
     ${KPI ? kpiBlock() : '<div class="note">ارفع تقرير الفواتير عشان تظهر مؤشرات المبيعات.</div>'}
     <h2 style="margin-top:18px">٣. اعتماد ونشر</h2>
     <button class="full" id="pubBtn" onclick="publish()">اعتماد ونشر للفريق</button>
@@ -1128,6 +1160,10 @@ window.publish = async () => {
 
     const rec = Object.assign({}, p);
     rec.uid = uid; rec.period = P.period; rec.periodLabel = P.label; rec.publishedAt = new Date().toISOString();
+    const pc = autoComm(code);
+    rec.netExcel = +p.net || 0;
+    rec.pushAuto = pc;
+    if (pc){ rec.bonus = (+p.bonus || 0) + pc; rec.net = Math.round(((+p.net || 0) + pc) * 100) / 100; }
     if (KPI){
       const k = KPI.rows.find(x => String(x.code) === code);
       if (k){ const rank = KPI.rows.filter(x => x.include).findIndex(x => String(x.code) === code);
