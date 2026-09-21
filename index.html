@@ -878,11 +878,17 @@ async function loadPeriod(pid){
 
 function payPanel(rows){
   const sum = k => rows.reduce((a,r) => a + (+r[k] || 0), 0);
-  const pay = rows.filter(r => +r.net > 0).sort((a,b) => b.net - a.net);
+  const comm = sum('pushAuto');
+  const oldPub = rows.length && rows.every(r => r.pushAuto === undefined);
+  const noSales = !oldPub && rows.length && rows.every(r => !r.sales);
+  const commBanner = oldPub
+    ? `<div class="banner bad" style="margin-top:14px">الكشوف دي اتنشرت بنسخة قديمة من التطبيق قبل ربط عمولة البوشينج. روح لـ(نشر كشف جديد)، ارفع المرتبات + ملف المبيعات، وانشر تاني.</div>`
+    : (noSales ? `<div class="banner" style="margin-top:14px">الكشوف دي اتنشرت من غير ملف المبيعات، فمفيش عمولة بوشينج فيها. انشر تاني بالملفين.</div>` : '');
   const tr = rows.map(r => `<tr style="cursor:pointer" onclick="drill('${esc(r.uid)}')">
     <td>${esc(r.code)}</td><td>${esc(r.name)}</td><td class="num">${F(r.hours)}</td>
     <td class="num">${F(r.wage)}</td><td class="num">${r.lates||0}</td>
-    <td class="num">${F(r.totalDed)}</td><td class="num">${F(r.bonus)}</td>
+    <td class="num">${F(r.totalDed)}</td><td class="num">${F((+r.bonus||0) - (+r.pushAuto||0))}</td>
+    <td class="num">${+r.pushAuto ? '+ ' + F(r.pushAuto) : '—'}</td>
     <td class="num"><b>${F(r.net)}</b></td>
     <td>${r.flags ? `<span class="tag late">${r.flags}</span>` : '—'}</td></tr>`).join('');
   return `
@@ -890,16 +896,15 @@ function payPanel(rows){
       {label:'صافي المرتبات', value:F(sum('net'))+' ج', hi:true, sub:rows.length+' كشف'},
       {label:'ساعات العمل', value:F(sum('hours'))},
       {label:'الخصومات', value:F(sum('totalDed'))+' ج'},
-      {label:'الحوافز', value:F(sum('bonus'))+' ج'},
+      {label:'الحوافز', value:F(sum('bonus') - comm)+' ج'},
+      {label:'عمولة البوشينج', value:F(comm)+' ج'},
       {label:'المسحوبات', value:F(sum('adv'))+' ج'}])}
-    ${pay.length ? `<h2 style="margin-top:20px">صافي المرتب لكل موظف</h2>` +
-      barList(pay.map(r => ({ label: r.name, value: +r.net || 0, color: PAL[2],
-        note: `${F(r.hours)} ساعة${+r.totalDed ? ' · خصومات ' + F(r.totalDed) + ' ج' : ''}` })), v => F(v) + ' ج') : ''}
+    ${commBanner}
     <h2 style="margin-top:22px">الكشوف بالتفصيل</h2>
     <div class="scroll"><table>
-      <tr><th>الكود</th><th>الاسم</th><th>ساعات</th><th>أجر</th><th>تأخيرات</th><th>خصومات</th><th>حوافز</th><th>الصافي</th><th>مراجعة</th></tr>
-      ${tr || '<tr><td colspan="9">مفيش كشوف في الفترة دي</td></tr>'}</table></div>
-    <div class="note">اضغط على أي موظف تشوف تفاصيل أيامه.</div>
+      <tr><th>الكود</th><th>الاسم</th><th>ساعات</th><th>أجر</th><th>تأخيرات</th><th>خصومات</th><th>حوافز</th><th>عمولة بوشينج</th><th>الصافي</th><th>مراجعة</th></tr>
+      ${tr || '<tr><td colspan="10">مفيش كشوف في الفترة دي</td></tr>'}</table></div>
+    <div class="note">اضغط على أي موظف تشوف تفاصيل أيامه. عمولة البوشينج محسوبة تلقائياً من ملف المبيعات وداخلة في الصافي.</div>
     <div id="drillBox"></div>`;
 }
 
