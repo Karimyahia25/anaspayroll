@@ -279,6 +279,12 @@ const fmtDate = v => v instanceof Date ? `${d2(v.getDate())}/${d2(v.getMonth()+1
 const fmtTime = v => v instanceof Date ? `${d2(v.getHours())}:${d2(v.getMinutes())}` : (v || '');
 const dow = v => v instanceof Date ? AR_D[(v.getDay())] : '';
 
+
+/* SheetJS بيقرا التواريخ ناقصة ثواني (٢٣:٥٩:٥١ اليوم اللي قبله) بسبب فرق توقيت القاهرة التاريخي —
+   بنقرّب أي تاريخ/وقت لأقرب دقيقة عشان اليوم يطلع صح. الأوقات نفسها مش بتتأثر. */
+const fixDates = rows => (rows || []).map(r => r ? r.map(v => v instanceof Date
+  ? new Date(Math.round(v.getTime() / 60000) * 60000) : v) : r);
+
 function headerRow(rows, key){
   const k = norm(key);
   for (let i = 0; i < Math.min(rows.length, 12); i++)
@@ -289,7 +295,7 @@ function headerRow(rows, key){
 function parseBook(wb){
   const shName = n => wb.SheetNames.find(s => norm(s) === norm(n));
   const grid = n => { const s = wb.Sheets[shName(n)];
-    return s ? XLSX.utils.sheet_to_json(s, {header:1, raw:true, cellDates:true, defval:null}) : null; };
+    return s ? fixDates(XLSX.utils.sheet_to_json(s, {header:1, raw:true, cellDates:true, defval:null})) : null; };
 
   const payG = grid('كشف_المرتب');
   if (!payG) throw new Error('مفيش شيت اسمه كشف_المرتب في الملف');
@@ -410,7 +416,7 @@ const median = a => { if (!a.length) return 0; const s = [...a].sort((x,y)=>x-y)
 
 function gridOf(wb, want){
   for (const n of wb.SheetNames){
-    const g = XLSX.utils.sheet_to_json(wb.Sheets[n], {header:1, raw:true, cellDates:true, defval:null});
+    const g = fixDates(XLSX.utils.sheet_to_json(wb.Sheets[n], {header:1, raw:true, cellDates:true, defval:null}));
     const h = headerRow(g, want);
     if (h >= 0) return { g, h };
   }
@@ -916,7 +922,6 @@ function salesPanel(rows, P){
   const comm = S.reduce((a,r)=>a+(+r.sales.pushComm||0),0), push = S.reduce((a,r)=>a+(+r.sales.pushValue||0),0);
   const payNet = rows.reduce((a,r)=>a+(+r.net||0),0);
   const bySales = [...S].sort((a,b) => b.sales.net - a.sales.net);
-  const sc = S.filter(r => r.sales.include && r.sales.score != null).sort((a,b) => b.sales.score - a.sales.score);
   const pc = v => (v*100).toFixed(1) + '٪';
   const tr = bySales.map(r => `<tr${r.sales.include ? '' : ' style="opacity:.6"'}>
     <td>${esc(r.name)}</td><td class="num">${r.sales.invoices}</td><td class="num">${F(r.sales.net)}</td>
@@ -933,16 +938,10 @@ function salesPanel(rows, P){
       {label:'قيمة البوشينج', value:F(push)+' ج', sub: net ? pc(push/net)+' من المبيعات' : ''},
       {label:'عمولة البوشينج', value:F(comm)+' ج'},
       {label:'تكلفة الأجور', value:net ? pc(payNet/net) : '—', sub:'من المبيعات'}])}
-    ${P.daily && P.daily.length ? `<h2 style="margin-top:20px">مبيعات الفرع يوم بيوم</h2>` +
-      areaSVG(P.daily.map(d => ({ k: String(d.d).slice(5).split('-').reverse().join('/'), v: +d.net || 0 })), v => F(v)+' ج') : ''}
     <div class="split" style="margin-top:20px">
-      <div><h2>درجة التقييم</h2>${sc.length
-        ? barList(sc.map(r => ({ label: r.name, value: r.sales.score, color: PAL[1] })), v => F(v))
-        : '<p class="sub">مفيش درجات محسوبة.</p>'}</div>
+      <div>${P.daily && P.daily.length ? `<h2>مبيعات الفرع يوم بيوم</h2>` +
+        areaSVG(P.daily.map(d => ({ k: String(d.d).slice(5).split('-').reverse().join('/'), v: +d.net || 0 })), v => F(v)+' ج') : ''}</div>
       <div>${donut(inv ? cust/inv : 0, 'فواتير مسجل لها اسم عميل', 'من ' + inv)}</div></div>
-    <h2 style="margin-top:22px">مبيعات كل موظف</h2>
-    ${barList(bySales.map(r => ({ label: r.name, value: +r.sales.net || 0,
-      color: r.sales.include ? null : 'var(--line)' })), v => F(v) + ' ج')}
     <h2 style="margin-top:22px">المؤشرات بالتفصيل</h2>
     <div class="scroll"><table>
       <tr><th>الاسم</th><th>فواتير</th><th>المبيعات</th><th>من الفرع</th><th>وسيط الفاتورة</th>
