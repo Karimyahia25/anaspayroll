@@ -451,7 +451,10 @@ function parseSales(wb, ps, pe, rates){
     if (ps && pe && (dt < ps || dt > new Date(pe.getTime()+86399000))) { outside++; continue; }
     lines++;
     const seller = cNorm(o.seller);
-    const id = (o.id != null && o.id !== '') ? String(o.id) : ('row' + i);
+    const hasId = (o.id != null && o.id !== '');
+    /* بعض التصديرات مفيهاش (كود البيع) — ساعتها بنعتبر الفاتورة = نفس التاريخ والوقت والعميل والبائع */
+    const id = (o.id != null && o.id !== '') ? String(o.id)
+      : (ymd(dt) + '|' + hhmm(o.time) + '|' + cNorm(o.cust) + '|' + seller);
     let x = inv.get(id);
     if (!x){ x = { id, ret: String(o.kind||'').includes('مرتج'), type: cNorm(o.type),
       hasCust: !!(o.custCode || cNorm(o.cust)), cust: cNorm(o.cust),
@@ -467,7 +470,9 @@ function parseSales(wb, ps, pe, rates){
       }
     }
   }
-  return { rows: [...inv.values()], outside, lines, sheets: found.sheets, itemLevel: hasItem, push: hasItem ? push : null };
+  const noId = !H.some(c => norm(c) === norm('كود البيع'));
+  return { rows: [...inv.values()], outside, lines, sheets: found.sheets, noId,
+           itemLevel: hasItem, push: hasItem ? push : null };
 }
 
 function parseItems(wb, salesRows, rates){
@@ -1233,7 +1238,7 @@ function recompute(){
   KPI = (PARSED && SALES) ? buildKPI(PARSED.people, SALES.rows, ITEMS, PARSED.W) : null;
   $('upState').innerHTML = [
     PARSED ? `✔ المرتبات: ${PARSED.people.length} موظف — ${esc(PARSED.label)}` : '',
-    SALES ? `✔ المبيعات: ${SALES.rows.length} فاتورة${SALES.itemLevel ? ` (من ${SALES.lines} سطر صنف)` : ''} داخل الفترة — قرا ${SALES.sheets} شيت${SALES.outside ? ` — ${SALES.outside} سطر بره الفترة اتشالوا` : ''}` : '',
+    SALES ? `✔ المبيعات: ${SALES.rows.length} فاتورة${SALES.itemLevel ? ` (من ${SALES.lines} سطر صنف)` : ''} داخل الفترة — قرا ${SALES.sheets} شيت${SALES.outside ? ` — ${SALES.outside} سطر بره الفترة اتشالوا` : ''}${SALES.noId ? ' — ⚠ الملف مفيهوش عمود (كود البيع)، فعدد الفواتير تقريبي' : ''}` : '',
     ITEMS ? (ITEMS.direct ? '✔ البوشينج اتحسب من نفس ملف المبيعات (فيه الأصناف والبائع)'
       : `✔ الأصناف: ${ITEMS.matched} صف اتنسب لبائع${ITEMS.unmatched ? ` — ${ITEMS.unmatched} مش متطابق` : ''}${ITEMS.ambiguous ? ` — ${ITEMS.ambiguous} ملتبس` : ''}`) : ''
   ].filter(Boolean).join('<br>');
