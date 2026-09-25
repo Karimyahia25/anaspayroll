@@ -340,11 +340,13 @@ function parseBook(wb){
       const pi = H.findIndex(c => norm(c) === norm('اسم البائع في نظام الكاشير'));
       const ii = H.findIndex(c => norm(c) === norm('مشمول في تقييم المبيعات'));
       const mi = H.findIndex(c => norm(c) === norm('مستحق عمولة البوشينج'));
+      const bi = H.findIndex(c => norm(c) === norm('ينشر كشفه'));
       for (let i = eh+1; i < empG.length; i++){
         const r = empG[i] || []; if (!r[ci]) continue;
         jobs[String(r[ci]).trim()] = { job: ji >= 0 ? r[ji] : '', status: si >= 0 ? r[si] : '',
           posName: pi >= 0 ? r[pi] : '', include: ii >= 0 ? r[ii] : '',
-          comm: mi >= 0 ? r[mi] : (ii >= 0 ? r[ii] : '') };
+          comm: mi >= 0 ? r[mi] : (ii >= 0 ? r[ii] : ''),
+          noPublish: bi >= 0 && String(r[bi] || '').includes('لا') };
       }
     }
   }
@@ -366,6 +368,7 @@ function parseBook(wb){
     const j = jobs[String(o.code).trim()] || {};
     o.job = j.job || ''; o.status = j.status || '';
     o.posName = j.posName || ''; o.include = j.include || ''; o.comm = j.comm || '';
+    o.noPublish = !!j.noPublish;
     o.days = [];
     people.push(o);
   }
@@ -1085,7 +1088,9 @@ async function loadPeriod(pid){
   const rows = [];
   for (const s of DASH.staff){
     try { const d = await getDoc(doc(db, 'payslips', pid, 'employees', s.uid));
-      if (d.exists()) rows.push(d.data()); } catch(e){}
+      if (d.exists()) { rows.push(d.data()); continue; } } catch(e){}
+    try { const h = await getDoc(doc(db, 'payslips', pid, 'private', s.uid));
+      if (h.exists()) rows.push({ ...h.data(), hidden: true }); } catch(e){}
   }
   rows.sort((a,b) => (+a.code||0) - (+b.code||0));
   DASH.rows = rows;
@@ -1107,7 +1112,7 @@ function payPanel(rows){
     <td class="num">${F(r.totalDed)}</td><td class="num">${F((+r.bonus||0) - (+r.pushAuto||0))}</td>
     <td class="num">${+r.pushAuto ? '+ ' + F(r.pushAuto) : '—'}</td>
     <td class="num"><b>${F(r.net)}</b></td>
-    <td>${r.flags ? `<span class="tag late">${r.flags}</span>` : '—'}</td></tr>`).join('');
+    <td>${r.hidden ? '<span class="tag ok">غير منشور</span>' : (r.flags ? `<span class="tag late">${r.flags}</span>` : '—')}</td></tr>`).join('');
   return `
     ${statTiles([
       {label:'صافي المرتبات', value:F(sum('net'))+' ج', hi:true, sub:rows.length+' كشف'},
@@ -1119,7 +1124,7 @@ function payPanel(rows){
     ${commBanner}
     <h2 style="margin-top:22px">الكشوف بالتفصيل</h2>
     <div class="scroll"><table>
-      <tr><th>الكود</th><th>الاسم</th><th>ساعات</th><th>أجر</th><th>تأخيرات</th><th>خصومات</th><th>حوافز</th><th>عمولة بوشينج</th><th>الصافي</th><th>مراجعة</th></tr>
+      <tr><th>الكود</th><th>الاسم</th><th>ساعات</th><th>أجر</th><th>تأخيرات</th><th>خصومات</th><th>حوافز</th><th>عمولة بوشينج</th><th>الصافي</th><th>الحالة</th></tr>
       ${tr || '<tr><td colspan="10">مفيش كشوف في الفترة دي</td></tr>'}</table></div>
     <div class="note">اضغط على أي موظف تشوف تفاصيل أيامه. عمولة البوشينج محسوبة تلقائياً من ملف المبيعات وداخلة في الصافي.</div>
     <div id="drillBox"></div>`;
@@ -1267,6 +1272,8 @@ function showPreview(){
   if (dup.length) w += `<div class="banner bad">⚠ عمولة البوشينج هتتحسب مرتين لـ: ${dup.map(x => esc(x.name) + ' (' + F(manualPush(x)) + ' ج يدوي)').join('، ')}.
     العمولة بقت بتتضاف تلقائياً من ملف المبيعات — امسح "حافز Pushing" من شيت الحوافز في الإكسيل وارفع تاني.</div>`;
   if (!ITEMS) w += `<div class="banner">ملف المبيعات بالأصناف مش مرفوع — عمولة البوشينج مش هتتضاف للكشوف.</div>`;
+  const hid = P.people.filter(p => p.noPublish);
+  if (hid.length) w += `<div class="banner">${hid.map(x => esc(x.name)).join('، ')} — كشفه مش هيتنشر (مش هيشوفه على الموقع)، وأرقامه داخلة في إجماليات الفرع.</div>`;
 
   const rows = P.people.map(p => { const c = autoComm(p.code);
     return `<tr><td>${p.code}</td><td>${esc(p.name)}</td>
@@ -1390,7 +1397,16 @@ window.publish = async () => {
           branchNet:Math.round(KPI.tot.net*100)/100, branchInv:KPI.tot.invoices,
           sharePct: KPI.tot.net ? Math.round((k.net/KPI.tot.net)*1000)/1000 : 0 }; }
     }
-    try { await setDoc(doc(db, 'payslips', P.period, 'employees', uid), rec); }
+    rec.hidden = !!p.noPublish;
+    try {
+      if (p.noPublish){
+        await setDoc(doc(db, 'payslips', P.period, 'private', uid), rec);
+        try { await deleteDoc(doc(db, 'payslips', P.period, 'employees', uid)); } catch(e){}
+      } else {
+        await setDoc(doc(db, 'payslips', P.period, 'employees', uid), rec);
+        try { await deleteDoc(doc(db, 'payslips', P.period, 'private', uid)); } catch(e){}
+      }
+    }
     catch (e) { msg.style.color = 'var(--warn)';
       msg.textContent = `مقدرتش أكتب كشف ${p.name}: ${e.code}`; btn.disabled = false; return; }
     done++;
