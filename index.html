@@ -656,7 +656,7 @@ async function renderEmp(){
     <button id="et2" onclick="etab(2)">التأخيرات</button>
     <button id="et3" onclick="etab(3)">أيام الشهر</button>
     ${d.sales ? '<button id="et5" onclick="etab(5)">مبيعاتي</button>' : ''}
-    <button id="et6" onclick="etab(6)">وقت إضافي</button>
+    <button id="et6" onclick="etab(6)">طلباتي</button>
     <button id="et4" onclick="etab(4)">حسابي</button>
   </div>
   <div id="ep1" class="card"><h2>مفردات المرتب</h2><div class="rows">${br}</div>
@@ -695,12 +695,18 @@ async function renderEmp(){
     <div class="note">${d.sales.include
       ? 'الدرجة محسوبة من: المبيعات لكل ساعة، وسيط قيمة الفاتورة، نسبة البوشينج، ونسبة تسجيل اسم العميل.'
       : 'وظيفتك مش داخلة في تقييم المبيعات، فمفيش درجة — الأرقام دي للعلم بس.'}</div></div>` : ''}
-  <div id="ep6" class="card hide"><h2>طلب وقت إضافي</h2>
-    <p class="sub">الطلب بيتقدم على يوم فات، وبيروح لمدير الفرع وبعدها لصاحب الصيدلية.</p>
+  <div id="ep6" class="card hide"><h2>طلب جديد</h2>
+    <p class="sub">الوقت الإضافي بيتقدم على يوم فات. الإذن ينفع قبل أو بعد.</p>
+    <label>نوع الطلب</label>
+    <select id="rqKind" onchange="reqKind()">
+      <option>وقت إضافي</option><option>إذن تأخير صباحي</option><option>إذن انصراف مبكر</option></select>
     <label>التاريخ</label><input id="otDate" type="date">
-    <label>عدد الساعات</label><input id="otHours" type="number" step="0.5" min="0.5" placeholder="مثال: 1.5">
+    <div id="rowHours"><label>عدد الساعات</label>
+      <input id="otHours" type="number" step="0.5" min="0.5" placeholder="مثال: 1.5"></div>
+    <div id="rowMins" class="hide"><label>عدد الدقايق</label>
+      <input id="pmMins" type="number" step="5" min="5" placeholder="مثال: 30"></div>
     <label>السبب</label><input id="otWhy" placeholder="مثال: غطيت وردية أحمد لحد 11">
-    <button class="full" onclick="otSend()">إرسال الطلب</button>
+    <button class="full" onclick="pmSend()">إرسال الطلب</button>
     <div class="err" id="otMsg"></div>
     <h2 style="margin-top:20px">طلباتي</h2><div id="otList"></div></div>
   <div id="ep4" class="card hide"><h2>تغيير الرقم السري</h2>
@@ -843,14 +849,18 @@ window.otSend = async () => {
 async function otMine(){
   const box = $('otList'); if (!box) return;
   try {
-    const snap = await getDocs(query(collection(db, 'overtime'), where('uid', '==', ME.uid)));
-    const list = []; snap.forEach(d => list.push({ id: d.id, ...d.data() }));
-    list.sort((a,b) => a.date < b.date ? 1 : -1);
-    box.innerHTML = list.length ? `<div class="scroll"><table>
-      <tr><th>اليوم</th><th>ساعات</th><th>السبب</th><th>الحالة</th></tr>
-      ${list.map(x => `<tr><td>${esc(dLabel(x.date))}</td><td class="num">${F(x.hours)}</td>
+    const all = [];
+    const a = await getDocs(query(collection(db, 'overtime'), where('uid', '==', ME.uid)));
+    a.forEach(d => all.push({ t:'وقت إضافي', ...d.data() }));
+    const b = await getDocs(query(collection(db, 'permits'), where('uid', '==', ME.uid)));
+    b.forEach(d => { const v = d.data(); all.push({ t: v.kind, ...v }); });
+    all.sort((x,y) => x.date < y.date ? 1 : -1);
+    box.innerHTML = all.length ? `<div class="scroll"><table>
+      <tr><th>اليوم</th><th>النوع</th><th>المقدار</th><th>السبب</th><th>الحالة</th></tr>
+      ${all.map(x => `<tr><td>${esc(dLabel(x.date))}</td><td>${esc(x.t)}</td>
+        <td class="num">${x.hours ? F(x.hours) + ' ساعة' : x.minutes + ' دقيقة'}</td>
         <td style="white-space:normal">${esc(x.reason)}${x.rejectReason ? '<br><span style="color:var(--red)">سبب الرفض: ' + esc(x.rejectReason) + '</span>' : ''}</td>
-        <td>${otTag(x.status)}</td></tr>`).join('')}</table></div>`
+        <td>${x.hours ? otTag(x.status) : pmTag(x.status)}</td></tr>`).join('')}</table></div>`
       : '<p class="sub">مفيش طلبات.</p>';
   } catch (e) { box.innerHTML = `<p class="err">مشكلة: ${esc(e.code || e.message)}</p>`; }
 }
@@ -907,6 +917,78 @@ window.otNo = async id => {
   catch (e) { alert('مشكلة: ' + (e.code || e.message)); }
 };
 
+/* ================= الأذونات ================= */
+const PM_KINDS = ['إذن تأخير صباحي', 'إذن انصراف مبكر'];
+const pmTag = st => st === 'معتمد' ? '<span class="tag ok">معتمد</span>'
+  : st === 'مرفوض' ? '<span class="tag late">مرفوض</span>' : '<span class="tag">قيد المراجعة</span>';
+
+window.reqKind = () => {
+  const k = $('rqKind').value, isOT = k === 'وقت إضافي';
+  $('rowHours').classList.toggle('hide', !isOT);
+  $('rowMins').classList.toggle('hide', isOT);
+};
+
+window.pmSend = async () => {
+  const k = $('rqKind').value;
+  if (k === 'وقت إضافي') return otSend();
+  const d = $('otDate').value, mn = +$('pmMins').value, r = $('otWhy').value.trim();
+  const m = $('otMsg'); m.style.color = 'var(--red)';
+  if (!d) { m.textContent = 'حدد التاريخ'; return; }
+  if (!mn || mn <= 0 || mn > 600) { m.textContent = 'حدد عدد الدقايق'; return; }
+  if (!r) { m.textContent = 'اكتب سبب الإذن'; return; }
+  try {
+    const st = await getDoc(doc(db, 'staff', ME.uid));
+    const v = st.exists() ? st.data() : {};
+    await addDoc(collection(db, 'permits'), { uid: ME.uid, code: v.code || '', name: v.name || '',
+      date: d, kind: k, minutes: mn, reason: r, status: 'قيد المراجعة', createdAt: serverTimestamp() });
+    $('pmMins').value = ''; $('otWhy').value = '';
+    m.style.color = 'var(--green)'; m.textContent = 'اتبعت لمدير الفرع.';
+    otMine();
+  } catch (e) { m.textContent = 'مبعتش: ' + (e.code || e.message); }
+};
+
+async function pmAdmin(){
+  const box = $('pmBox'); if (!box) return;
+  box.innerHTML = '<p class="sub">جاري التحميل…</p>';
+  let list = [];
+  try { const snap = await getDocs(collection(db, 'permits'));
+    snap.forEach(d => list.push({ id: d.id, ...d.data() }));
+  } catch (e) { box.innerHTML = `<p class="err">مشكلة: ${esc(e.code || e.message)}</p>`; return; }
+  list.sort((a,b) => a.date < b.date ? 1 : -1);
+  const isAdm = ROLE === 'admin';
+  const wait = list.filter(x => x.status === 'قيد المراجعة');
+  const ok = list.filter(x => x.status === 'معتمد');
+  const no = list.filter(x => x.status === 'مرفوض');
+  const card = x => `<div class="qitem">
+    <div class="meta">${esc(x.name)} (${esc(x.code)}) — ${esc(dLabel(x.date))} — <b>${esc(x.kind)} ${x.minutes} دقيقة</b></div>
+    <div>${esc(x.reason)}</div>
+    ${isAdm ? `<div style="margin-top:9px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="sm" onclick="pmOk('${x.id}')">موافقة</button>
+      <button class="sm ghost" onclick="pmNo('${x.id}')">رفض</button></div>` : ''}</div>`;
+  const tbl = rows => `<div class="scroll"><table>
+    <tr><th>اليوم</th><th>الموظف</th><th>النوع</th><th>دقايق</th><th>السبب</th><th>الحالة</th></tr>
+    ${rows.map(x => `<tr><td>${esc(dLabel(x.date))}</td><td>${esc(x.name)}</td><td>${esc(x.kind)}</td>
+      <td class="num">${x.minutes}</td><td style="white-space:normal">${esc(x.reason)}${
+      x.rejectReason ? '<br><span style="color:var(--red)">' + esc(x.rejectReason) + '</span>' : ''}</td>
+      <td>${pmTag(x.status)}</td></tr>`).join('')}</table></div>`;
+  box.innerHTML = `
+    ${statTiles([
+      {label:'محتاجة قرارك', value: wait.length, hi: wait.length > 0},
+      {label:'أذون معتمدة', value: ok.length},
+      {label:'مرفوضة', value: no.length}])}
+    <h2 style="margin-top:18px">طلبات جديدة</h2>
+    ${wait.length ? wait.map(card).join('') : '<p class="sub">مفيش طلبات مستنية.</p>'}
+    ${ok.length ? `<h2 style="margin-top:18px">الأذون المعتمدة</h2>${tbl(ok)}` : ''}
+    ${no.length ? `<h2 style="margin-top:18px">المرفوضة</h2>${tbl(no)}` : ''}
+    <div class="note">الإذن المعتمد <b>لسه مش بيلغي الخصم تلقائياً</b> — علّمه في عمود (إذن استثنائي) في شيت البصمة لحد ما نربطه من أول أكتوبر.</div>`;
+}
+window.pmOk = async id => { try { await updateDoc(doc(db, 'permits', id),
+  { status: 'معتمد', decidedAt: serverTimestamp() }); pmAdmin(); }
+  catch (e) { alert('مشكلة: ' + (e.code || e.message)); } };
+window.pmNo = async id => { const r = prompt('سبب الرفض؟'); if (r === null) return;
+  try { await updateDoc(doc(db, 'permits', id), { status: 'مرفوض', rejectReason: r || '' }); pmAdmin(); }
+  catch (e) { alert('مشكلة: ' + (e.code || e.message)); } };
+
 /* ================= لوحة الإدارة والاطلاع ================= */
 let ROLE = 'emp', DASH = { periods: [], staff: [], rows: [], period: null };
 
@@ -921,6 +1003,7 @@ function renderAdmin(){
     <button id="at0" class="on" onclick="atab(0)">المرتبات</button>
     <button id="at4" onclick="atab(4)">المبيعات والتقييم</button>
     <button id="at5" onclick="atab(5)">الوقت الإضافي</button>
+    <button id="at6" onclick="atab(6)">الأذونات</button>
     ${isAdm ? `<button id="at1" onclick="atab(1)">نشر كشف جديد</button>
     <button id="at2" onclick="atab(2)">الموظفين</button>
     <button id="at3" onclick="atab(3)">الاستفسارات</button>` : ''}
@@ -928,6 +1011,7 @@ function renderAdmin(){
   <div id="ap0" class="card"><p class="sub">جاري التحميل…</p></div>
   <div id="ap4" class="card hide"><p class="sub">جاري التحميل…</p></div>
   <div id="ap5" class="card hide"><h2>الوقت الإضافي</h2><div id="otBox"></div></div>
+  <div id="ap6" class="card hide"><h2>الأذونات</h2><div id="pmBox"></div></div>
   ${isAdm ? `
   <div id="ap1" class="card hide">${adminUploadUI()}</div>
   <div id="ap2" class="card hide"><h2>الموظفين وحساباتهم</h2><div id="staffBox"><p class="sub">جاري التحميل…</p></div></div>
@@ -937,11 +1021,11 @@ function renderAdmin(){
 }
 
 window.atab = n => {
-  [0,4,5,1,2,3].forEach(i => { const p = $('ap'+i), t = $('at'+i);
+  [0,4,5,6,1,2,3].forEach(i => { const p = $('ap'+i), t = $('at'+i);
     if (p) p.classList.toggle('hide', i !== n); if (t) t.classList.toggle('on', i === n); });
   $('perBox').style.display = (n === 0 || n === 4) ? '' : 'none';
   if ((n === 0 || n === 4) && !DASH.periods.length) loadDash();
-  if (n === 2) loadStaff(); if (n === 3) loadQ(); if (n === 5) otAdmin();
+  if (n === 2) loadStaff(); if (n === 3) loadQ(); if (n === 5) otAdmin(); if (n === 6) pmAdmin();
 };
 
 async function loadDash(force){
