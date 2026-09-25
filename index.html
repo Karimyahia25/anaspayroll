@@ -226,7 +226,7 @@ import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged,
          createUserWithEmailAndPassword, updatePassword }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc,
-         updateDoc, serverTimestamp }
+         updateDoc, deleteDoc, query, where, serverTimestamp }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const CFG = {
@@ -656,6 +656,7 @@ async function renderEmp(){
     <button id="et2" onclick="etab(2)">التأخيرات</button>
     <button id="et3" onclick="etab(3)">أيام الشهر</button>
     ${d.sales ? '<button id="et5" onclick="etab(5)">مبيعاتي</button>' : ''}
+    <button id="et6" onclick="etab(6)">وقت إضافي</button>
     <button id="et4" onclick="etab(4)">حسابي</button>
   </div>
   <div id="ep1" class="card"><h2>مفردات المرتب</h2><div class="rows">${br}</div>
@@ -694,6 +695,14 @@ async function renderEmp(){
     <div class="note">${d.sales.include
       ? 'الدرجة محسوبة من: المبيعات لكل ساعة، وسيط قيمة الفاتورة، نسبة البوشينج، ونسبة تسجيل اسم العميل.'
       : 'وظيفتك مش داخلة في تقييم المبيعات، فمفيش درجة — الأرقام دي للعلم بس.'}</div></div>` : ''}
+  <div id="ep6" class="card hide"><h2>طلب وقت إضافي</h2>
+    <p class="sub">الطلب بيتقدم على يوم فات، وبيروح لمدير الفرع وبعدها لصاحب الصيدلية.</p>
+    <label>التاريخ</label><input id="otDate" type="date">
+    <label>عدد الساعات</label><input id="otHours" type="number" step="0.5" min="0.5" placeholder="مثال: 1.5">
+    <label>السبب</label><input id="otWhy" placeholder="مثال: غطيت وردية أحمد لحد 11">
+    <button class="full" onclick="otSend()">إرسال الطلب</button>
+    <div class="err" id="otMsg"></div>
+    <h2 style="margin-top:20px">طلباتي</h2><div id="otList"></div></div>
   <div id="ep4" class="card hide"><h2>تغيير الرقم السري</h2>
     <label>الرقم السري الجديد (٦ حروف أو أرقام على الأقل)</label>
     <input id="np" type="password"><button class="full" onclick="chpass()">حفظ</button>
@@ -705,11 +714,11 @@ async function renderEmp(){
     <div class="ok" id="qOk"></div></div>`;
 }
 
-window.etab = n => [1,2,3,4,5].forEach(i => {
+window.etab = n => { if (n === 6) otMine(); [1,2,3,4,5,6].forEach(i => {
   const p = $('ep'+i), t = $('et'+i);
   if (p) p.classList.toggle('hide', i !== n);
   if (t) t.classList.toggle('on', i === n);
-});
+}); };
 
 window.chpass = async () => {
   const v = $('np').value;
@@ -806,6 +815,98 @@ function dayColumns(days){
 }
 
 
+/* ================= الوقت الإضافي ================= */
+const OT_NEW = 'قيد المراجعة', OT_MGR = 'موافقة المدير', OT_OK = 'معتمد', OT_NO = 'مرفوض';
+const otTag = st => st === OT_OK ? '<span class="tag ok">معتمد نهائي</span>'
+  : st === OT_MGR ? '<span class="tag ok">في انتظار صاحب الصيدلية</span>'
+  : st === OT_NO ? '<span class="tag late">مرفوض</span>' : '<span class="tag">قيد المراجعة</span>';
+const dLabel = d => { const x = String(d || '').split('-'); return x.length === 3 ? `${x[2]}/${x[1]}` : d; };
+
+window.otSend = async () => {
+  const d = $('otDate').value, h = +$('otHours').value, r = $('otWhy').value.trim();
+  const m = $('otMsg'); m.style.color = 'var(--red)';
+  if (!d || !h || h <= 0) { m.textContent = 'حدد التاريخ وعدد الساعات'; return; }
+  if (h > 12) { m.textContent = 'عدد الساعات كبير — راجعه'; return; }
+  if (!r) { m.textContent = 'اكتب سبب الوقت الإضافي'; return; }
+  if (new Date(d) > new Date()) { m.textContent = 'الطلب بيتقدم على يوم فات، مش يوم جاي'; return; }
+  try {
+    const st = await getDoc(doc(db, 'staff', ME.uid));
+    const v = st.exists() ? st.data() : {};
+    await addDoc(collection(db, 'overtime'), { uid: ME.uid, code: v.code || '', name: v.name || '',
+      date: d, hours: h, reason: r, status: OT_NEW, createdAt: serverTimestamp() });
+    $('otHours').value = ''; $('otWhy').value = '';
+    m.style.color = 'var(--green)'; m.textContent = 'اتبعت لمدير الفرع.';
+    otMine();
+  } catch (e) { m.textContent = 'مبعتش: ' + (e.code || e.message); }
+};
+
+async function otMine(){
+  const box = $('otList'); if (!box) return;
+  try {
+    const snap = await getDocs(query(collection(db, 'overtime'), where('uid', '==', ME.uid)));
+    const list = []; snap.forEach(d => list.push({ id: d.id, ...d.data() }));
+    list.sort((a,b) => a.date < b.date ? 1 : -1);
+    box.innerHTML = list.length ? `<div class="scroll"><table>
+      <tr><th>اليوم</th><th>ساعات</th><th>السبب</th><th>الحالة</th></tr>
+      ${list.map(x => `<tr><td>${esc(dLabel(x.date))}</td><td class="num">${F(x.hours)}</td>
+        <td style="white-space:normal">${esc(x.reason)}${x.rejectReason ? '<br><span style="color:var(--red)">سبب الرفض: ' + esc(x.rejectReason) + '</span>' : ''}</td>
+        <td>${otTag(x.status)}</td></tr>`).join('')}</table></div>`
+      : '<p class="sub">مفيش طلبات.</p>';
+  } catch (e) { box.innerHTML = `<p class="err">مشكلة: ${esc(e.code || e.message)}</p>`; }
+}
+
+async function otAdmin(){
+  const box = $('otBox'); if (!box) return;
+  box.innerHTML = '<p class="sub">جاري التحميل…</p>';
+  let list = [];
+  try { const snap = await getDocs(collection(db, 'overtime'));
+    snap.forEach(d => list.push({ id: d.id, ...d.data() }));
+  } catch (e) { box.innerHTML = `<p class="err">مشكلة: ${esc(e.code || e.message)}</p>`; return; }
+  list.sort((a,b) => a.date < b.date ? 1 : -1);
+  const isAdm = ROLE === 'admin';
+  const mine = isAdm ? list.filter(x => x.status === OT_NEW) : list.filter(x => x.status === OT_MGR);
+  const done = list.filter(x => x.status === OT_OK);
+  const rest = list.filter(x => !mine.includes(x) && x.status !== OT_OK);
+  const card = x => `<div class="qitem">
+    <div class="meta">${esc(x.name)} (${esc(x.code)}) — ${esc(dLabel(x.date))} — <b>${F(x.hours)} ساعة</b></div>
+    <div>${esc(x.reason)}</div>
+    <div style="margin-top:9px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="sm" onclick="otOk('${x.id}','${esc(x.status)}')">${isAdm ? 'موافقة وإرسال لصاحب الصيدلية' : 'اعتماد نهائي'}</button>
+      ${isAdm ? `<button class="sm ghost" onclick="otNo('${x.id}')">رفض</button>` : ''}
+      <span style="align-self:center">${otTag(x.status)}</span></div></div>`;
+  const byEmp = {};
+  done.forEach(x => { byEmp[x.name] = byEmp[x.name] || { h:0, n:0 }; byEmp[x.name].h += +x.hours || 0; byEmp[x.name].n++; });
+  box.innerHTML = `
+    ${statTiles([
+      {label: isAdm ? 'محتاجة موافقتك' : 'محتاجة اعتمادك', value: mine.length, hi: mine.length > 0},
+      {label:'معتمدة نهائياً', value: done.length, sub: F(done.reduce((a,x)=>a+(+x.hours||0),0)) + ' ساعة'},
+      {label:'إجمالي الطلبات', value: list.length}])}
+    <h2 style="margin-top:18px">${isAdm ? 'طلبات جديدة' : 'في انتظار اعتمادك'}</h2>
+    ${mine.length ? mine.map(card).join('') : '<p class="sub">مفيش طلبات مستنية.</p>'}
+    ${done.length ? `<h2 style="margin-top:18px">المعتمد نهائياً</h2>
+      <div class="scroll"><table><tr><th>الموظف</th><th>عدد الطلبات</th><th>إجمالي الساعات</th></tr>
+      ${Object.entries(byEmp).map(([n,v]) => `<tr><td>${esc(n)}</td><td class="num">${v.n}</td><td class="num"><b>${F(v.h)}</b></td></tr>`).join('')}</table></div>
+      <div class="scroll" style="margin-top:8px"><table><tr><th>اليوم</th><th>الموظف</th><th>ساعات</th><th>السبب</th></tr>
+      ${done.map(x => `<tr><td>${esc(dLabel(x.date))}</td><td>${esc(x.name)}</td><td class="num">${F(x.hours)}</td>
+        <td style="white-space:normal">${esc(x.reason)}</td></tr>`).join('')}</table></div>` : ''}
+    ${rest.length ? `<h2 style="margin-top:18px">باقي الطلبات</h2><div class="scroll"><table>
+      <tr><th>اليوم</th><th>الموظف</th><th>ساعات</th><th>الحالة</th></tr>
+      ${rest.map(x => `<tr><td>${esc(dLabel(x.date))}</td><td>${esc(x.name)}</td><td class="num">${F(x.hours)}</td>
+        <td>${otTag(x.status)}</td></tr>`).join('')}</table></div>` : ''}
+    <div class="note">الساعات المعتمدة <b>لسه مش بتتضاف للمرتب تلقائياً</b> — ضيفها بإيدك في شيت الحوافز لحد ما نربطها (من أول أكتوبر).</div>`;
+}
+
+window.otOk = async (id, st) => {
+  try { await updateDoc(doc(db, 'overtime', id),
+    st === OT_NEW ? { status: OT_MGR, managerAt: serverTimestamp() } : { status: OT_OK, ownerAt: serverTimestamp() });
+    otAdmin(); } catch (e) { alert('مشكلة: ' + (e.code || e.message)); }
+};
+window.otNo = async id => {
+  const r = prompt('سبب الرفض؟'); if (r === null) return;
+  try { await updateDoc(doc(db, 'overtime', id), { status: OT_NO, rejectReason: r || '' }); otAdmin(); }
+  catch (e) { alert('مشكلة: ' + (e.code || e.message)); }
+};
+
 /* ================= لوحة الإدارة والاطلاع ================= */
 let ROLE = 'emp', DASH = { periods: [], staff: [], rows: [], period: null };
 
@@ -819,12 +920,14 @@ function renderAdmin(){
   <div class="tabs">
     <button id="at0" class="on" onclick="atab(0)">المرتبات</button>
     <button id="at4" onclick="atab(4)">المبيعات والتقييم</button>
+    <button id="at5" onclick="atab(5)">الوقت الإضافي</button>
     ${isAdm ? `<button id="at1" onclick="atab(1)">نشر كشف جديد</button>
     <button id="at2" onclick="atab(2)">الموظفين</button>
     <button id="at3" onclick="atab(3)">الاستفسارات</button>` : ''}
   </div>
   <div id="ap0" class="card"><p class="sub">جاري التحميل…</p></div>
   <div id="ap4" class="card hide"><p class="sub">جاري التحميل…</p></div>
+  <div id="ap5" class="card hide"><h2>الوقت الإضافي</h2><div id="otBox"></div></div>
   ${isAdm ? `
   <div id="ap1" class="card hide">${adminUploadUI()}</div>
   <div id="ap2" class="card hide"><h2>الموظفين وحساباتهم</h2><div id="staffBox"><p class="sub">جاري التحميل…</p></div></div>
@@ -834,11 +937,11 @@ function renderAdmin(){
 }
 
 window.atab = n => {
-  [0,4,1,2,3].forEach(i => { const p = $('ap'+i), t = $('at'+i);
+  [0,4,5,1,2,3].forEach(i => { const p = $('ap'+i), t = $('at'+i);
     if (p) p.classList.toggle('hide', i !== n); if (t) t.classList.toggle('on', i === n); });
   $('perBox').style.display = (n === 0 || n === 4) ? '' : 'none';
   if ((n === 0 || n === 4) && !DASH.periods.length) loadDash();
-  if (n === 2) loadStaff(); if (n === 3) loadQ();
+  if (n === 2) loadStaff(); if (n === 3) loadQ(); if (n === 5) otAdmin();
 };
 
 async function loadDash(force){
