@@ -415,12 +415,24 @@ const median = a => { if (!a.length) return 0; const s = [...a].sort((x,y)=>x-y)
   return s.length % 2 ? s[m] : (s[m-1]+s[m])/2; };
 
 function gridOf(wb, want){
+  /* بعض التصديرات بتتقسم على أكتر من شيت — بندمجهم كلهم تحت نفس العناوين */
+  let head = null, rows = [], sheets = 0;
   for (const n of wb.SheetNames){
     const g = fixDates(XLSX.utils.sheet_to_json(wb.Sheets[n], {header:1, raw:true, cellDates:true, defval:null}));
     const h = headerRow(g, want);
-    if (h >= 0) return { g, h };
+    if (h < 0) continue;
+    if (!head) head = g[h];
+    const idx = {}; head.forEach((c, j) => idx[norm(c)] = j);
+    for (let i = h + 1; i < g.length; i++){
+      const r = g[i] || [];
+      if (r.every(v => v === null || v === '')) continue;
+      const o = new Array(head.length).fill(null);
+      (g[h] || []).forEach((c, j) => { const k = idx[norm(c)]; if (k !== undefined) o[k] = r[j]; });
+      rows.push(o);
+    }
+    sheets++;
   }
-  return null;
+  return head ? { g: [head, ...rows], h: 0, sheets } : null;
 }
 
 function parseSales(wb, ps, pe, rates){
@@ -455,7 +467,7 @@ function parseSales(wb, ps, pe, rates){
       }
     }
   }
-  return { rows: [...inv.values()], outside, lines, itemLevel: hasItem, push: hasItem ? push : null };
+  return { rows: [...inv.values()], outside, lines, sheets: found.sheets, itemLevel: hasItem, push: hasItem ? push : null };
 }
 
 function parseItems(wb, salesRows, rates){
@@ -1221,7 +1233,7 @@ function recompute(){
   KPI = (PARSED && SALES) ? buildKPI(PARSED.people, SALES.rows, ITEMS, PARSED.W) : null;
   $('upState').innerHTML = [
     PARSED ? `✔ المرتبات: ${PARSED.people.length} موظف — ${esc(PARSED.label)}` : '',
-    SALES ? `✔ المبيعات: ${SALES.rows.length} فاتورة${SALES.itemLevel ? ` (من ${SALES.lines} سطر صنف)` : ''} داخل الفترة${SALES.outside ? ` — ${SALES.outside} سطر بره الفترة اتشالوا` : ''}` : '',
+    SALES ? `✔ المبيعات: ${SALES.rows.length} فاتورة${SALES.itemLevel ? ` (من ${SALES.lines} سطر صنف)` : ''} داخل الفترة — قرا ${SALES.sheets} شيت${SALES.outside ? ` — ${SALES.outside} سطر بره الفترة اتشالوا` : ''}` : '',
     ITEMS ? (ITEMS.direct ? '✔ البوشينج اتحسب من نفس ملف المبيعات (فيه الأصناف والبائع)'
       : `✔ الأصناف: ${ITEMS.matched} صف اتنسب لبائع${ITEMS.unmatched ? ` — ${ITEMS.unmatched} مش متطابق` : ''}${ITEMS.ambiguous ? ` — ${ITEMS.ambiguous} ملتبس` : ''}`) : ''
   ].filter(Boolean).join('<br>');
