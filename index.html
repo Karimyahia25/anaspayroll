@@ -1148,12 +1148,15 @@ function salesPanel(rows, P){
     <td class="num"><b>${r.sales.include && r.sales.score != null ? F(r.sales.score) : '—'}</b></td></tr>`).join('');
   return `
     ${statTiles([
-      {label:'مبيعات الفريق', value:F(net)+' ج', hi:true, sub:inv+' فاتورة'},
+      ...(P.branchAll ? [{label:'إجمالي مبيعات الفرع', value:F(P.branchAll)+' ج', hi:true,
+         sub:(P.branchInvAll || '') + ' فاتورة — شامل الكل'}] : []),
+      {label:'مبيعات الفريق', value:F(net)+' ج', sub:inv+' فاتورة'},
       {label:'متوسط الفاتورة', value:inv ? F(net/inv)+' ج' : '—'},
       {label:'تسجيل اسم العميل', value:inv ? pc(cust/inv) : '—', sub:'من الفواتير'},
       {label:'قيمة البوشينج', value:F(push)+' ج', sub: net ? pc(push/net)+' من المبيعات' : ''},
       {label:'عمولة البوشينج', value:F(comm)+' ج'},
-      {label:'تكلفة الأجور', value:net ? pc(payNet/net) : '—', sub:'من المبيعات'}])}
+      {label:'تكلفة الأجور', value:(P.branchAll || net) ? pc(payNet/(P.branchAll || net)) : '—',
+       sub: P.branchAll ? 'من إجمالي الفرع' : 'من مبيعات الفريق'}])}
     <div class="split" style="margin-top:20px">
       <div>${P.daily && P.daily.length ? `<h2>مبيعات الفرع يوم بيوم</h2>` +
         areaSVG(P.daily.map(d => ({ k: String(d.d).slice(5).split('-').reverse().join('/'), v: +d.net || 0 })), v => F(v)+' ج') : ''}</div>
@@ -1413,14 +1416,26 @@ window.publish = async () => {
   }
 
   try {
-    const daily = {};
+    const daily = {}, bySeller = {};
+    let branchAll = 0, branchInvAll = 0;
     if (SALES) SALES.rows.forEach(r => { const d = r.key.split('|')[0];
-      daily[d] = daily[d] || { d, net:0, inv:0 }; daily[d].net += r.total; if (!r.ret) daily[d].inv++; });
+      daily[d] = daily[d] || { d, net:0, inv:0 }; daily[d].net += r.total; if (!r.ret) daily[d].inv++;
+      branchAll += r.total; if (!r.ret) branchInvAll++;
+      const sl = r.seller || '(بدون اسم)';
+      bySeller[sl] = bySeller[sl] || { seller: sl, net: 0, inv: 0 };
+      bySeller[sl].net += r.total; if (!r.ret) bySeller[sl].inv++; });
+    const mappedSet = new Set(P.people.map(x => cNorm(x.posName)).filter(Boolean));
+    const unmapped = Object.values(bySeller).filter(x => !mappedSet.has(x.seller))
+      .map(x => ({ seller: x.seller, net: Math.round(x.net*100)/100, inv: x.inv }))
+      .sort((a,b) => b.net - a.net);
     const dailyArr = Object.values(daily).sort((a,b) => a.d < b.d ? -1 : 1)
       .map(x => ({ d:x.d, net: Math.round(x.net*100)/100, inv:x.inv }));
     await setDoc(doc(db, 'periods', P.period),
       { label: P.label, published: true, count: done, at: serverTimestamp(),
-        daily: dailyArr, branchNet: KPI ? Math.round(KPI.tot.net*100)/100 : null }, { merge:true });
+        daily: dailyArr, branchNet: KPI ? Math.round(KPI.tot.net*100)/100 : null,
+        branchAll: SALES ? Math.round(branchAll*100)/100 : null,
+        branchInvAll: SALES ? branchInvAll : null,
+        unmapped: SALES ? unmapped : null }, { merge:true });
   } catch (e) { msg.style.color = 'var(--warn)'; msg.textContent = 'مقدرتش أعلّم الفترة كمنشورة: ' + e.code;
     btn.disabled = false; return; }
 
