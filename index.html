@@ -205,8 +205,8 @@ code{background:var(--green-soft);color:var(--green);padding:2px 7px;border-radi
 <div id="login" class="card hide">
   <h1>مرتبات صيدلية أنس نحيلة</h1>
   <p class="sub">ادخل بكود البصمة بتاعك</p>
-  <label>كود الموظف</label>
-  <input id="u" inputmode="numeric" placeholder="مثال: 38" autocomplete="off">
+  <label>كود الموظف أو اسم الدخول</label>
+  <input id="u" type="text" inputmode="text" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="مثال: 38 أو owner" autocomplete="username">
   <label>الرقم السري</label>
   <input id="p" type="password" autocomplete="off">
   <button class="full" onclick="doLogin()">دخول</button>
