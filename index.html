@@ -1109,8 +1109,13 @@ function payPanel(rows){
   const tr = rows.map(r => `<tr style="cursor:pointer" onclick="drill('${esc(r.uid)}')">
     <td>${esc(r.code)}</td><td>${esc(r.name)}</td><td class="num">${F(r.hours)}</td>
     <td class="num">${F(r.wage)}</td><td class="num">${r.lates||0}</td>
+    <td class="num">${+r.lateDed ? F(r.lateDed) : '—'}</td>
+    <td class="num">${+r.earlyDed ? F(r.earlyDed) : '—'}</td>
+    <td class="num">${+r.absPen ? F(r.absPen) : '—'}</td>
+    <td class="num">${+r.adminPen ? F(r.adminPen) : '—'}</td>
     <td class="num">${F(r.totalDed)}</td><td class="num">${F((+r.bonus||0) - (+r.pushAuto||0))}</td>
     <td class="num">${+r.pushAuto ? '+ ' + F(r.pushAuto) : '—'}</td>
+    <td class="num">${+r.adv ? '− ' + F(r.adv) : '—'}</td>
     <td class="num"><b>${F(r.net)}</b></td>
     <td>${r.hidden ? '<span class="tag ok">غير منشور</span>' : (r.flags ? `<span class="tag late">${r.flags}</span>` : '—')}</td></tr>`).join('');
   return `
@@ -1120,12 +1125,15 @@ function payPanel(rows){
       {label:'الخصومات', value:F(sum('totalDed'))+' ج'},
       {label:'الحوافز', value:F(sum('bonus') - comm)+' ج'},
       {label:'عمولة البوشينج', value:F(comm)+' ج'},
+      {label:'جزاءات إدارية', value:F(sum('adminPen'))+' ج'},
       {label:'المسحوبات', value:F(sum('adv'))+' ج'}])}
     ${commBanner}
     <h2 style="margin-top:22px">الكشوف بالتفصيل</h2>
     <div class="scroll"><table>
-      <tr><th>الكود</th><th>الاسم</th><th>ساعات</th><th>أجر</th><th>تأخيرات</th><th>خصومات</th><th>حوافز</th><th>عمولة بوشينج</th><th>الصافي</th><th>الحالة</th></tr>
-      ${tr || '<tr><td colspan="10">مفيش كشوف في الفترة دي</td></tr>'}</table></div>
+      <tr><th>الكود</th><th>الاسم</th><th>ساعات</th><th>أجر</th><th>عدد التأخيرات</th>
+      <th>خصم التأخير</th><th>انصراف مبكر</th><th>جزاء غياب</th><th>جزاءات إدارية</th><th>إجمالي الخصومات</th>
+      <th>حوافز</th><th>عمولة بوشينج</th><th>مسحوبات</th><th>الصافي</th><th>الحالة</th></tr>
+      ${tr || '<tr><td colspan="15">مفيش كشوف في الفترة دي</td></tr>'}</table></div>
     <div class="note">اضغط على أي موظف تشوف تفاصيل أيامه. عمولة البوشينج محسوبة تلقائياً من ملف المبيعات وداخلة في الصافي.</div>
     <div id="drillBox"></div>`;
 }
