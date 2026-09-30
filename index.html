@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>مرتبات صيدلية أنس نحيلة</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Readex+Pro:wght@500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Alexandria:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{
   --paper:#EFF4F1; --card:#FFFFFF; --ink:#12201B; --muted:#5F7369; --line:#E0E9E4;
@@ -36,7 +36,7 @@ body{
 }
 .wrap{max-width:960px;margin:0 auto;padding:20px 16px 8px}
 
-h1,h2,.net .v,.tabs button{font-family:"Readex Pro","IBM Plex Sans Arabic",sans-serif}
+h1,h2,.net .v,.tabs button,.stat .sv{font-family:"Alexandria","IBM Plex Sans Arabic",sans-serif;letter-spacing:-.01em}
 h1{font-size:21px;font-weight:600;letter-spacing:-.01em;margin:0 0 3px}
 h2{font-size:15.5px;font-weight:600;color:var(--green-deep);margin:0 0 14px;
    display:flex;align-items:center;gap:9px}
@@ -165,7 +165,7 @@ code{background:var(--green-soft);color:var(--green);padding:2px 7px;border-radi
 .stat.clk:hover{border-color:var(--green)}
 .stat.clk:active{transform:translateY(1px)}
 .stat .sl{font-size:12px;color:var(--muted)}
-.stat .sv{font-family:"Readex Pro",sans-serif;font-size:22px;font-weight:600;letter-spacing:-.02em;line-height:1.25}
+.stat .sv{font-size:21px;font-weight:600;letter-spacing:-.02em;line-height:1.3}
 .stat.hi .sv{color:var(--green-deep)}
 .stat .ss{font-size:11.5px;color:var(--muted)}
 
@@ -192,6 +192,17 @@ code{background:var(--green-soft);color:var(--green);padding:2px 7px;border-radi
 @media (max-width:620px){.split{grid-template-columns:1fr}}
 .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:var(--muted);margin-top:6px}
 .legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-inline-end:5px}
+
+
+.empcard{margin-top:16px;border-top:2px solid var(--green);padding-top:14px}
+.sec{border:1px solid var(--line);border-radius:10px;margin-top:9px;overflow:hidden}
+.secH{width:100%;display:flex;justify-content:space-between;align-items:center;gap:10px;
+  background:var(--paper);color:var(--ink);border:0;border-radius:0;padding:11px 14px;
+  font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;text-align:start}
+.secH:hover{background:var(--green-soft)}
+.secH .ar{transition:transform .2s;color:var(--muted)}
+.secH.open .ar{transform:rotate(180deg)}
+.secB{padding:12px 14px}
 
 @media (max-width:520px){
   .wrap{padding:14px 12px 4px}
@@ -225,7 +236,7 @@ code{background:var(--green-soft);color:var(--green);padding:2px 7px;border-radi
 <div id="emp" class="hide"></div>
 <div id="adm" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-09-30-B</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-09-30-D</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -251,7 +262,8 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 const $ = id => document.getElementById(id);
-const F = n => (Math.round((+n || 0) * 100) / 100).toLocaleString('ar-EG', {minimumFractionDigits:2, maximumFractionDigits:2});
+const F = n => Math.round(+n || 0).toLocaleString('ar-EG');
+const HN = n => (Math.round((+n || 0) * 100) / 100).toLocaleString('ar-EG', {minimumFractionDigits:2, maximumFractionDigits:2});
 const esc = t => String(t == null ? '' : t).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const emailFor = code => `emp${code}@${DOMAIN}`;
 const defPass = code => 'anas' + (1000 + Number(code));
@@ -397,7 +409,7 @@ function parseBook(wb){
         const n = v => { const x = +String(v ?? '').replace(/[^0-9.\-]/g,''); return isNaN(x) ? 0 : x; };
         p.days.push({ date: fmtDate(dt), dow: dow(dt), state: d.state || '',
           tin: fmtTime(d.tin), tout: fmtTime(d.tout), pin: fmtTime(d.pin), pout: fmtTime(d.pout),
-          hours: n(d.hours), late: n(d.late), early: n(d.early), exempt: n(d.exempt),
+          hours: n(d.hours), late: Math.round(n(d.late)), early: Math.round(n(d.early)), exempt: n(d.exempt),
           pct: String(d.pct || '').includes('%') ? n(d.pct)/100 : n(d.pct),
           lateDed: n(d.lateDed), earlyDed: n(d.earlyDed), note: d.note || '', alert: d.alert || '' });
       }
@@ -689,8 +701,8 @@ async function renderEmp(){
 
   let br = '';
   const R = (k, v, c) => `<div class="row ${c||''}"><span class="k">${esc(k)}</span><span class="v">${v}</span></div>`;
-  br += R('ساعات العمل الفعلية', F(d.hours) + ' ساعة');
-  if (d.carried) br += R('ساعات مرحّلة من شهر سابق', F(d.carried) + ' ساعة');
+  br += R('ساعات العمل الفعلية', HN(d.hours) + ' ساعة');
+  if (d.carried) br += R('ساعات مرحّلة من شهر سابق', HN(d.carried) + ' ساعة');
   br += R('معدل الساعة', F(d.hourly) + ' ج');
   br += R('أجر الساعات', F(d.wage) + ' ج', 'plus');
   (d.extra || []).forEach(x => br += R(x.label, (x.value < 0 ? '− ' : '+ ') + F(Math.abs(x.value)) + ' ج',
@@ -728,7 +740,7 @@ async function renderEmp(){
 
   const drows = days.map(x => `<tr><td>${esc(x.date)} ${esc(x.dow)}</td><td>${esc(x.state)}</td>
     <td class="num">${esc(x.pin) || '—'}</td><td class="num">${esc(x.pout) || '—'}</td>
-    <td class="num">${x.hours ? F(x.hours) : '—'}</td>
+    <td class="num">${x.hours ? HN(x.hours) : '—'}</td>
     <td style="white-space:normal">${esc(x.note)}</td></tr>`).join('');
 
   $('emp').innerHTML = `
@@ -964,7 +976,7 @@ function dayColumns(days){
     const col = (+d.hours) ? (d.lateDed || d.earlyDed ? 'var(--red)' : (d.exempt ? 'var(--amber)' : PAL[0]))
                            : 'var(--line)';
     return `<rect x="${(x+bw*.16).toFixed(1)}" y="${(H-P.b-h).toFixed(1)}" width="${(bw*.68).toFixed(1)}"
-      height="${Math.max(h,1).toFixed(1)}" rx="2" fill="${col}"><title>${esc(d.date)} — ${F(d.hours)} ساعة ${esc(d.state)}</title></rect>
+      height="${Math.max(h,1).toFixed(1)}" rx="2" fill="${col}"><title>${esc(d.date)} — ${HN(d.hours)} ساعة ${esc(d.state)}</title></rect>
       ${i % Math.ceil(days.length/10) ? '' : `<text x="${(x+bw*.5).toFixed(1)}" y="${H-7}" text-anchor="middle"
       font-size="9.5" fill="var(--muted)">${esc(String(d.date).slice(0,2))}</text>`}`;
   }).join('');
@@ -1013,7 +1025,7 @@ async function otMine(){
     box.innerHTML = all.length ? `<div class="scroll"><table>
       <tr><th>اليوم</th><th>النوع</th><th>المقدار</th><th>السبب</th><th>الحالة</th></tr>
       ${all.map(x => `<tr><td>${esc(dLabel(x.date))}</td><td>${esc(x.t)}</td>
-        <td class="num">${x.hours ? F(x.hours) + ' ساعة' : (x.days ? x.days + ' يوم' : x.minutes + ' دقيقة')}</td>
+        <td class="num">${x.hours ? HN(x.hours) + ' ساعة' : (x.days ? x.days + ' يوم' : x.minutes + ' دقيقة')}</td>
         <td style="white-space:normal">${esc(x.reason)}${x.rejectReason ? '<br><span style="color:var(--red)">سبب الرفض: ' + esc(x.rejectReason) + '</span>' : ''}</td>
         <td>${x.hours ? otTag(x.status) : pmTag(x.status)}</td></tr>`).join('')}</table></div>`
       : '<p class="sub">مفيش طلبات.</p>';
@@ -1033,7 +1045,7 @@ async function otAdmin(){
   const done = list.filter(x => x.status === OT_OK);
   const rest = list.filter(x => !mine.includes(x) && x.status !== OT_OK);
   const card = x => `<div class="qitem">
-    <div class="meta">${esc(x.name)} (${esc(x.code)}) — ${esc(dLabel(x.date))} — <b>${F(x.hours)} ساعة</b></div>
+    <div class="meta">${esc(x.name)} (${esc(x.code)}) — ${esc(dLabel(x.date))} — <b>${HN(x.hours)} ساعة</b></div>
     <div>${esc(x.reason)}</div>
     <div style="margin-top:9px;display:flex;gap:8px;flex-wrap:wrap">
       <button class="sm" onclick="otOk('${x.id}','${esc(x.status)}')">${isAdm ? 'موافقة وإرسال لصاحب الصيدلية' : 'اعتماد نهائي'}</button>
@@ -1044,19 +1056,19 @@ async function otAdmin(){
   box.innerHTML = `
     ${statTiles([
       {label: isAdm ? 'محتاجة موافقتك' : 'محتاجة اعتمادك', value: mine.length, hi: mine.length > 0},
-      {label:'معتمدة نهائياً', value: done.length, sub: F(done.reduce((a,x)=>a+(+x.hours||0),0)) + ' ساعة'},
+      {label:'معتمدة نهائياً', value: done.length, sub: HN(done.reduce((a,x)=>a+(+x.hours||0),0)) + ' ساعة'},
       {label:'إجمالي الطلبات', value: list.length}])}
     <h2 style="margin-top:18px">${isAdm ? 'طلبات جديدة' : 'في انتظار اعتمادك'}</h2>
     ${mine.length ? mine.map(card).join('') : '<p class="sub">مفيش طلبات مستنية.</p>'}
     ${done.length ? `<h2 style="margin-top:18px">المعتمد نهائياً</h2>
       <div class="scroll"><table><tr><th>الموظف</th><th>عدد الطلبات</th><th>إجمالي الساعات</th></tr>
-      ${Object.entries(byEmp).map(([n,v]) => `<tr><td>${esc(n)}</td><td class="num">${v.n}</td><td class="num"><b>${F(v.h)}</b></td></tr>`).join('')}</table></div>
+      ${Object.entries(byEmp).map(([n,v]) => `<tr><td>${esc(n)}</td><td class="num">${v.n}</td><td class="num"><b>${HN(v.h)}</b></td></tr>`).join('')}</table></div>
       <div class="scroll" style="margin-top:8px"><table><tr><th>اليوم</th><th>الموظف</th><th>ساعات</th><th>السبب</th></tr>
-      ${done.map(x => `<tr><td>${esc(dLabel(x.date))}</td><td>${esc(x.name)}</td><td class="num">${F(x.hours)}</td>
+      ${done.map(x => `<tr><td>${esc(dLabel(x.date))}</td><td>${esc(x.name)}</td><td class="num">${HN(x.hours)}</td>
         <td style="white-space:normal">${esc(x.reason)}</td></tr>`).join('')}</table></div>` : ''}
     ${rest.length ? `<h2 style="margin-top:18px">باقي الطلبات</h2><div class="scroll"><table>
       <tr><th>اليوم</th><th>الموظف</th><th>ساعات</th><th>الحالة</th></tr>
-      ${rest.map(x => `<tr><td>${esc(dLabel(x.date))}</td><td>${esc(x.name)}</td><td class="num">${F(x.hours)}</td>
+      ${rest.map(x => `<tr><td>${esc(dLabel(x.date))}</td><td>${esc(x.name)}</td><td class="num">${HN(x.hours)}</td>
         <td>${otTag(x.status)}</td></tr>`).join('')}</table></div>` : ''}
     <div class="note">الساعات المعتمدة <b>لسه مش بتتضاف للمرتب تلقائياً</b> — ضيفها بإيدك في شيت الحوافز لحد ما نربطها (من أول أكتوبر).</div>`;
 }
@@ -1316,7 +1328,7 @@ function payPanel(rows){
     ? `<div class="banner bad" style="margin-top:14px">الكشوف دي اتنشرت بنسخة قديمة من التطبيق قبل ربط عمولة البوشينج. روح لـ(نشر كشف جديد)، ارفع المرتبات + ملف المبيعات، وانشر تاني.</div>`
     : (noSales ? `<div class="banner" style="margin-top:14px">الكشوف دي اتنشرت من غير ملف المبيعات، فمفيش عمولة بوشينج فيها. انشر تاني بالملفين.</div>` : '');
   const tr = rows.map(r => `<tr style="cursor:pointer" onclick="drill('${esc(r.uid)}')">
-    <td>${esc(r.code)}</td><td>${esc(r.name)}</td><td class="num">${F(r.hours)}</td>
+    <td>${esc(r.code)}</td><td>${esc(r.name)}</td><td class="num">${HN(r.hours)}</td>
     <td class="num">${F(r.wage)}</td><td class="num">${r.lates||0}</td>
     <td class="num">${+r.lateDed ? F(r.lateDed) : '—'}</td>
     <td class="num">${+r.earlyDed ? F(r.earlyDed) : '—'}</td>
@@ -1330,7 +1342,7 @@ function payPanel(rows){
   return `
     ${statTiles([
       {label:'صافي المرتبات', value:F(sum('net'))+' ج', hi:true, sub:rows.length+' كشف', k:'net'},
-      {label:'ساعات العمل', value:F(sum('hours')), k:'hours'},
+      {label:'ساعات العمل', value:HN(sum('hours')), k:'hours'},
       {label:'الخصومات', value:F(sum('totalDed'))+' ج', k:'ded'},
       {label:'خصم التأخير', value:F(sum('lateDed'))+' ج', k:'late'},
       {label:'الحوافز', value:F(sum('bonus') - comm)+' ج', k:'bon'},
@@ -1361,7 +1373,7 @@ function salesPanel(rows, P){
   const tr = bySales.map(r => `<tr${r.sales.include ? '' : ' style="opacity:.6"'}>
     <td>${esc(r.name)}</td><td class="num">${r.sales.invoices}</td><td class="num">${F(r.sales.net)}</td>
     <td class="num">${net ? pc(r.sales.net/net) : '—'}</td><td class="num">${F(r.sales.medInv)}</td>
-    <td class="num">${F(r.sales.perHour)}</td><td class="num">${pc(r.sales.custPct)}</td>
+    <td class="num">${HN(r.sales.perHour)}</td><td class="num">${pc(r.sales.custPct)}</td>
     <td class="num">${F(r.sales.pushValue)}</td>
     <td class="num">${r.sales.commOK === false ? 'غير مستحق' : F(r.sales.pushComm)}</td>
     <td class="num"><b>${r.sales.include && r.sales.score != null ? F(r.sales.score) : '—'}</b></td></tr>`).join('');
@@ -1391,22 +1403,78 @@ function salesPanel(rows, P){
 
 window.drill = uid => {
   const r = DASH.rows.find(x => x.uid === uid); if (!r) return;
+  const box = $('drillBox'); if (!box) return;
+  if (box.dataset.u === uid){ box.innerHTML = ''; box.dataset.u = ''; return; }
+  box.dataset.u = uid;
   const days = r.days || [];
-  const rows = days.map(x => `<tr><td>${esc(x.date)} ${esc(x.dow)}</td><td>${esc(x.state)}</td>
-    <td class="num">${esc(x.tin)||'—'}</td><td class="num">${esc(x.pin)||'—'}</td><td class="num">${esc(x.pout)||'—'}</td>
-    <td class="num">${x.hours ? F(x.hours) : '—'}</td>
-    <td class="num">${x.late ? x.late+' د' : '—'}</td>
-    <td>${x.exempt ? '<span class="tag ok">معفى</span>' : (x.pct ? `<span class="tag late">${x.pct>=0.5?'نص يوم':'ربع يوم'}</span>` : '—')}</td>
-    <td class="num">${(x.lateDed+x.earlyDed) ? F(x.lateDed+x.earlyDed) : '—'}</td>
-    <td style="white-space:normal">${esc(x.note)}</td></tr>`).join('');
-  $('drillBox').innerHTML = `<div style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px">
-    <div class="hdr"><h2 style="margin:0">${esc(r.name)} — تفاصيل الأيام</h2>
-      <button class="sm ghost" onclick="document.getElementById('drillBox').innerHTML=''">إغلاق</button></div>
-    <div class="scroll"><table>
-      <tr><th>اليوم</th><th>الحالة</th><th>الميعاد</th><th>حضور</th><th>انصراف</th><th>ساعات</th><th>تأخير</th><th>الخصم</th><th>قيمة</th><th>ملاحظة</th></tr>
-      ${rows}</table></div></div>`;
-  $('drillBox').scrollIntoView({ behavior:'smooth', block:'start' });
+  const R = (k, v, c) => `<div class="row ${c||''}"><span class="k">${esc(k)}</span><span class="v">${v}</span></div>`;
+
+  let br = R('ساعات العمل الفعلية', HN(r.hours) + ' ساعة');
+  if (+r.carried) br += R('ساعات مرحّلة', HN(r.carried) + ' ساعة');
+  br += R('معدل الساعة', F(r.hourly) + ' ج');
+  br += R('أجر الساعات', F(r.wage) + ' ج', 'plus');
+  (r.extra || []).forEach(x => br += R(x.label, (x.value < 0 ? '− ' : '+ ') + F(Math.abs(x.value)) + ' ج',
+    x.value < 0 ? 'minus' : 'plus'));
+  if (+r.pushAuto) br += R('عمولة البوشينج', '+ ' + F(r.pushAuto) + ' ج', 'plus');
+  if (+r.lateDed) br += R(`خصم التأخير (${(r.q||0)+(r.half||0)} مرة)`, '− ' + F(r.lateDed) + ' ج', 'minus');
+  if (+r.earlyDed) br += R(`خصم الانصراف المبكر (${r.early||0} مرة)`, '− ' + F(r.earlyDed) + ' ج', 'minus');
+  if (+r.absPen) br += R(`جزاء غياب (${r.absDays||0} يوم)`, '− ' + F(r.absPen) + ' ج', 'minus');
+  if (+r.adminPen) br += R('جزاءات إدارية', '− ' + F(r.adminPen) + ' ج', 'minus');
+  if (+r.adv) br += R('مسحوبات آجلة', '− ' + F(r.adv) + ' ج', 'minus');
+  br += R('صافي المستحق', F(r.net) + ' ج', 'total');
+
+  const sec = (id, title, count, html) => !html ? '' : `
+    <div class="sec"><button class="secH" onclick="secTog('${id}')">
+      <span>${esc(title)}${count ? ` <span class="tag">${count}</span>` : ''}</span><span class="ar">⌄</span></button>
+      <div class="secB hide" id="${id}">${html}</div></div>`;
+  const tbl = (head, body) => `<div class="scroll"><table><tr>${head.map(h => `<th>${esc(h)}</th>`).join('')}</tr>${body}</table></div>`;
+  const money = (rows, cols) => tbl(cols.map(c => c[0]),
+    rows.map(x => `<tr>${cols.map(c => `<td${c[2] ? ' class="num"' : ' style="white-space:normal"'}>${
+      c[2] ? F(x[c[1]]) : esc(x[c[1]] || '')}</td>`).join('')}</tr>`).join(''));
+
+  const lateRows = days.filter(d => +d.lateDed || +d.earlyDed || d.exempt || d.late >= 16);
+  const lateHtml = lateRows.length ? tbl(['اليوم','الميعاد','البصمة','تأخير','انصراف مبكر','الحالة','الخصم'],
+    lateRows.map(d => `<tr><td>${esc(d.date)} ${esc(d.dow)}</td><td class="num">${esc(d.tin)}</td>
+      <td class="num">${esc(d.pin)}</td><td class="num">${d.late ? d.late + ' د' : '—'}</td>
+      <td class="num">${d.early ? d.early + ' د' : '—'}</td>
+      <td>${d.exempt ? '<span class="tag ok">معفى</span>' : (d.pct ? `<span class="tag late">${d.pct >= 0.5 ? 'نص يوم' : 'ربع يوم'}</span>` : '—')}</td>
+      <td class="num">${(d.lateDed + d.earlyDed) ? F(d.lateDed + d.earlyDed) : '—'}</td></tr>`).join('')) : '';
+  const daysHtml = tbl(['اليوم','الحالة','حضور','انصراف','ساعات','ملاحظة'],
+    days.map(d => `<tr><td>${esc(d.date)} ${esc(d.dow)}</td><td>${esc(d.state)}</td>
+      <td class="num">${esc(d.pin) || '—'}</td><td class="num">${esc(d.pout) || '—'}</td>
+      <td class="num">${d.hours ? HN(d.hours) : '—'}</td>
+      <td style="white-space:normal">${esc(d.note)}</td></tr>`).join(''));
+  const salesHtml = r.sales ? `<div class="rows">
+      ${R('عدد الفواتير', r.sales.invoices)}${R('صافي المبيعات', F(r.sales.net) + ' ج')}
+      ${R('نسبته من مبيعات الفرع', ((r.sales.sharePct||0)*100).toFixed(1) + '٪')}
+      ${R('وسيط قيمة الفاتورة', F(r.sales.medInv) + ' ج')}${R('مبيعات لكل ساعة', F(r.sales.perHour) + ' ج')}
+      ${R('تسجيل اسم العميل', ((r.sales.custPct||0)*100).toFixed(1) + '٪')}
+      ${R('قيمة البوشينج', F(r.sales.pushValue) + ' ج')}
+      ${R('عمولة البوشينج', r.sales.commOK === false ? 'غير مستحق' : F(r.sales.pushComm) + ' ج')}
+      ${r.sales.include && r.sales.score != null ? R('درجة التقييم', F(r.sales.score) + ' / 100', 'total') : ''}
+    </div>` : '';
+
+  box.innerHTML = `<div class="empcard">
+    <div class="hdr"><div><h2 style="margin:0">${esc(r.name)}</h2>
+      <p class="sub">كود ${esc(r.code)}${r.job ? ' — ' + esc(r.job) : ''}${r.hidden ? ' — كشف غير منشور' : ''}</p></div>
+      <button class="sm ghost" onclick="drill('${esc(uid)}')">إغلاق</button></div>
+    <div class="net"><div class="l">صافي المستحق</div><div class="v">${F(r.net)} ج</div></div>
+    <div class="rows">${br}</div>
+    ${sec('d_late_'+uid, 'التأخيرات والانصراف المبكر', lateRows.length, lateHtml)}
+    ${sec('d_pen_'+uid, 'الجزاءات الإدارية', (r.penalties||[]).length,
+       (r.penalties||[]).length ? money(r.penalties, [['اليوم','date'],['السبب','reason'],['القيمة','amount',1]]) : '')}
+    ${sec('d_bon_'+uid, 'الحوافز', (r.bonuses||[]).length,
+       (r.bonuses||[]).length ? money(r.bonuses, [['اليوم','date'],['البند','item'],['القيمة','amount',1]]) : '')}
+    ${sec('d_adv_'+uid, 'المسحوبات', (r.advances||[]).length,
+       (r.advances||[]).length ? money(r.advances, [['اليوم','date'],['البيان','item'],['المبلغ','amount',1]]) : '')}
+    ${sec('d_sal_'+uid, 'المبيعات والتقييم', 0, salesHtml)}
+    ${sec('d_day_'+uid, 'أيام الشهر', days.length, daysHtml)}
+  </div>`;
+  box.scrollIntoView({ behavior:'smooth', block:'start' });
 };
+window.secTog = id => { const e = $(id); if (!e) return;
+  e.classList.toggle('hide'); const b = e.previousElementSibling;
+  if (b) b.classList.toggle('open', !e.classList.contains('hide')); };
 
 window.exportDash = () => {
   const P = DASH.periods.find(p => p.id === DASH.period) || {};
