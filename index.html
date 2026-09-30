@@ -225,7 +225,7 @@ code{background:var(--green-soft);color:var(--green);padding:2px 7px;border-radi
 <div id="emp" class="hide"></div>
 <div id="adm" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-09-30-A</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-09-30-B</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -858,11 +858,12 @@ window.sendQ = async period => {
 /* ================= رسومات بسيطة بدون مكتبات ================= */
 const PAL = ['#1F9B76','#2AAE86','#5FBF9E','#B0761F','#E0B25A','#7FA8C9','#9C7BB8'];
 
-function statTiles(items){
-  return `<div class="stats">${items.map(s => `<div class="stat${s.hi ? ' hi' : ''}${s.key ? ' clk' : ''}"
-    ${s.key ? `onclick="tileDetail('${s.key}')" title="اضغط للتفاصيل"` : ''}>
-    <span class="sl">${esc(s.label)}${s.key ? ' ⌄' : ''}</span><span class="sv">${s.value}</span>
-    ${s.sub ? `<span class="ss">${esc(s.sub)}</span>` : ''}</div>`).join('')}</div>`;
+function statTiles(items, box){
+  const B = box || 'tileBox';
+  return `<div class="stats">${items.map(s => { const k = s.k || s.key; return `<div class="stat${s.hi ? ' hi' : ''}${k ? ' clk' : ''}"
+    ${k ? `onclick="tileInfo('${k}','${B}')" title="اضغط للتفاصيل"` : ''}>
+    <span class="sl">${esc(s.label)}${k ? ' ⌄' : ''}</span><span class="sv">${s.value}</span>
+    ${s.sub ? `<span class="ss">${esc(s.sub)}</span>` : ''}</div>`; }).join('')}</div>`;
 }
 
 window.tileDetail = kind => {
