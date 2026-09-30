@@ -802,7 +802,9 @@ async function renderEmp(){
     <p class="sub">لو فيه بند مش مظبوط، اكتبه وهيوصل لمدير الفرع.</p>
     <textarea id="qt" rows="3" placeholder="مثال: يوم ٧ سبتمبر كان عندي إذن"></textarea>
     <button class="full" onclick="sendQ('${esc(P.id)}')">إرسال</button>
-    <div class="ok" id="qOk"></div></div>`;
+    <div class="ok" id="qOk"></div>
+    <div id="myQ" style="margin-top:14px"></div></div>`;
+  myQueries();
 }
 
 window.etab = n => { if (n === 6) otMine(); [1,2,3,4,5,6].forEach(i => {
@@ -820,6 +822,21 @@ window.chpass = async () => {
     ? 'اقفل وادخل تاني وبعدين غيّره' : 'مشكلة: ' + e.code; }
 };
 
+async function myQueries(){
+  const box = $('myQ'); if (!box || !ME) return;
+  try {
+    const snap = await getDocs(query(collection(db, 'queries'), where('uid', '==', ME.uid)));
+    const list = []; snap.forEach(d => list.push(d.data()));
+    list.sort((a,b) => (b.at?.seconds || 0) - (a.at?.seconds || 0));
+    box.innerHTML = list.length ? `<h2 style="margin-top:6px">استفساراتي</h2>` + list.map(q => `
+      <div class="qitem"><div class="meta">${q.at?.seconds ? new Date(q.at.seconds*1000).toLocaleDateString('ar-EG') : ''}
+        — ${esc(q.status || '')}</div>
+        <div>${esc(q.text)}</div>
+        ${q.reply ? `<div style="margin-top:8px;padding:9px 11px;border-radius:8px;background:var(--green-soft)">
+          <b>رد مدير الفرع:</b> ${esc(q.reply)}</div>` : ''}</div>`).join('') : '';
+  } catch (e) { box.innerHTML = ''; }
+}
+
 window.sendQ = async period => {
   const t = $('qt').value.trim(); if (!t) return;
   try {
@@ -827,7 +844,7 @@ window.sendQ = async period => {
     const st = s.exists() ? s.data() : {};
     await addDoc(collection(db, 'queries'), { uid: ME.uid, code: st.code || '', name: st.name || '',
       period, text: t, at: serverTimestamp(), status: 'جديد' });
-    $('qt').value = ''; $('qOk').textContent = 'اتبعت لمدير الفرع.';
+    $('qt').value = ''; $('qOk').textContent = 'اتبعت لمدير الفرع.'; myQueries();
   } catch (e) { $('qOk').style.color = 'var(--warn)'; $('qOk').textContent = 'مبعتش: ' + e.code; }
 };
 
@@ -1547,11 +1564,21 @@ async function loadQ(){
       <div class="meta">${esc(q.name || '')} (${esc(q.code || '')}) — ${esc(q.period || '')}
         ${q.at?.seconds ? ' — ' + new Date(q.at.seconds*1000).toLocaleString('ar-EG') : ''}</div>
       <div>${esc(q.text)}</div>
-      <div style="margin-top:8px">${q.status === 'تم' ? '<span class="tag ok">تم</span>'
-        : `<button class="sm" onclick="closeQ('${q.id}')">علّمه كمتحل</button>`}</div></div>`).join('')
+      ${q.reply ? `<div style="margin-top:8px;padding:9px 11px;border-radius:8px;background:var(--green-soft)">
+        <b>ردك:</b> ${esc(q.reply)}</div>` : ''}
+      <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="sm" onclick="replyQ('${q.id}')">${q.reply ? 'تعديل الرد' : 'رد على الموظف'}</button>
+        ${q.status === 'تم' ? '<span class="tag ok" style="align-self:center">تم</span>'
+        : `<button class="sm ghost" onclick="closeQ('${q.id}')">علّمه كمتحل</button>`}</div></div>`).join('')
       : `<p class="sub">مفيش استفسارات.</p>`;
   } catch (e) { $('qBox').innerHTML = `<p class="err">مشكلة: ${e.code}</p>`; }
 }
+window.replyQ = async id => {
+  const t = prompt('اكتب ردك للموظف:'); if (t === null) return;
+  try { await updateDoc(doc(db, 'queries', id),
+    { reply: t.trim(), repliedAt: serverTimestamp(), status: 'تم الرد' }); loadQ(); }
+  catch (e) { alert('مشكلة: ' + (e.code || e.message)); }
+};
 window.closeQ = async id => { try { await updateDoc(doc(db, 'queries', id), { status: 'تم' }); loadQ(); } catch(e){} };
 </script>
 </body>
