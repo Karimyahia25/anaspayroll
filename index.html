@@ -30,7 +30,7 @@
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
 body{
   margin:0; background:var(--paper); color:var(--ink);
-  font-family:"IBM Plex Sans Arabic","Segoe UI",Tahoma,sans-serif;
+  font-family:"Alexandria","IBM Plex Sans Arabic","Segoe UI",sans-serif;
   font-size:15px; line-height:1.65; font-variant-numeric:tabular-nums;
   -webkit-font-smoothing:antialiased;
 }
@@ -99,7 +99,7 @@ button.sm{padding:6px 13px;font-size:13px}
   border-bottom:1px dotted var(--line)}
 .row .k,.row .v{position:relative;background:var(--card);padding-inline:4px}
 .row .k{color:var(--muted);font-size:13.5px}
-.row .v{font-weight:600;white-space:nowrap}
+.row .v{font-weight:600;white-space:nowrap;font-family:"IBM Plex Sans Arabic",sans-serif}
 .row.minus .v{color:var(--red)}
 .row.plus .v{color:var(--green)}
 .row.total{margin-top:8px;padding-top:12px;border-top:1.5px solid var(--ink)}
@@ -119,7 +119,7 @@ th{background:var(--green-soft);color:var(--green-deep);font-weight:600;font-siz
 td{border-top:1px solid var(--line)}
 tbody tr:nth-child(even) td,table tr:nth-child(even) td{background:color-mix(in srgb,var(--paper) 45%,transparent)}
 table tr:hover td{background:var(--green-soft)}
-td.num{font-variant-numeric:tabular-nums}
+td.num{font-variant-numeric:tabular-nums;font-family:"IBM Plex Sans Arabic",sans-serif}
 
 .tag{display:inline-block;padding:2px 9px;border-radius:14px;font-size:11.5px;font-weight:600}
 .tag.late{background:var(--red-soft);color:var(--red)}
@@ -165,7 +165,7 @@ code{background:var(--green-soft);color:var(--green);padding:2px 7px;border-radi
 .stat.clk:hover{border-color:var(--green)}
 .stat.clk:active{transform:translateY(1px)}
 .stat .sl{font-size:12px;color:var(--muted)}
-.stat .sv{font-size:21px;font-weight:600;letter-spacing:-.02em;line-height:1.3}
+.stat .sv{font-family:"IBM Plex Sans Arabic",sans-serif;font-size:21px;font-weight:600;letter-spacing:-.02em;line-height:1.3}
 .stat.hi .sv{color:var(--green-deep)}
 .stat .ss{font-size:11.5px;color:var(--muted)}
 
@@ -236,7 +236,7 @@ code{background:var(--green-soft);color:var(--green);padding:2px 7px;border-radi
 <div id="emp" class="hide"></div>
 <div id="adm" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-09-30-D</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-09-30-E</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -284,7 +284,7 @@ const PAY_MAP = {};
  ['أثر التأخير على الساعات','lateHrsVal'],['مرات انصراف مبكر','early'],['خصم الانصراف المبكر','earlyDed'],
  ['أيام غياب بدون إذن','absDays'],['جزاء الغياب','absPen'],['جزاءات إدارية','adminPen'],
  ['إجمالي الخصومات','totalDed'],['إجمالي الحوافز','bonus'],['مسحوبات آجلة','adv'],
- ['صافي المستحق','net'],['أيام محتاجة مراجعة','flags']].forEach(([a,k]) => PAY_MAP[norm(a)] = k);
+ ['صافي المستحق','net'],['أيام محتاجة مراجعة','flags'],['الراتب الأساسي','basic']].forEach(([a,k]) => PAY_MAP[norm(a)] = k);
 
 const DAY_MAP = {};
 [['التاريخ','date'],['كود الموظف','code'],['حالة اليوم','state'],['ميعاد الحضور المعتمد','tin'],
@@ -701,6 +701,7 @@ async function renderEmp(){
 
   let br = '';
   const R = (k, v, c) => `<div class="row ${c||''}"><span class="k">${esc(k)}</span><span class="v">${v}</span></div>`;
+  if (+d.basic) br += R('الراتب الأساسي', F(d.basic) + ' ج');
   br += R('ساعات العمل الفعلية', HN(d.hours) + ' ساعة');
   if (d.carried) br += R('ساعات مرحّلة من شهر سابق', HN(d.carried) + ' ساعة');
   br += R('معدل الساعة', F(d.hourly) + ' ج');
@@ -731,7 +732,7 @@ async function renderEmp(){
 
   const lt = days.filter(x => x.lateDed || x.earlyDed || x.exempt || x.late >= 16);
   let lrows = lt.map(x => `<tr><td>${esc(x.date)} ${esc(x.dow)}</td><td class="num">${esc(x.tin)}</td>
-    <td class="num">${esc(x.pin)}</td><td class="num">${x.late ? x.late + ' د' : '—'}</td>
+    <td class="num">${esc(x.pin)}</td><td class="num">${x.late ? Math.round(x.late) + ' د' : '—'}</td>
     <td class="num">${x.early ? x.early + ' د' : '—'}</td>
     <td>${x.exempt ? '<span class="tag ok">معفى</span>' :
         (x.pct ? `<span class="tag late">${x.pct >= 0.5 ? 'نص يوم' : 'ربع يوم'}</span>` : '—')}</td>
@@ -1167,8 +1168,8 @@ function tileRows(kind){
   const tbl = (head, body) => `<div class="scroll"><table><tr>${head.map(h => `<th>${esc(h)}</th>`).join('')}</tr>${body}</table></div>`;
   const sortD = (a, b) => (b.v || 0) - (a.v || 0);
 
-  if (kind === 'net' || kind === 'hours' || kind === 'bonusOnly' || kind === 'push' || kind === 'ded'){
-    const pick = { net:['الصافي','net'], hours:['الساعات','hours'],
+  if (kind === 'basic' || kind === 'net' || kind === 'hours' || kind === 'bonusOnly' || kind === 'push' || kind === 'ded'){
+    const pick = { basic:['الراتب الأساسي','basic'], net:['الصافي','net'], hours:['الساعات','hours'],
                    bonusOnly:['الحوافز','bonusOnly'], push:['عمولة البوشينج','pushAuto'],
                    ded:['إجمالي الخصومات','totalDed'] }[kind];
     const list = R.map(r => ({ n: r.name, c: r.code,
@@ -1186,7 +1187,7 @@ function tileRows(kind){
         المخصوم ${(r.q||0)+(r.half||0)}، الإجمالي <b>${F2(r.lateDed)} ج</b></td></tr>`;
       (r.days || []).filter(d => +d.lateDed).forEach(d => {
         body += `<tr><td>${esc(d.date)} ${esc(d.dow)}</td><td class="num">${esc(d.tin)}</td>
-          <td class="num">${esc(d.pin)}</td><td class="num">${d.late} د</td>
+          <td class="num">${esc(d.pin)}</td><td class="num">${Math.round(d.late)} د</td>
           <td class="num">${F2(d.lateDed)}</td></tr>`; });
     });
     return { title: 'أيام التأخير وخصمها', html: tbl(['اليوم','الميعاد','البصمة','التأخير','الخصم (ج)'], body) };
@@ -1328,8 +1329,8 @@ function payPanel(rows){
     ? `<div class="banner bad" style="margin-top:14px">الكشوف دي اتنشرت بنسخة قديمة من التطبيق قبل ربط عمولة البوشينج. روح لـ(نشر كشف جديد)، ارفع المرتبات + ملف المبيعات، وانشر تاني.</div>`
     : (noSales ? `<div class="banner" style="margin-top:14px">الكشوف دي اتنشرت من غير ملف المبيعات، فمفيش عمولة بوشينج فيها. انشر تاني بالملفين.</div>` : '');
   const tr = rows.map(r => `<tr style="cursor:pointer" onclick="drill('${esc(r.uid)}')">
-    <td>${esc(r.code)}</td><td>${esc(r.name)}</td><td class="num">${HN(r.hours)}</td>
-    <td class="num">${F(r.wage)}</td><td class="num">${r.lates||0}</td>
+    <td>${esc(r.code)}</td><td>${esc(r.name)}</td><td class="num">${F(r.basic)}</td>
+    <td class="num">${HN(r.hours)}</td><td class="num">${F(r.wage)}</td><td class="num">${r.lates||0}</td>
     <td class="num">${+r.lateDed ? F(r.lateDed) : '—'}</td>
     <td class="num">${+r.earlyDed ? F(r.earlyDed) : '—'}</td>
     <td class="num">${+r.absPen ? F(r.absPen) : '—'}</td>
@@ -1341,6 +1342,7 @@ function payPanel(rows){
     <td>${r.hidden ? '<span class="tag ok">غير منشور</span>' : (r.flags ? `<span class="tag late">${r.flags}</span>` : '—')}</td></tr>`).join('');
   return `
     ${statTiles([
+      {label:'إجمالي المرتبات الأساسية', value:F(sum('basic'))+' ج', sub:'قبل أي خصم أو حافز', k:'basic'},
       {label:'صافي المرتبات', value:F(sum('net'))+' ج', hi:true, sub:rows.length+' كشف', k:'net'},
       {label:'ساعات العمل', value:HN(sum('hours')), k:'hours'},
       {label:'الخصومات', value:F(sum('totalDed'))+' ج', k:'ded'},
@@ -1353,7 +1355,7 @@ function payPanel(rows){
     ${commBanner}
     <h2 style="margin-top:22px">الكشوف بالتفصيل</h2>
     <div class="scroll"><table>
-      <tr><th>الكود</th><th>الاسم</th><th>ساعات</th><th>أجر</th><th>عدد التأخيرات</th>
+      <tr><th>الكود</th><th>الاسم</th><th>الأساسي</th><th>ساعات</th><th>أجر</th><th>عدد التأخيرات</th>
       <th>خصم التأخير</th><th>انصراف مبكر</th><th>جزاء غياب</th><th>جزاءات إدارية</th><th>إجمالي الخصومات</th>
       <th>حوافز</th><th>عمولة بوشينج</th><th>مسحوبات</th><th>الصافي</th><th>الحالة</th></tr>
       ${tr || '<tr><td colspan="15">مفيش كشوف في الفترة دي</td></tr>'}</table></div>
@@ -1409,7 +1411,7 @@ window.drill = uid => {
   const days = r.days || [];
   const R = (k, v, c) => `<div class="row ${c||''}"><span class="k">${esc(k)}</span><span class="v">${v}</span></div>`;
 
-  let br = R('ساعات العمل الفعلية', HN(r.hours) + ' ساعة');
+  let br = (+r.basic ? R('الراتب الأساسي', F(r.basic) + ' ج') : '') + R('ساعات العمل الفعلية', HN(r.hours) + ' ساعة');
   if (+r.carried) br += R('ساعات مرحّلة', HN(r.carried) + ' ساعة');
   br += R('معدل الساعة', F(r.hourly) + ' ج');
   br += R('أجر الساعات', F(r.wage) + ' ج', 'plus');
@@ -1435,8 +1437,8 @@ window.drill = uid => {
   const lateRows = days.filter(d => +d.lateDed || +d.earlyDed || d.exempt || d.late >= 16);
   const lateHtml = lateRows.length ? tbl(['اليوم','الميعاد','البصمة','تأخير','انصراف مبكر','الحالة','الخصم'],
     lateRows.map(d => `<tr><td>${esc(d.date)} ${esc(d.dow)}</td><td class="num">${esc(d.tin)}</td>
-      <td class="num">${esc(d.pin)}</td><td class="num">${d.late ? d.late + ' د' : '—'}</td>
-      <td class="num">${d.early ? d.early + ' د' : '—'}</td>
+      <td class="num">${esc(d.pin)}</td><td class="num">${d.late ? Math.round(d.late) + ' د' : '—'}</td>
+      <td class="num">${d.early ? Math.round(d.early) + ' د' : '—'}</td>
       <td>${d.exempt ? '<span class="tag ok">معفى</span>' : (d.pct ? `<span class="tag late">${d.pct >= 0.5 ? 'نص يوم' : 'ربع يوم'}</span>` : '—')}</td>
       <td class="num">${(d.lateDed + d.earlyDed) ? F(d.lateDed + d.earlyDed) : '—'}</td></tr>`).join('')) : '';
   const daysHtml = tbl(['اليوم','الحالة','حضور','انصراف','ساعات','ملاحظة'],
@@ -1580,7 +1582,7 @@ function showPreview(){
     <p class="sub">الفترة: <b>${esc(P.label)}</b> — ${P.people.length} موظف — إجمالي الصافي: <b>${F(tot)} ج</b></p>
     ${w}
     <div class="scroll"><table>
-      <tr><th>الكود</th><th>الاسم</th><th>ساعات</th><th>أجر</th><th>تأخيرات</th><th>خصومات</th>
+      <tr><th>الكود</th><th>الاسم</th><th>الأساسي</th><th>ساعات</th><th>أجر</th><th>تأخيرات</th><th>خصومات</th>
       <th>صافي الإكسيل</th><th>عمولة بوشينج</th><th>الصافي النهائي</th><th>مراجعة</th></tr>
       ${rows}</table></div>
     <div class="note">الصافي النهائي = صافي الإكسيل + عمولة البوشينج المحسوبة تلقائياً من ملف المبيعات. ده اللي هيتنشر للموظف.</div>
