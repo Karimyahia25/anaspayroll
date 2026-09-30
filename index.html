@@ -211,7 +211,8 @@ code{background:var(--green-soft);color:var(--green);padding:2px 7px;border-radi
   <input id="p" type="password" autocomplete="off">
   <button class="full" onclick="doLogin()">دخول</button>
   <div class="err" id="loginErr"></div>
-  <div class="note">مدير الفرع بيدخل بكلمة <code>admin</code>، وصاحب الصيدلية أو المراجع المالي باسم حسابه بدل الكود.</div>
+  <div class="note">مدير الفرع بيدخل بكلمة <code>admin</code>، وصاحب الصيدلية بكلمة <code>owner</code>.
+  الجلسة بتتقفل لوحدها بعد ١٥ دقيقة من غير استخدام.</div>
 </div>
 
 <div id="emp" class="hide"></div>
@@ -564,6 +565,21 @@ function buildKPI(people, sales, items, W0){
   return { rows, tot, unmapped, bySeller, W };
 }
 
+/* ================= قفل الجلسة بعد سكون ================= */
+const IDLE_MIN = 15;
+let idleTimer = null;
+function idleReset(){
+  if (!ME) return;
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(async () => {
+    try { sessionStorage.setItem('idleOut', '1'); } catch(e){}
+    try { await signOut(auth); } catch(e){}
+  }, IDLE_MIN * 60 * 1000);
+}
+['click','keydown','touchstart','scroll','mousemove','focus'].forEach(ev =>
+  window.addEventListener(ev, idleReset, { passive: true }));
+document.addEventListener('visibilitychange', () => { if (!document.hidden) idleReset(); });
+
 /* ================= تسجيل الدخول ================= */
 let ME = null, IS_ADMIN = false, PARSED = null;
 
@@ -584,8 +600,15 @@ window.doOut = () => signOut(auth);
 onAuthStateChanged(auth, async user => {
   $('boot').classList.add('hide');
   ['login','emp','adm'].forEach(x => $(x).classList.add('hide'));
-  if (!user) { $('p').value = ''; $('login').classList.remove('hide'); return; }
-  ME = user;
+  if (!user) {
+    clearTimeout(idleTimer); $('p').value = '';
+    let msg = '';
+    try { if (sessionStorage.getItem('idleOut')) { msg = `اتقفلت الجلسة تلقائياً بعد ${IDLE_MIN} دقيقة من غير استخدام. ادخل تاني.`;
+      sessionStorage.removeItem('idleOut'); } } catch(e){}
+    $('loginErr').textContent = msg;
+    $('login').classList.remove('hide'); return;
+  }
+  ME = user; idleReset();
   ROLE = 'emp'; IS_ADMIN = false;
   try { if ((await getDoc(doc(db, 'admins', user.uid))).exists()) { ROLE = 'admin'; IS_ADMIN = true; } } catch(e){}
   if (ROLE === 'emp'){
@@ -680,8 +703,7 @@ async function renderEmp(){
     <button id="et4" onclick="etab(4)">حسابي</button>
   </div>
   <div id="ep1" class="card"><h2>مفردات المرتب</h2><div class="rows">${br}</div>
-    <div class="note">أجر الساعات = معدل الساعة × إجمالي الساعات الفعلية. معدل الساعة = سعر الساعة الشهري ÷ ٢٦.
-    ${d.lateHrsVal ? ' وقيمة الوقت الضائع بسبب التأخير ' + F(d.lateHrsVal) + ' ج، محسومة أصلاً ضمن الساعات.' : ''}</div></div>
+    <div class="note">أجر الساعات = معدل الساعة × إجمالي الساعات الفعلية. معدل الساعة = سعر الساعة الشهري ÷ ٢٦.</div></div>
   <div id="ep2" class="card hide"><h2>التأخيرات والانصراف المبكر</h2>
     <div class="rows">
       ${R('عدد التأخيرات', d.lates || 0)}${R('المعفاة (الأكبر)', d.exempt || 0)}
