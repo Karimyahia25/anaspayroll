@@ -236,7 +236,7 @@ code{background:var(--green-soft);color:var(--green);padding:2px 7px;border-radi
 <div id="emp" class="hide"></div>
 <div id="adm" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-09-30-E</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-09-30-F</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -281,7 +281,7 @@ const PAY_MAP = {};
 [['كود الموظف','code'],['اسم الموظف','name'],['سعر الساعة الشهري','rate'],['معدل الساعة الفعلي','hourly'],
  ['الساعات الفعلية','hours'],['ساعات مرحلة','carried'],['أجر الساعات','wage'],['عدد التأخيرات','lates'],
  ['المعفاة','exempt'],['المخصومة بربع يوم','q'],['المخصومة بنص يوم','half'],['خصم التأخير','lateDed'],
- ['أثر التأخير على الساعات','lateHrsVal'],['مرات انصراف مبكر','early'],['خصم الانصراف المبكر','earlyDed'],
+ ['أثر التأخير على الساعات','lateHrsVal'],
  ['أيام غياب بدون إذن','absDays'],['جزاء الغياب','absPen'],['جزاءات إدارية','adminPen'],
  ['إجمالي الخصومات','totalDed'],['إجمالي الحوافز','bonus'],['مسحوبات آجلة','adv'],
  ['صافي المستحق','net'],['أيام محتاجة مراجعة','flags'],['الراتب الأساسي','basic']].forEach(([a,k]) => PAY_MAP[norm(a)] = k);
@@ -711,7 +711,6 @@ async function renderEmp(){
   if (d.pushAuto) br += R('عمولة البوشينج', (d.pushAuto < 0 ? '− ' : '+ ') + F(Math.abs(d.pushAuto)) + ' ج',
     d.pushAuto < 0 ? 'minus' : 'plus');
   if (d.lateDed) br += R(`خصم التأخير (${(d.q||0)+(d.half||0)} مرة)`, '− ' + F(d.lateDed) + ' ج', 'minus');
-  if (d.earlyDed) br += R(`خصم الانصراف المبكر (${d.early||0} مرة)`, '− ' + F(d.earlyDed) + ' ج', 'minus');
   if (d.absPen) br += R(`جزاء غياب (${d.absDays||0} يوم)`, '− ' + F(d.absPen) + ' ج', 'minus');
   if (d.adminPen) br += R('جزاءات إدارية', '− ' + F(d.adminPen) + ' ج', 'minus');
   if (d.adv) br += R('مسحوبات آجلة', '− ' + F(d.adv) + ' ج', 'minus');
@@ -733,11 +732,10 @@ async function renderEmp(){
   const lt = days.filter(x => x.lateDed || x.earlyDed || x.exempt || x.late >= 16);
   let lrows = lt.map(x => `<tr><td>${esc(x.date)} ${esc(x.dow)}</td><td class="num">${esc(x.tin)}</td>
     <td class="num">${esc(x.pin)}</td><td class="num">${x.late ? Math.round(x.late) + ' د' : '—'}</td>
-    <td class="num">${x.early ? x.early + ' د' : '—'}</td>
     <td>${x.exempt ? '<span class="tag ok">معفى</span>' :
         (x.pct ? `<span class="tag late">${x.pct >= 0.5 ? 'نص يوم' : 'ربع يوم'}</span>` : '—')}</td>
     <td class="num">${(x.lateDed + x.earlyDed) ? F(x.lateDed + x.earlyDed) + ' ج' : '—'}</td></tr>`).join('');
-  if (!lrows) lrows = '<tr><td colspan="7">مفيش تأخيرات ولا انصراف مبكر — تمام</td></tr>';
+  if (!lrows) lrows = '<tr><td colspan="6">مفيش تأخيرات — تمام</td></tr>';
 
   const drows = days.map(x => `<tr><td>${esc(x.date)} ${esc(x.dow)}</td><td>${esc(x.state)}</td>
     <td class="num">${esc(x.pin) || '—'}</td><td class="num">${esc(x.pout) || '—'}</td>
@@ -768,10 +766,9 @@ async function renderEmp(){
     <div class="rows">
       ${R('عدد التأخيرات', d.lates || 0)}${R('المعفاة (الأكبر)', d.exempt || 0)}
       ${R('المخصومة بربع يوم', d.q || 0)}${R('المخصومة بنص يوم', d.half || 0)}
-      ${R('مرات الانصراف المبكر', d.early || 0)}
     </div>
     <div class="scroll" style="margin-top:12px"><table>
-      <tr><th>اليوم</th><th>الميعاد</th><th>البصمة</th><th>تأخير</th><th>انصراف مبكر</th><th>الحالة</th><th>الخصم</th></tr>
+      <tr><th>اليوم</th><th>الميعاد</th><th>البصمة</th><th>تأخير</th><th>الحالة</th><th>الخصم</th></tr>
       ${lrows}</table></div>
     <div class="note">التأخير من ١٦ دقيقة فأكثر بيتحسب. أكبر تأخيرين في أول ٦ تأخيرات في الشهر معفيين،
     الباقي ربع يوم، ومن التأخير السابع نص يوم.</div></div>
@@ -900,14 +897,14 @@ window.tileDetail = kind => {
     emp(['hours','wage','totalDed','bonus','adv','net'], 'net'));
   else if (kind === 'hours') box.innerHTML = T('ساعات العمل', ['الاسم','الساعات'], emp(['hours'], 'hours'));
   else if (kind === 'ded') box.innerHTML = T('الخصومات بالتفصيل',
-    ['الاسم','خصم التأخير','انصراف مبكر','جزاء غياب','جزاءات إدارية','الإجمالي'],
-    emp(['lateDed','earlyDed','absPen','adminPen','totalDed'], 'totalDed'));
+    ['الاسم','خصم التأخير','جزاء غياب','جزاءات إدارية','الإجمالي'],
+    emp(['lateDed','absPen','adminPen','totalDed'], 'totalDed'));
   else if (kind === 'late') box.innerHTML = T('أيام التأخير وخصمها',
     ['الاسم','اليوم','الميعاد','البصمة','دقائق','الحالة','الخصم (ج)'],
     R.flatMap(r => (r.days || []).filter(d => (+d.late >= 16) || +d.lateDed)
       .map(d => `<tr><td>${esc(r.name)}</td><td>${esc(d.date)} ${esc(d.dow)}</td>
         <td class="num">${esc(d.tin)}</td><td class="num">${esc(d.pin)}</td>
-        <td class="num">${d.late}</td>
+        <td class="num">${Math.round(d.late)}</td>
         <td>${d.exempt ? '<span class="tag ok">معفى</span>' : (d.pct ? `<span class="tag late">${d.pct >= .5 ? 'نص يوم' : 'ربع يوم'}</span>` : '—')}</td>
         <td class="num">${+d.lateDed ? F(d.lateDed) : '—'}</td></tr>`)).join(''));
   else if (kind === 'pen') box.innerHTML = T('الجزاءات الإدارية', ['الاسم','اليوم','النوع','السبب','القيمة (ج)'],
@@ -1332,7 +1329,6 @@ function payPanel(rows){
     <td>${esc(r.code)}</td><td>${esc(r.name)}</td><td class="num">${F(r.basic)}</td>
     <td class="num">${HN(r.hours)}</td><td class="num">${F(r.wage)}</td><td class="num">${r.lates||0}</td>
     <td class="num">${+r.lateDed ? F(r.lateDed) : '—'}</td>
-    <td class="num">${+r.earlyDed ? F(r.earlyDed) : '—'}</td>
     <td class="num">${+r.absPen ? F(r.absPen) : '—'}</td>
     <td class="num">${+r.adminPen ? F(r.adminPen) : '—'}</td>
     <td class="num">${F(r.totalDed)}</td><td class="num">${F((+r.bonus||0) - (+r.pushAuto||0))}</td>
@@ -1356,7 +1352,7 @@ function payPanel(rows){
     <h2 style="margin-top:22px">الكشوف بالتفصيل</h2>
     <div class="scroll"><table>
       <tr><th>الكود</th><th>الاسم</th><th>الأساسي</th><th>ساعات</th><th>أجر</th><th>عدد التأخيرات</th>
-      <th>خصم التأخير</th><th>انصراف مبكر</th><th>جزاء غياب</th><th>جزاءات إدارية</th><th>إجمالي الخصومات</th>
+      <th>خصم التأخير</th><th>جزاء غياب</th><th>جزاءات إدارية</th><th>إجمالي الخصومات</th>
       <th>حوافز</th><th>عمولة بوشينج</th><th>مسحوبات</th><th>الصافي</th><th>الحالة</th></tr>
       ${tr || '<tr><td colspan="15">مفيش كشوف في الفترة دي</td></tr>'}</table></div>
     <div class="note">اضغط على أي موظف تشوف تفاصيل أيامه. عمولة البوشينج محسوبة تلقائياً من ملف المبيعات وداخلة في الصافي.</div>
@@ -1419,7 +1415,6 @@ window.drill = uid => {
     x.value < 0 ? 'minus' : 'plus'));
   if (+r.pushAuto) br += R('عمولة البوشينج', '+ ' + F(r.pushAuto) + ' ج', 'plus');
   if (+r.lateDed) br += R(`خصم التأخير (${(r.q||0)+(r.half||0)} مرة)`, '− ' + F(r.lateDed) + ' ج', 'minus');
-  if (+r.earlyDed) br += R(`خصم الانصراف المبكر (${r.early||0} مرة)`, '− ' + F(r.earlyDed) + ' ج', 'minus');
   if (+r.absPen) br += R(`جزاء غياب (${r.absDays||0} يوم)`, '− ' + F(r.absPen) + ' ج', 'minus');
   if (+r.adminPen) br += R('جزاءات إدارية', '− ' + F(r.adminPen) + ' ج', 'minus');
   if (+r.adv) br += R('مسحوبات آجلة', '− ' + F(r.adv) + ' ج', 'minus');
@@ -1435,10 +1430,9 @@ window.drill = uid => {
       c[2] ? F(x[c[1]]) : esc(x[c[1]] || '')}</td>`).join('')}</tr>`).join(''));
 
   const lateRows = days.filter(d => +d.lateDed || +d.earlyDed || d.exempt || d.late >= 16);
-  const lateHtml = lateRows.length ? tbl(['اليوم','الميعاد','البصمة','تأخير','انصراف مبكر','الحالة','الخصم'],
+  const lateHtml = lateRows.length ? tbl(['اليوم','الميعاد','البصمة','تأخير','الحالة','الخصم'],
     lateRows.map(d => `<tr><td>${esc(d.date)} ${esc(d.dow)}</td><td class="num">${esc(d.tin)}</td>
       <td class="num">${esc(d.pin)}</td><td class="num">${d.late ? Math.round(d.late) + ' د' : '—'}</td>
-      <td class="num">${d.early ? Math.round(d.early) + ' د' : '—'}</td>
       <td>${d.exempt ? '<span class="tag ok">معفى</span>' : (d.pct ? `<span class="tag late">${d.pct >= 0.5 ? 'نص يوم' : 'ربع يوم'}</span>` : '—')}</td>
       <td class="num">${(d.lateDed + d.earlyDed) ? F(d.lateDed + d.earlyDed) : '—'}</td></tr>`).join('')) : '';
   const daysHtml = tbl(['اليوم','الحالة','حضور','انصراف','ساعات','ملاحظة'],
@@ -1481,13 +1475,12 @@ window.secTog = id => { const e = $(id); if (!e) return;
 window.exportDash = () => {
   const P = DASH.periods.find(p => p.id === DASH.period) || {};
   const head = ['الكود','الاسم','الوظيفة','سعر الساعة الشهري','معدل الساعة','الساعات الفعلية','ساعات مرحّلة',
-    'أجر الساعات','عدد التأخيرات','المعفاة','ربع يوم','نص يوم','خصم التأخير','مرات انصراف مبكر',
-    'خصم الانصراف المبكر','أيام غياب','جزاء الغياب','جزاءات إدارية','إجمالي الخصومات','إجمالي الحوافز',
+    'أجر الساعات','عدد التأخيرات','المعفاة','ربع يوم','نص يوم','خصم التأخير','أيام غياب','جزاء الغياب','جزاءات إدارية','إجمالي الخصومات','إجمالي الحوافز',
     'مسحوبات آجلة','عمولة البوشينج (تلقائي)','صافي المستحق','أيام محتاجة مراجعة',
     'عدد الفواتير','صافي المبيعات','نسبته من مبيعات الفرع','وسيط قيمة الفاتورة','مبيعات لكل ساعة',
     'نسبة تسجيل العميل','قيمة البوشينج','عمولة البوشينج','درجة التقييم'];
   const body = DASH.rows.map(r => [r.code, r.name, r.job||'', r.rate||0, r.hourly||0, r.hours||0, r.carried||0,
-    r.wage||0, r.lates||0, r.exempt||0, r.q||0, r.half||0, r.lateDed||0, r.early||0, r.earlyDed||0,
+    r.wage||0, r.lates||0, r.exempt||0, r.q||0, r.half||0, r.lateDed||0, 
     r.absDays||0, r.absPen||0, r.adminPen||0, r.totalDed||0, r.bonus||0, r.adv||0, r.pushAuto||0, r.net||0, r.flags||0,
     r.sales?.invoices||0, r.sales?.net||0, r.sales?.sharePct||0, r.sales?.medInv||0, r.sales?.perHour||0,
     r.sales?.custPct||0, r.sales?.pushValue||0, r.sales?.pushComm||0, r.sales?.score||'']);
