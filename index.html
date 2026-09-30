@@ -157,6 +157,13 @@ code{background:var(--green-soft);color:var(--green);padding:2px 7px;border-radi
 .stat{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:13px 14px;
   display:flex;flex-direction:column;gap:3px}
 .stat.hi{background:var(--green-soft);border-color:color-mix(in srgb,var(--green) 30%,transparent)}
+.stat.click{cursor:pointer;transition:border-color .15s,transform .06s}
+.stat.click:hover{border-color:var(--green)}
+.stat.click:active{transform:translateY(1px)}
+.stat.click .sl::after{content:" ⌄";color:var(--muted);font-size:11px}
+.stat.clk{cursor:pointer;transition:border-color .15s,transform .06s}
+.stat.clk:hover{border-color:var(--green)}
+.stat.clk:active{transform:translateY(1px)}
 .stat .sl{font-size:12px;color:var(--muted)}
 .stat .sv{font-family:"Readex Pro",sans-serif;font-size:22px;font-weight:600;letter-spacing:-.02em;line-height:1.25}
 .stat.hi .sv{color:var(--green-deep)}
@@ -852,10 +859,55 @@ window.sendQ = async period => {
 const PAL = ['#1F9B76','#2AAE86','#5FBF9E','#B0761F','#E0B25A','#7FA8C9','#9C7BB8'];
 
 function statTiles(items){
-  return `<div class="stats">${items.map(s => `<div class="stat${s.hi ? ' hi' : ''}">
-    <span class="sl">${esc(s.label)}</span><span class="sv">${s.value}</span>
+  return `<div class="stats">${items.map(s => `<div class="stat${s.hi ? ' hi' : ''}${s.key ? ' clk' : ''}"
+    ${s.key ? `onclick="tileDetail('${s.key}')" title="اضغط للتفاصيل"` : ''}>
+    <span class="sl">${esc(s.label)}${s.key ? ' ⌄' : ''}</span><span class="sv">${s.value}</span>
     ${s.sub ? `<span class="ss">${esc(s.sub)}</span>` : ''}</div>`).join('')}</div>`;
 }
+
+window.tileDetail = kind => {
+  const box = $('tileBox'); if (!box) return;
+  if (box.dataset.k === kind){ box.innerHTML = ''; box.dataset.k = ''; return; }
+  box.dataset.k = kind;
+  const R = DASH.rows, nm = u => (R.find(x => x.uid === u) || {}).name || '';
+  const T = (title, head, body) => `<div style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px">
+    <div class="hdr"><h2 style="margin:0">${esc(title)}</h2>
+      <button class="sm ghost" onclick="tileDetail('${kind}')">إغلاق</button></div>
+    <div class="scroll"><table><tr>${head.map(h => `<th>${esc(h)}</th>`).join('')}</tr>${body}</table></div></div>`;
+  const rowsOf = (key, cols, filter) => R.flatMap(r => (r[key] || [])
+    .filter(x => !filter || filter(x))
+    .map(x => `<tr><td>${esc(r.name)}</td>${cols.map(c => `<td${c[1] ? ' class="num"' : ' style="white-space:normal"'}>${
+      c[1] ? F(x[c[0]]) : esc(x[c[0]] || '')}</td>`).join('')}</tr>`)).join('');
+  const emp = (cols, sortKey) => [...R].sort((a,b) => (+b[sortKey]||0) - (+a[sortKey]||0))
+    .filter(r => +r[sortKey]).map(r => `<tr><td>${esc(r.name)}</td>${cols.map(c =>
+      `<td class="num">${F(r[c])}</td>`).join('')}</tr>`).join('');
+
+  if (kind === 'net') box.innerHTML = T('الصافي لكل موظف', ['الاسم','ساعات','أجر','خصومات','حوافز','مسحوبات','الصافي'],
+    emp(['hours','wage','totalDed','bonus','adv','net'], 'net'));
+  else if (kind === 'hours') box.innerHTML = T('ساعات العمل', ['الاسم','الساعات'], emp(['hours'], 'hours'));
+  else if (kind === 'ded') box.innerHTML = T('الخصومات بالتفصيل',
+    ['الاسم','خصم التأخير','انصراف مبكر','جزاء غياب','جزاءات إدارية','الإجمالي'],
+    emp(['lateDed','earlyDed','absPen','adminPen','totalDed'], 'totalDed'));
+  else if (kind === 'late') box.innerHTML = T('أيام التأخير وخصمها',
+    ['الاسم','اليوم','الميعاد','البصمة','دقائق','الحالة','الخصم (ج)'],
+    R.flatMap(r => (r.days || []).filter(d => (+d.late >= 16) || +d.lateDed)
+      .map(d => `<tr><td>${esc(r.name)}</td><td>${esc(d.date)} ${esc(d.dow)}</td>
+        <td class="num">${esc(d.tin)}</td><td class="num">${esc(d.pin)}</td>
+        <td class="num">${d.late}</td>
+        <td>${d.exempt ? '<span class="tag ok">معفى</span>' : (d.pct ? `<span class="tag late">${d.pct >= .5 ? 'نص يوم' : 'ربع يوم'}</span>` : '—')}</td>
+        <td class="num">${+d.lateDed ? F(d.lateDed) : '—'}</td></tr>`)).join(''));
+  else if (kind === 'pen') box.innerHTML = T('الجزاءات الإدارية', ['الاسم','اليوم','النوع','السبب','القيمة (ج)'],
+    rowsOf('penalties', [['date',0],['kind',0],['reason',0],['amount',1]]));
+  else if (kind === 'bon') box.innerHTML = T('الحوافز والمكافآت', ['الاسم','اليوم','البند','ملاحظة','القيمة (ج)'],
+    rowsOf('bonuses', [['date',0],['item',0],['reason',0],['amount',1]]));
+  else if (kind === 'adv') box.innerHTML = T('المسحوبات', ['الاسم','اليوم','البيان','ملاحظة','المبلغ (ج)'],
+    rowsOf('advances', [['date',0],['item',0],['reason',0],['amount',1]]));
+  else if (kind === 'comm') box.innerHTML = T('عمولة البوشينج', ['الاسم','قيمة البوشينج','العمولة'],
+    [...R].filter(r => +r.pushAuto).sort((a,b) => b.pushAuto - a.pushAuto)
+      .map(r => `<tr><td>${esc(r.name)}</td><td class="num">${F(r.sales ? r.sales.pushValue : 0)}</td>
+        <td class="num"><b>${F(r.pushAuto)}</b></td></tr>`).join(''));
+  box.scrollIntoView({ behavior:'smooth', block:'nearest' });
+};
 
 function barList(items, fmt){
   const mx = Math.max(1, ...items.map(i => Math.abs(i.value)));
@@ -1095,6 +1147,83 @@ window.pmNo = async id => { const r = prompt('سبب الرفض؟'); if (r === n
   try { await updateDoc(doc(db, 'permits', id), { status: 'مرفوض', rejectReason: r || '' }); pmAdmin(); }
   catch (e) { alert('مشكلة: ' + (e.code || e.message)); } };
 
+/* ================= تفاصيل البطاقات ================= */
+function tileRows(kind){
+  const R = DASH.rows, F2 = v => F(v || 0);
+  const has = f => R.filter(f);
+  const tbl = (head, body) => `<div class="scroll"><table><tr>${head.map(h => `<th>${esc(h)}</th>`).join('')}</tr>${body}</table></div>`;
+  const sortD = (a, b) => (b.v || 0) - (a.v || 0);
+
+  if (kind === 'net' || kind === 'hours' || kind === 'bonusOnly' || kind === 'push' || kind === 'ded'){
+    const pick = { net:['الصافي','net'], hours:['الساعات','hours'],
+                   bonusOnly:['الحوافز','bonusOnly'], push:['عمولة البوشينج','pushAuto'],
+                   ded:['إجمالي الخصومات','totalDed'] }[kind];
+    const list = R.map(r => ({ n: r.name, c: r.code,
+        v: kind === 'bonusOnly' ? (+r.bonus || 0) - (+r.pushAuto || 0) : (+r[pick[1]] || 0) }))
+      .filter(x => x.v).sort(sortD);
+    return { title: pick[0], html: tbl(['الكود','الاسم', pick[0]],
+      list.map(x => `<tr><td>${esc(x.c)}</td><td>${esc(x.n)}</td><td class="num"><b>${F2(x.v)}</b></td></tr>`).join('')
+      + `<tr><td></td><td><b>الإجمالي</b></td><td class="num"><b>${F2(list.reduce((a,x)=>a+x.v,0))}</b></td></tr>`) };
+  }
+
+  if (kind === 'late'){
+    let body = '';
+    has(r => +r.lateDed).sort((a,b) => b.lateDed - a.lateDed).forEach(r => {
+      body += `<tr style="background:var(--green-soft)"><td colspan="5"><b>${esc(r.name)}</b> — ${r.lates||0} تأخير،
+        المخصوم ${(r.q||0)+(r.half||0)}، الإجمالي <b>${F2(r.lateDed)} ج</b></td></tr>`;
+      (r.days || []).filter(d => +d.lateDed).forEach(d => {
+        body += `<tr><td>${esc(d.date)} ${esc(d.dow)}</td><td class="num">${esc(d.tin)}</td>
+          <td class="num">${esc(d.pin)}</td><td class="num">${d.late} د</td>
+          <td class="num">${F2(d.lateDed)}</td></tr>`; });
+    });
+    return { title: 'أيام التأخير وخصمها', html: tbl(['اليوم','الميعاد','البصمة','التأخير','الخصم (ج)'], body) };
+  }
+
+  if (kind === 'pen' || kind === 'adv' || kind === 'bon'){
+    const key = { pen:'penalties', adv:'advances', bon:'bonuses' }[kind];
+    const cols = { pen:['اليوم','السبب','القيمة (ج)'], adv:['اليوم','البيان','المبلغ (ج)'],
+                   bon:['اليوم','البند','القيمة (ج)'] }[kind];
+    const fld = { pen:'reason', adv:'item', bon:'item' }[kind];
+    let body = '', tot = 0;
+    R.forEach(r => {
+      const rows = (r[key] || []).filter(x => +x.amount);
+      if (!rows.length) return;
+      const sum = rows.reduce((a,x) => a + (+x.amount || 0), 0); tot += sum;
+      body += `<tr style="background:var(--green-soft)"><td colspan="3"><b>${esc(r.name)}</b> — ${F2(sum)} ج</td></tr>`;
+      rows.forEach(x => { body += `<tr><td>${esc(x.date)}</td>
+        <td style="white-space:normal">${esc(x[fld] || x.reason || '')}${x.kind ? ' — ' + esc(x.kind) : ''}</td>
+        <td class="num">${F2(x.amount)}</td></tr>`; });
+    });
+    if (!body) body = '<tr><td colspan="3">مفيش تفاصيل — انشر تاني بعد آخر تحديث للتطبيق عشان التفاصيل تتخزن.</td></tr>';
+    else body += `<tr><td></td><td><b>الإجمالي</b></td><td class="num"><b>${F2(tot)}</b></td></tr>`;
+    return { title: { pen:'الجزاءات الإدارية', adv:'المسحوبات', bon:'الحوافز' }[kind], html: tbl(cols, body) };
+  }
+
+  if (kind.startsWith('s_')){
+    const S = R.filter(r => r.sales);
+    const pick = { s_net:['المبيعات', r => +r.sales.net || 0], s_inv:['عدد الفواتير', r => r.sales.invoices || 0],
+      s_push:['قيمة البوشينج', r => +r.sales.pushValue || 0], s_comm:['عمولة البوشينج', r => +r.sales.pushComm || 0],
+      s_cust:['نسبة تسجيل العميل', r => +r.sales.custPct || 0] }[kind];
+    const pc = kind === 's_cust';
+    const list = S.map(r => ({ n: r.name, c: r.code, v: pick[1](r) })).filter(x => x.v).sort(sortD);
+    return { title: pick[0], html: tbl(['الكود','الاسم', pick[0]],
+      list.map(x => `<tr><td>${esc(x.c)}</td><td>${esc(x.n)}</td>
+        <td class="num"><b>${pc ? (x.v*100).toFixed(1) + '٪' : F2(x.v)}</b></td></tr>`).join('')) };
+  }
+  return null;
+}
+
+window.tileInfo = (kind, box) => {
+  const el = $(box); if (!el) return;
+  if (el.dataset.k === kind){ el.innerHTML = ''; el.dataset.k = ''; return; }
+  const r = tileRows(kind); if (!r) return;
+  el.dataset.k = kind;
+  el.innerHTML = `<div style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
+    <div class="hdr"><h2 style="margin:0">${esc(r.title)} — بالتفصيل</h2>
+      <button class="sm ghost" onclick="tileInfo('${kind}','${box}')">إغلاق</button></div>${r.html}</div>`;
+  el.scrollIntoView({ behavior:'smooth', block:'nearest' });
+};
+
 /* ================= لوحة الإدارة والاطلاع ================= */
 let ROLE = 'emp', DASH = { periods: [], staff: [], rows: [], period: null };
 
@@ -1199,13 +1328,15 @@ function payPanel(rows){
     <td>${r.hidden ? '<span class="tag ok">غير منشور</span>' : (r.flags ? `<span class="tag late">${r.flags}</span>` : '—')}</td></tr>`).join('');
   return `
     ${statTiles([
-      {label:'صافي المرتبات', value:F(sum('net'))+' ج', hi:true, sub:rows.length+' كشف'},
-      {label:'ساعات العمل', value:F(sum('hours'))},
-      {label:'الخصومات', value:F(sum('totalDed'))+' ج'},
-      {label:'الحوافز', value:F(sum('bonus') - comm)+' ج'},
-      {label:'عمولة البوشينج', value:F(comm)+' ج'},
-      {label:'جزاءات إدارية', value:F(sum('adminPen'))+' ج'},
-      {label:'المسحوبات', value:F(sum('adv'))+' ج'}])}
+      {label:'صافي المرتبات', value:F(sum('net'))+' ج', hi:true, sub:rows.length+' كشف', k:'net'},
+      {label:'ساعات العمل', value:F(sum('hours')), k:'hours'},
+      {label:'الخصومات', value:F(sum('totalDed'))+' ج', k:'ded'},
+      {label:'خصم التأخير', value:F(sum('lateDed'))+' ج', k:'late'},
+      {label:'الحوافز', value:F(sum('bonus') - comm)+' ج', k:'bon'},
+      {label:'عمولة البوشينج', value:F(comm)+' ج', k:'push'},
+      {label:'جزاءات إدارية', value:F(sum('adminPen'))+' ج', k:'pen'},
+      {label:'المسحوبات', value:F(sum('adv'))+' ج', k:'adv'}], 'tileBox')}
+    <div id="tileBox"></div>
     ${commBanner}
     <h2 style="margin-top:22px">الكشوف بالتفصيل</h2>
     <div class="scroll"><table>
@@ -1237,13 +1368,15 @@ function salesPanel(rows, P){
     ${statTiles([
       ...(P.branchAll ? [{label:'إجمالي مبيعات الفرع', value:F(P.branchAll)+' ج', hi:true,
          sub:(P.branchInvAll || '') + ' فاتورة — شامل الكل'}] : []),
-      {label:'مبيعات الفريق', value:F(net)+' ج', sub:inv+' فاتورة'},
+      {label:'مبيعات الفريق', value:F(net)+' ج', sub:inv+' فاتورة', k:'s_net'},
+      {label:'عدد الفواتير', value:inv, k:'s_inv'},
       {label:'متوسط الفاتورة', value:inv ? F(net/inv)+' ج' : '—'},
-      {label:'تسجيل اسم العميل', value:inv ? pc(cust/inv) : '—', sub:'من الفواتير'},
-      {label:'قيمة البوشينج', value:F(push)+' ج', sub: net ? pc(push/net)+' من المبيعات' : ''},
-      {label:'عمولة البوشينج', value:F(comm)+' ج'},
+      {label:'تسجيل اسم العميل', value:inv ? pc(cust/inv) : '—', sub:'من الفواتير', k:'s_cust'},
+      {label:'قيمة البوشينج', value:F(push)+' ج', sub: net ? pc(push/net)+' من المبيعات' : '', k:'s_push'},
+      {label:'عمولة البوشينج', value:F(comm)+' ج', k:'s_comm'},
       {label:'تكلفة الأجور', value:(P.branchAll || net) ? pc(payNet/(P.branchAll || net)) : '—',
-       sub: P.branchAll ? 'من إجمالي الفرع' : 'من مبيعات الفريق'}])}
+       sub: P.branchAll ? 'من إجمالي الفرع' : 'من مبيعات الفريق'}], 'tileBoxS')}
+    <div id="tileBoxS"></div>
     <div class="split" style="margin-top:20px">
       <div>${P.daily && P.daily.length ? `<h2>مبيعات الفرع يوم بيوم</h2>` +
         areaSVG(P.daily.map(d => ({ k: String(d.d).slice(5).split('-').reverse().join('/'), v: +d.net || 0 })), v => F(v)+' ج') : ''}</div>
