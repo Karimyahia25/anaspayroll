@@ -396,6 +396,32 @@ function parseBook(wb){
       }
     }
   }
+
+  /* ---- تفاصيل الجزاءات والحوافز والمسحوبات لكل موظف ---- */
+  const byCodeAll = {}; people.forEach(x => byCodeAll[String(x.code).trim()] = x);
+  const logSheet = (sheet, fields, key) => {
+    const gg = grid(sheet); if (!gg) return;
+    const hh = headerRow(gg, 'كود الموظف'); if (hh < 0) return;
+    const H = gg[hh], idx = {};
+    Object.entries(fields).forEach(([lbl, k]) => {
+      const j = H.findIndex(c => norm(c) === norm(lbl)); if (j >= 0) idx[k] = j; });
+    for (let i = hh + 1; i < gg.length; i++){
+      const r = gg[i] || []; const code = r[H.findIndex(c => norm(c) === norm('كود الموظف'))];
+      if (code == null || code === '') continue;
+      const per = byCodeAll[String(code).trim()]; if (!per) continue;
+      const dt = toD(r[H.findIndex(c => norm(c) === norm('التاريخ'))]);
+      if (ps && pe && dt && (dt < ps || dt > pe)) continue;
+      const o = { date: dt ? fmtDate(dt) : '' };
+      Object.entries(idx).forEach(([k, j]) => { o[k] = r[j]; });
+      const amt = +o.amount; if (!amt && !o.reason && !o.item) continue;
+      o.amount = isNaN(amt) ? 0 : Math.round(amt * 100) / 100;
+      (per[key] = per[key] || []).push(o);
+    }
+  };
+  logSheet('الجزاءات', { 'نوع الجزاء':'kind', 'السبب':'reason', 'القيمة النهائية':'amount', 'معتمد من':'by' }, 'penalties');
+  logSheet('الحوافز', { 'البند':'item', 'القيمة':'amount', 'ملاحظة / أساس الاستحقاق':'reason' }, 'bonuses');
+  logSheet('المسحوبات', { 'البيان':'item', 'المبلغ':'amount', 'ملاحظة':'reason' }, 'advances');
+
   return { period, label, people, ps, pe, W, RATES };
 }
 
@@ -671,6 +697,19 @@ async function renderEmp(){
   if (d.adv) br += R('مسحوبات آجلة', '− ' + F(d.adv) + ' ج', 'minus');
   br += R('صافي المستحق', F(d.net) + ' ج', 'total');
 
+  const logTbl = (rows, title, cols) => !rows || !rows.length ? '' :
+    `<h2 style="margin-top:20px">${esc(title)}</h2><div class="scroll"><table>
+      <tr>${cols.map(c => `<th>${esc(c[0])}</th>`).join('')}</tr>
+      ${rows.map(x => `<tr>${cols.map(c => `<td${c[2] ? ' class="num"' : ' style="white-space:normal"'}>${
+        c[2] ? F(x[c[1]]) : esc(x[c[1]] || '')}</td>`).join('')}</tr>`).join('')}</table></div>`;
+  const detail =
+    logTbl(d.penalties, 'تفاصيل الجزاءات الإدارية',
+           [['اليوم','date'],['النوع','kind'],['السبب','reason'],['القيمة (ج)','amount',1]]) +
+    logTbl(d.bonuses, 'تفاصيل الحوافز والمكافآت',
+           [['اليوم','date'],['البند','item'],['ملاحظة','reason'],['القيمة (ج)','amount',1]]) +
+    logTbl(d.advances, 'تفاصيل المسحوبات',
+           [['اليوم','date'],['البيان','item'],['ملاحظة','reason'],['المبلغ (ج)','amount',1]]);
+
   const lt = days.filter(x => x.lateDed || x.earlyDed || x.exempt || x.late >= 16);
   let lrows = lt.map(x => `<tr><td>${esc(x.date)} ${esc(x.dow)}</td><td class="num">${esc(x.tin)}</td>
     <td class="num">${esc(x.pin)}</td><td class="num">${x.late ? x.late + ' د' : '—'}</td>
@@ -703,6 +742,7 @@ async function renderEmp(){
     <button id="et4" onclick="etab(4)">حسابي</button>
   </div>
   <div id="ep1" class="card"><h2>مفردات المرتب</h2><div class="rows">${br}</div>
+    ${detail}
     <div class="note">أجر الساعات = معدل الساعة × إجمالي الساعات الفعلية. معدل الساعة = سعر الساعة الشهري ÷ ٢٦.</div></div>
   <div id="ep2" class="card hide"><h2>التأخيرات والانصراف المبكر</h2>
     <div class="rows">
