@@ -236,7 +236,7 @@ code{background:var(--green-soft);color:var(--green);padding:2px 7px;border-radi
 <div id="emp" class="hide"></div>
 <div id="adm" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-09-30-F</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-01-A</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -798,7 +798,7 @@ async function renderEmp(){
     <p class="sub">الوقت الإضافي بيتقدم على يوم فات. الإذن والأجازة ينفعوا قبل أو بعد.</p>
     <label>نوع الطلب</label>
     <select id="rqKind" onchange="reqKind()">
-      <option>وقت إضافي</option><option>إذن تأخير صباحي</option><option>إذن انصراف مبكر</option>
+      <option>وقت إضافي</option><option>إذن تأخير صباحي</option>
       <option>أجازة استثنائية</option></select>
     <label>التاريخ (أول يوم)</label><input id="otDate" type="date">
     <div id="rowHours"><label>عدد الساعات</label>
@@ -1083,7 +1083,7 @@ window.otNo = async id => {
 };
 
 /* ================= الأذونات ================= */
-const PM_KINDS = ['إذن تأخير صباحي', 'إذن انصراف مبكر'];
+const PM_KINDS = ['إذن تأخير صباحي'];
 const pmTag = st => st === 'معتمد' ? '<span class="tag ok">معتمد</span>'
   : st === 'مرفوض' ? '<span class="tag late">مرفوض</span>' : '<span class="tag">قيد المراجعة</span>';
 
