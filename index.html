@@ -284,6 +284,41 @@ th{background:color-mix(in srgb,var(--paper) 70%,var(--card));color:var(--muted)
 }
 #login{border-radius:24px;max-width:440px;margin:6vh auto 14px}
 #login>h1,#login>.sub{background:linear-gradient(135deg,#0F2C45 0%,#0B8577 70%,#2DD4BF 130%)}
+
+/* ===== محفظة الكروت (Paylette) ===== */
+.wallet{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;
+  margin:18px calc(var(--pad) * -1) 0;padding:6px calc(var(--pad) + 2px) 14px;scroll-padding-inline:calc(var(--pad) + 2px)}
+.wallet::-webkit-scrollbar{display:none}
+.wcard{flex:0 0 74%;max-width:300px;scroll-snap-align:center;position:relative;overflow:hidden;cursor:pointer;
+  border-radius:24px;padding:20px 20px 18px;min-height:150px;color:#fff;display:flex;flex-direction:column;gap:4px;
+  transform:scale(.92);opacity:.72;transition:transform .35s cubic-bezier(.2,.8,.2,1),opacity .35s,box-shadow .35s;
+  box-shadow:0 14px 26px -18px rgba(15,27,45,.6)}
+.wcard.act{transform:scale(1);opacity:1;box-shadow:0 26px 40px -20px rgba(15,27,45,.7)}
+.wcard::after{content:"";position:absolute;width:150px;height:150px;border-radius:50%;background:rgba(255,255,255,.14);
+  inset-inline-end:-40px;top:-60px;pointer-events:none}
+.wcard .wt{font-size:13px;opacity:.85;position:relative}
+.wcard .wv{font-family:Alexandria,sans-serif;font-size:32px;line-height:1.25;margin-top:auto;position:relative;letter-spacing:-.02em}
+.wcard .ws{font-size:12px;opacity:.8;position:relative}
+.wcard.c1{background:linear-gradient(135deg,#0F2C45,#0B8577 62%,#2DD4BF 125%)}
+.wcard.c2{background:linear-gradient(135deg,#2B1B7A,#5B3DF0 70%,#8B7CFF)}
+.wcard.c3{background:linear-gradient(135deg,#7A3A00,#E8860C 70%,#FFC83D);color:#fff}
+.wcard.c4{background:linear-gradient(135deg,#7A1747,#D63B86 70%,#FF7DB5)}
+.wcard.c5{background:linear-gradient(135deg,#0B3F7A,#1E7FE0 70%,#59B6FF)}
+.wdots{display:flex;gap:6px;justify-content:center;margin-top:-2px}
+.wdots i{width:6px;height:6px;border-radius:99px;background:var(--line);transition:width .3s,background .3s}
+.wdots i.on{width:20px;background:var(--green)}
+@media (min-width:900px){ .wcard{flex-basis:260px} }
+
+/* أزرار بتوهج + كروت الأرقام الملونة (People Connect) */
+button:not(.ghost):not(.secH):not(.tabs button){background:linear-gradient(135deg,var(--green),#12B5A0);
+  box-shadow:0 8px 18px -10px color-mix(in srgb,var(--green) 80%,transparent)}
+button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);transform:translateY(-1px)}
+.stat::before{content:"";width:24px;height:24px;border-radius:8px;background:var(--tile,#FFC83D);margin-bottom:6px;
+  box-shadow:0 6px 12px -6px var(--tile,#FFC83D)}
+.stat:nth-child(6n+1){--tile:#FFC83D}.stat:nth-child(6n+2){--tile:#2ED08B}.stat:nth-child(6n+3){--tile:#3B9BFF}
+.stat:nth-child(6n+4){--tile:#FF5A5F}.stat:nth-child(6n+5){--tile:#FF9A3D}.stat:nth-child(6n){--tile:#8B7CFF}
+.slide{animation-name:slideup}
+@keyframes slideup{from{opacity:0;transform:translate(var(--sx,0),22px) scale(.985)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation:none!important;transition:none!important}
 }
@@ -308,7 +343,7 @@ th{background:color-mix(in srgb,var(--paper) 70%,var(--card));color:var(--muted)
 <div id="emp" class="hide"></div>
 <div id="adm" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-01-B</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-01-C</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -818,8 +853,14 @@ async function renderEmp(){
   <div class="card">
     <div class="hdr"><div><h1>${esc(d.name)}</h1><p class="sub">${esc(d.job || '')}</p></div>
       <button class="ghost sm" onclick="doOut()">خروج</button></div>
-    <div class="net"><div class="l">صافي المستحق</div><div class="v">${F(d.net)} ج</div>
-      <div class="l">${esc(P.label || P.id)}</div></div>
+    <div class="wallet" id="wallet">
+      <div class="wcard c1" data-go="1"><span class="wt">صافي المستحق</span><b class="wv">${F(d.net)} ج</b><span class="ws">${esc(P.label || P.id)}</span></div>
+      <div class="wcard c2" data-go="1"><span class="wt">أجر الساعات</span><b class="wv">${F(d.wage)} ج</b><span class="ws">${HN(d.hours)} ساعة × ${F(d.hourly)} ج</span></div>
+      <div class="wcard c3" data-go="2"><span class="wt">التأخيرات</span><b class="wv">${d.lates || 0}</b><span class="ws">${d.lateDed ? 'خصم ' + F(d.lateDed) + ' ج' : 'مفيش خصم'}</span></div>
+      <div class="wcard c4" data-go="3"><span class="wt">أيام الشهر</span><b class="wv">${days.length}</b><span class="ws">اضغط لتفاصيل كل يوم</span></div>
+      ${d.sales ? `<div class="wcard c5" data-go="5"><span class="wt">مبيعاتي</span><b class="wv">${F(d.sales.net)} ج</b><span class="ws">${d.sales.invoices} فاتورة</span></div>` : ''}
+    </div>
+    <div class="wdots" id="wdots"></div>
     ${d.flags ? `<div class="banner">فيه ${d.flags} يوم لسه تحت المراجعة ومش داخل في الحساب.</div>` : ''}
     ${!d.rate ? `<div class="banner bad">سعر الساعة لسه مش متسجل — المبالغ ناقصة. كلّم مدير الفرع.</div>` : ''}
   </div>
@@ -1864,10 +1905,30 @@ document.addEventListener('click', e => {
     b.scrollIntoView({inline:'center', block:'nearest', behavior:'smooth'});
   }, 0);
 }, true);
+
+// محفظة الكروت: الكارت اللي في النص يكبر، النقط بتتحدث، والضغط بيفتح التبويب
+window.walletInit = () => {
+  const w = document.getElementById('wallet'); if (!w) return;
+  const cards = [...w.children], dots = document.getElementById('wdots');
+  dots.innerHTML = cards.map(() => '<i></i>').join('');
+  const upd = () => { const c = w.getBoundingClientRect(); const mid = c.left + c.width / 2;
+    let best = 0, bd = 1e9;
+    cards.forEach((k, i) => { const r = k.getBoundingClientRect(), d = Math.abs(r.left + r.width / 2 - mid); if (d < bd){ bd = d; best = i; } });
+    cards.forEach((k, i) => k.classList.toggle('act', i === best));
+    [...dots.children].forEach((x, i) => x.classList.toggle('on', i === best)); };
+  w.addEventListener('scroll', () => requestAnimationFrame(upd), {passive:true});
+  cards.forEach((k, i) => k.addEventListener('click', () => {
+    if (!k.classList.contains('act')){ k.scrollIntoView({inline:'center', block:'nearest', behavior:'smooth'}); return; }
+    const b = document.getElementById('et' + k.dataset.go); if (b){ b.click();
+      setTimeout(() => document.getElementById('ep' + k.dataset.go)?.scrollIntoView({behavior:'smooth', block:'start'}), 60); } }));
+  cards[0].scrollIntoView({inline:'center', block:'nearest'}); upd();
+};
+new MutationObserver(() => { const w = document.getElementById('wallet'); if (w && !w.dataset.on){ w.dataset.on = 1; walletInit(); } })
+  .observe(document.body, {childList:true, subtree:true});
 let sx = 0, sy = 0, skip = false;
 document.addEventListener('touchstart', e => {
   const t = e.touches[0]; sx = t.clientX; sy = t.clientY;
-  skip = !!e.target.closest('.scroll,table,input,select,textarea,.tabs');
+  skip = !!e.target.closest('.scroll,table,input,select,textarea,.tabs,.wallet');
 }, {passive:true});
 document.addEventListener('touchend', e => {
   if (skip) return;
