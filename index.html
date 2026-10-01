@@ -8,22 +8,22 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Alexandria:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{
-  --paper:#EFF4F1; --card:#FFFFFF; --ink:#12201B; --muted:#5F7369; --line:#E0E9E4;
-  --green:#1F9B76; --green-deep:#15805F; --green-soft:#EDF7F2;
+  --paper:#EBF1F5; --card:#FFFFFF; --ink:#0F1B2D; --muted:#66768A; --line:#E4EBF2;
+  --green:#0B8577; --green-deep:#0A6B60; --green-soft:#E6F6F3; --mint:#2DD4BF; --navy:#0F1B2D; --on-green:#fff;
   --amber:#B0761F; --amber-soft:#FAF1DF; --red:#A32E1E; --red-soft:#FBE9E5;
   --shadow:0 1px 2px rgba(18,32,27,.05), 0 8px 24px -16px rgba(18,32,27,.28);
   padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
   box-sizing:border-box;
 }
 @media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
-  --paper:#0D1512; --card:#15201B; --ink:#E7EFE9; --muted:#8FA79A; --line:#26342D;
-  --green:#4FC79B; --green-deep:#8FE3C0; --green-soft:#123024;
+  --paper:#0B1220; --card:#131C2E; --ink:#E7EEF7; --muted:#8FA1B8; --line:#233047;
+  --green:#3DDBC4; --green-deep:#8FEDDD; --green-soft:#0F2B33; --navy:#070D18; --on-green:#042019; --mint:#2DD4BF;
   --amber:#E0B25A; --amber-soft:#2B2413; --red:#FF9483; --red-soft:#331C18;
   --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px -20px rgba(0,0,0,.8);
 }}
 :root[data-theme="dark"]{
-  --paper:#0D1512; --card:#15201B; --ink:#E7EFE9; --muted:#8FA79A; --line:#26342D;
-  --green:#4FC79B; --green-deep:#8FE3C0; --green-soft:#123024;
+  --paper:#0B1220; --card:#131C2E; --ink:#E7EEF7; --muted:#8FA1B8; --line:#233047;
+  --green:#3DDBC4; --green-deep:#8FEDDD; --green-soft:#0F2B33; --navy:#070D18; --on-green:#042019; --mint:#2DD4BF;
   --amber:#E0B25A; --amber-soft:#2B2413; --red:#FF9483; --red-soft:#331C18;
 }
 *{box-sizing:border-box}
@@ -61,7 +61,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--green);
   box-shadow:0 0 0 3px color-mix(in srgb,var(--green) 18%,transparent)}
 :focus-visible{outline:2px solid var(--green);outline-offset:2px}
 
-button{padding:11px 18px;border:0;border-radius:8px;background:var(--green);color:#fff;
+button{padding:11px 18px;border:0;border-radius:8px;background:var(--green);color:var(--on-green);
   font-family:inherit;font-size:14.5px;font-weight:600;cursor:pointer;
   transition:background .15s,transform .06s}
 button:hover{background:var(--green-deep)}
@@ -210,6 +210,80 @@ code{background:var(--green-soft);color:var(--green);padding:2px 7px;border-radi
   .net .v{font-size:32px}
   h1{font-size:19px}
 }
+
+/* ===== ريفريش التصميم (أكتوبر) — سايد بار + كروت مدورة + سلايد ===== */
+body{background:radial-gradient(1100px 420px at 85% -80px,color-mix(in srgb,var(--mint) 22%,transparent),transparent 70%),
+  radial-gradient(900px 380px at 5% -60px,color-mix(in srgb,#8B7CFF 14%,transparent),transparent 70%),var(--paper);
+  background-attachment:fixed}
+.card{border-radius:20px;border-color:transparent;padding:calc(var(--pad) + 2px);
+  box-shadow:0 1px 2px rgba(15,27,45,.04),0 14px 34px -22px rgba(15,27,45,.28);
+  animation:rise .45s cubic-bezier(.2,.7,.3,1) both}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+h1{font-size:22px}
+h2{color:var(--ink)}
+h2::before{width:8px;height:8px;border-radius:50%;background:var(--mint);box-shadow:0 0 0 4px color-mix(in srgb,var(--mint) 25%,transparent)}
+button{border-radius:999px;padding:11px 22px}
+button.ghost{border-radius:999px;background:var(--card)}
+input,select,textarea{border-radius:12px;background:color-mix(in srgb,var(--paper) 55%,var(--card))}
+.banner{border-radius:14px}
+.scroll{border-radius:14px}
+th{background:color-mix(in srgb,var(--paper) 70%,var(--card));color:var(--muted)}
+
+/* بطاقة الصافي: كارت محفظة */
+.net{border:0;border-radius:22px;padding:26px 22px 22px;color:#fff;text-align:start;overflow:hidden;
+  background:linear-gradient(135deg,#0F2C45 0%,#0B8577 58%,#2DD4BF 120%);
+  box-shadow:0 22px 40px -22px rgba(11,133,119,.7)}
+.net::before,.net::after{content:"";position:absolute;border-radius:50%;pointer-events:none;
+  top:auto;bottom:auto;inset-inline-start:auto;background:rgba(255,255,255,.1)}
+.net::before{width:190px;height:190px;inset-inline-end:-50px;top:-70px}
+.net::after{width:120px;height:120px;inset-inline-end:60px;bottom:-60px;background:rgba(255,255,255,.08)}
+.net .v{color:#fff;font-size:40px;position:relative;animation:pop .7s cubic-bezier(.2,.9,.3,1.2) both}
+.net .l{color:rgba(255,255,255,.82);position:relative}
+@keyframes pop{from{opacity:0;transform:scale(.85) translateY(8px)}to{opacity:1;transform:none}}
+
+/* كروت الأرقام */
+.stat{border:0;border-radius:18px;background:var(--card);
+  box-shadow:0 1px 2px rgba(15,27,45,.05),0 10px 24px -18px rgba(15,27,45,.35);
+  transition:transform .2s,box-shadow .2s}
+.stat:hover{transform:translateY(-3px);box-shadow:0 16px 30px -18px rgba(15,27,45,.4)}
+.stat.hi{background:linear-gradient(135deg,var(--green-soft),color-mix(in srgb,var(--mint) 20%,var(--card)))}
+.bar-track{height:10px;border-radius:6px}
+
+/* التبويبات: أقراص */
+.tabs{border:0;gap:6px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding:2px 2px 6px;margin-bottom:8px}
+.tabs::-webkit-scrollbar{display:none}
+.tabs button{flex:0 0 auto;border-radius:999px;padding:9px 18px;background:var(--card);color:var(--muted);
+  box-shadow:0 1px 2px rgba(15,27,45,.06);transition:background .2s,color .2s,transform .2s}
+.tabs button::after{display:none}
+.tabs button:hover{background:var(--green-soft);color:var(--green)}
+.tabs button.on{background:var(--navy);color:#fff;transform:translateY(-1px)}
+.tabs button.on:hover{background:var(--navy);color:#fff}
+
+/* سلايد بين التبويبات */
+.slide{animation:slidein .38s cubic-bezier(.2,.8,.2,1) both}
+@keyframes slidein{from{opacity:0;transform:translateX(var(--sx,40px))}to{opacity:1;transform:none}}
+
+/* الكمبيوتر: سايد بار غامق */
+@media (min-width:900px){
+  .wrap{max-width:1180px;padding-top:28px}
+  #emp:not(.hide),#adm:not(.hide){display:grid;grid-template-columns:232px minmax(0,1fr);column-gap:22px;align-items:start}
+  #emp>*,#adm>*{grid-column:2}
+  #emp>.tabs,#adm>.tabs{grid-column:1;grid-row:1/span 30;position:sticky;top:20px;flex-direction:column;
+    overflow:visible;background:var(--navy);border-radius:22px;padding:18px 12px;gap:4px;margin:0;
+    box-shadow:0 24px 40px -26px rgba(15,27,45,.8)}
+  #emp>.tabs::before,#adm>.tabs::before{content:"نحيلة · المرتبات";color:#fff;font-weight:700;font-size:15px;
+    padding:6px 12px 14px;font-family:Alexandria,sans-serif}
+  .tabs button{background:transparent;color:rgba(255,255,255,.66);box-shadow:none;border-radius:14px;
+    text-align:start;padding:12px 14px}
+  .tabs button:hover{background:rgba(255,255,255,.08);color:#fff}
+  .tabs button.on,.tabs button.on:hover{background:linear-gradient(135deg,#0B8577,#2DD4BF);color:#04201B;transform:none;font-weight:700}
+}
+@media (max-width:899px){
+  .tabs{position:sticky;top:0;z-index:5;margin-inline:-12px;padding:8px 12px;
+    background:color-mix(in srgb,var(--paper) 88%,transparent);backdrop-filter:blur(10px)}
+}
+#login{border-radius:24px;max-width:440px;margin:6vh auto 14px}
+#login>h1,#login>.sub{background:linear-gradient(135deg,#0F2C45 0%,#0B8577 70%,#2DD4BF 130%)}
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation:none!important;transition:none!important}
 }
@@ -236,7 +310,7 @@ code{background:var(--green-soft);color:var(--green);padding:2px 7px;border-radi
 <div id="emp" class="hide"></div>
 <div id="adm" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-01-A</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-01-B</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -1777,6 +1851,35 @@ window.replyQ = async id => {
   catch (e) { alert('مشكلة: ' + (e.code || e.message)); }
 };
 window.closeQ = async id => { try { await updateDoc(doc(db, 'queries', id), { status: 'تم' }); loadQ(); } catch(e){} };
+</script>
+<script type="module">
+// سلايد بين التبويبات + سحب بالصباع (تجميل فقط — مفيش منطق حسابات هنا)
+document.addEventListener('click', e => {
+  const b = e.target.closest('.tabs button'); if (!b) return;
+  const tabs = [...b.parentNode.children].filter(x => x.tagName === 'BUTTON');
+  const prev = tabs.findIndex(x => x.classList.contains('on')), nxt = tabs.indexOf(b);
+  if (prev === nxt) return;
+  setTimeout(() => {
+    const p = document.getElementById(b.id.replace(/^(e|a)t/, '$1p'));
+    if (p){ p.style.setProperty('--sx', (nxt > prev ? -1 : 1) * 48 + 'px');
+      p.classList.remove('slide'); void p.offsetWidth; p.classList.add('slide'); }
+    b.scrollIntoView({inline:'center', block:'nearest', behavior:'smooth'});
+  }, 0);
+}, true);
+let sx = 0, sy = 0, skip = false;
+document.addEventListener('touchstart', e => {
+  const t = e.touches[0]; sx = t.clientX; sy = t.clientY;
+  skip = !!e.target.closest('.scroll,table,input,select,textarea,.tabs');
+}, {passive:true});
+document.addEventListener('touchend', e => {
+  if (skip) return;
+  const t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy;
+  if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 2) return;
+  const root = [...document.querySelectorAll('#emp,#adm')].find(r => !r.classList.contains('hide')); if (!root) return;
+  const tabs = [...root.querySelectorAll('.tabs button')];
+  const i = tabs.findIndex(x => x.classList.contains('on')), j = i + (dx < 0 ? 1 : -1);
+  if (tabs[j]) tabs[j].click();
+}, {passive:true});
 </script>
 </body>
 </html>
