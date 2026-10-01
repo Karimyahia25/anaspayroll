@@ -343,7 +343,7 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="emp" class="hide"></div>
 <div id="adm" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-01-C</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-01-E</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -981,6 +981,10 @@ window.sendQ = async period => {
 /* ================= رسومات بسيطة بدون مكتبات ================= */
 const PAL = ['#1F9B76','#2AAE86','#5FBF9E','#B0761F','#E0B25A','#7FA8C9','#9C7BB8'];
 
+// موظفين بيقبضوا أسبوعي: بيظهروا في الجدول بس، ومش داخلين في إجماليات المرتبات
+const WEEKLY = new Set(['85']);
+const inTotals = r => !WEEKLY.has(String(r.code));
+
 function statTiles(items, box){
   const B = box || 'tileBox';
   return `<div class="stats">${items.map(s => { const k = s.k || s.key; return `<div class="stat${s.hi ? ' hi' : ''}${k ? ' clk' : ''}"
@@ -993,7 +997,7 @@ window.tileDetail = kind => {
   const box = $('tileBox'); if (!box) return;
   if (box.dataset.k === kind){ box.innerHTML = ''; box.dataset.k = ''; return; }
   box.dataset.k = kind;
-  const R = DASH.rows, nm = u => (R.find(x => x.uid === u) || {}).name || '';
+  const R = DASH.rows.filter(inTotals), nm = u => (R.find(x => x.uid === u) || {}).name || '';
   const T = (title, head, body) => `<div style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px">
     <div class="hdr"><h2 style="margin:0">${esc(title)}</h2>
       <button class="sm ghost" onclick="tileDetail('${kind}')">إغلاق</button></div>
@@ -1431,7 +1435,8 @@ async function loadPeriod(pid){
 }
 
 function payPanel(rows){
-  const sum = k => rows.reduce((a,r) => a + (+r[k] || 0), 0);
+  const tot = rows.filter(inTotals), weekly = rows.filter(r => !inTotals(r));
+  const sum = k => tot.reduce((a,r) => a + (+r[k] || 0), 0);
   const comm = sum('pushAuto');
   const oldPub = rows.length && rows.every(r => r.pushAuto === undefined);
   const noSales = !oldPub && rows.length && rows.every(r => !r.sales);
@@ -1452,7 +1457,7 @@ function payPanel(rows){
   return `
     ${statTiles([
       {label:'إجمالي المرتبات الأساسية', value:F(sum('basic'))+' ج', sub:'قبل أي خصم أو حافز', k:'basic'},
-      {label:'صافي المرتبات', value:F(sum('net'))+' ج', hi:true, sub:rows.length+' كشف', k:'net'},
+      {label:'صافي المرتبات', value:F(sum('net'))+' ج', hi:true, sub:tot.length+' كشف', k:'net'},
       {label:'ساعات العمل', value:HN(sum('hours')), k:'hours'},
       {label:'الخصومات', value:F(sum('totalDed'))+' ج', k:'ded'},
       {label:'خصم التأخير', value:F(sum('lateDed'))+' ج', k:'late'},
@@ -1461,6 +1466,7 @@ function payPanel(rows){
       {label:'جزاءات إدارية', value:F(sum('adminPen'))+' ج', k:'pen'},
       {label:'المسحوبات', value:F(sum('adv'))+' ج', k:'adv'}], 'tileBox')}
     <div id="tileBox"></div>
+    ${weekly.length ? `<div class="note" style="margin-top:10px;padding-top:0;border:0">الإجماليات من غير ${weekly.map(r => esc(r.name)).join('، ')} (بيقبض أسبوعي) — ظاهر في الجدول تحت بس.</div>` : ''}
     ${commBanner}
     <h2 style="margin-top:22px">الكشوف بالتفصيل</h2>
     <div class="scroll"><table>
@@ -1478,7 +1484,7 @@ function salesPanel(rows, P){
   const net = S.reduce((a,r)=>a+(+r.sales.net||0),0), inv = S.reduce((a,r)=>a+(+r.sales.invoices||0),0);
   const cust = S.reduce((a,r)=>a+(r.sales.custPct*r.sales.invoices),0);
   const comm = S.reduce((a,r)=>a+(+r.sales.pushComm||0),0), push = S.reduce((a,r)=>a+(+r.sales.pushValue||0),0);
-  const payNet = rows.reduce((a,r)=>a+(+r.net||0),0);
+  const payNet = rows.filter(inTotals).reduce((a,r)=>a+(+r.net||0),0);
   const bySales = [...S].sort((a,b) => b.sales.net - a.sales.net);
   const pc = v => (v*100).toFixed(1) + '٪';
   const tr = bySales.map(r => `<tr${r.sales.include ? '' : ' style="opacity:.6"'}>
@@ -1677,7 +1683,7 @@ function showPreview(){
 
   const rows = P.people.map(p => { const c = autoComm(p.code);
     return `<tr><td>${p.code}</td><td>${esc(p.name)}</td>
-    <td class="num">${F(p.hours)}</td><td class="num">${F(p.wage)}</td><td class="num">${p.lates||0}</td>
+    <td class="num">${+p.basic ? F(p.basic) : '—'}</td><td class="num">${F(p.hours)}</td><td class="num">${F(p.wage)}</td><td class="num">${p.lates||0}</td>
     <td class="num">${F(p.totalDed)}</td><td class="num">${F(p.net)}</td>
     <td class="num">${c ? '+ ' + F(c) : '—'}</td><td class="num"><b>${F((+p.net||0) + c)}</b></td>
     <td>${p.flags ? `<span class="tag late">${p.flags}</span>` : '—'}</td></tr>`; }).join('');
