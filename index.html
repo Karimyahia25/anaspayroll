@@ -148,6 +148,9 @@ td.num{font-variant-numeric:tabular-nums;font-family:"IBM Plex Sans Arabic",sans
 .qitem{border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:9px}
 .qitem .meta{font-size:12px;color:var(--muted);margin-bottom:5px}
 .qitem.void{opacity:.55}
+.cdet{padding:4px 2px 8px}
+.cdh{font-weight:600;font-size:13px;margin:14px 0 2px;color:var(--ink)}
+.cdwrap{position:sticky;inset-inline-start:0;width:min(560px,calc(100vw - 72px));padding:4px 14px 12px;background:var(--card)}
 .tag.good{background:var(--green-soft);color:var(--green)}
 .tag.mid{background:var(--paper);color:var(--ink);border:1px solid var(--line)}
 .cfh{font-size:14.5px;margin:22px 0 6px;color:var(--ink)}
@@ -361,7 +364,7 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="emp" class="hide"></div>
 <div id="adm" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-03-E</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-03-F</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -1314,8 +1317,12 @@ window.pmNo = async id => { const r = prompt('سبب الرفض؟'); if (r === n
 // كل تقفيلة بتتحفظ بالقواعد اللي اتقفلت بيها (tol / surplusCharged) علشان تغيير الإعداد ميغيّرش اللي فات.
 const CASH = { TOL: 20, FLOAT: 500, SURPLUS_CHARGED: true, DAY_START: 9 };
 const DENOMS = [200, 100, 50, 20, 10, 5, 1];
-const EXP_TYPES = ['أكياس وتغليف','منظفات','بوفيه وضيافة','مواصلات','صيانة','شحن رصيد','دفع لمورد (فاتورة)','سلفة لموظف','أخرى'];
-const EXP_NEED_DESC = ['دفع لمورد (فاتورة)','سلفة لموظف','أخرى'];
+// أنواع المصاريف اللي الكاشير بيختار منها (القايمة دي هي المصدر — أي نوع جديد يتضاف هنا)
+const EXP_TYPES = ['أكياس وتغليف','منظفات','بوفيه وضيافة','مواصلات','صيانة','شحن رصيد',
+  'دفع لمورد (فاتورة)','مشتريات خارجية','مستورد','سلفة لموظف','أخرى'];
+const EXP_NEED_DESC = ['دفع لمورد (فاتورة)','مشتريات خارجية','مستورد','سلفة لموظف','أخرى'];
+// دي مش مصاريف تشغيل — فلوس بضاعة أو سلف، وبتتجمع لوحدها في التقرير
+const EXP_GOODS = ['دفع لمورد (فاتورة)','مشتريات خارجية','مستورد','سلفة لموظف'];
 const SLOTS = [[14,'14','تقفيلة ٢ الضهر'],[18,'18','تقفيلة ٦ المغرب'],[23,'23','تقفيلة ١١ بالليل'],[29,'05','تقفيلة ٥ الفجر']];
 const slotName = k => (SLOTS.find(s => s[1] === k) || [0, k, k])[2];
 const r2 = n => Math.round((+n || 0) * 100) / 100;
@@ -1370,28 +1377,28 @@ const varTag = (v, tol) => !v ? '<span class="tag good">مظبوط</span>'
 let MYCASH = [];
 function cashForm(demo){
   const den = DENOMS.map(v => `<div class="den"><span>${v} ج</span>
-    <input id="dn${v}" type="number" inputmode="numeric" min="0" step="1" placeholder="0" oninput="cashCalc()" aria-label="عدد ورق ${v}">
+    <input enterkeyhint="next" id="dn${v}" type="number" inputmode="numeric" min="0" step="1" enterkeyhint="next" oninput="cashCalc()" aria-label="عدد ورق ${v}">
     <b id="dt${v}">—</b></div>`).join('');
-  return `<div id="cfForm">
+  return `<div id="cfForm" onkeydown="cfEnter(event)">
     <h2>تقفيل شيفت</h2>
     <p class="sub" id="cfWhen"></p>
     <h3 class="cfh">١. الأرضية (${M2(CASH.FLOAT)} ج)</h3>
     <label class="chk"><input type="radio" name="cfFl" value="ok" onchange="cashCalc()"> استلمت الأرضية ${M2(CASH.FLOAT)} ج كاملة أول الشيفت</label>
     <label class="chk"><input type="radio" name="cfFl" value="no" onchange="cashCalc()"> لأ، استلمتها ناقصة</label>
     <div id="cfGotRow" class="hide"><label>استلمت كام؟</label>
-      <input id="cfGot" type="number" min="0" step="0.5" inputmode="decimal" oninput="cashCalc()"></div>
+      <input enterkeyhint="next" id="cfGot" type="number" min="0" step="0.5" inputmode="decimal" oninput="cashCalc()"></div>
     <h3 class="cfh">٢. عِد النقدي (من غير الأرضية)</h3>
     <p class="sub">سيب الأرضية (${M2(CASH.FLOAT)} ج) على جنب في الدرج ومتعدهاش — اعدّ الباقي بس.</p>
     <div class="dens">${den}
-      <div class="den"><span>فكة</span><input id="dnCoins" type="number" min="0" step="0.25" inputmode="decimal" placeholder="المبلغ" oninput="cashCalc()" aria-label="مبلغ الفكة">
+      <div class="den"><span>فكة</span><input enterkeyhint="next" id="dnCoins" type="number" min="0" step="0.25" inputmode="decimal" placeholder="المبلغ" oninput="cashCalc()" aria-label="مبلغ الفكة">
         <b id="dtCoins">—</b></div></div>
     <div class="rows" style="margin-top:8px">
       <div class="row total"><span class="k">النقدي اللي رايح الخزنة</span><span class="v" id="cfCash">٠ ج</span></div></div>
     <h3 class="cfh">٣. الفيزا والمحافظ</h3>
     <p class="sub">اكتب كل عملية لوحدها وبينهم + (مثال: 89 + 86 + 1387) والموقع هيجمعهم.</p>
-    <label for="cfVisa">الفيزا</label><input id="cfVisa" inputmode="decimal" oninput="cashCalc()"><div class="sub" id="cfVisaT"></div>
-    <label for="cfVoda">فودافون كاش</label><input id="cfVoda" inputmode="decimal" oninput="cashCalc()"><div class="sub" id="cfVodaT"></div>
-    <label for="cfInsta">إنستاباي</label><input id="cfInsta" inputmode="decimal" oninput="cashCalc()"><div class="sub" id="cfInstaT"></div>
+    <label for="cfVisa">الفيزا</label><input enterkeyhint="next" id="cfVisa" inputmode="decimal" oninput="cashCalc()"><div class="sub" id="cfVisaT"></div>
+    <label for="cfVoda">فودافون كاش</label><input enterkeyhint="next" id="cfVoda" inputmode="decimal" oninput="cashCalc()"><div class="sub" id="cfVodaT"></div>
+    <label for="cfInsta">إنستاباي</label><input enterkeyhint="next" id="cfInsta" inputmode="decimal" oninput="cashCalc()"><div class="sub" id="cfInstaT"></div>
     <h3 class="cfh">٤. المصاريف اللي اتدفعت من الدرج</h3>
     <div id="cfExp"></div>
     <button class="sm ghost" type="button" onclick="cashExpAdd()">+ مصروف</button>
@@ -1399,8 +1406,8 @@ function cashForm(demo){
     <select id="cfPos" onchange="cashCalc()" aria-label="نتيجة السيستم"><option value="">— السيستم قال إيه؟ —</option>
       <option>مظبوط</option><option>عجز</option><option>زيادة</option></select>
     <div id="cfPosRow" class="hide"><label for="cfPosAmt">المبلغ زي ما السيستم كاتبه</label>
-      <input id="cfPosAmt" type="number" min="0" step="0.01" inputmode="decimal" oninput="cashCalc()"></div>
-    <label for="cfNote">ملاحظات (اختياري)</label><input id="cfNote" placeholder="مثال: أوردر طيار لسه مرجعش">
+      <input enterkeyhint="next" id="cfPosAmt" type="number" min="0" step="0.01" inputmode="decimal" oninput="cashCalc()"></div>
+    <label for="cfNote">ملاحظات (اختياري)</label><input enterkeyhint="next" id="cfNote" placeholder="مثال: أوردر طيار لسه مرجعش">
     <div id="cfSum" class="cfsum"></div>
     <button class="full" id="cfBtn" onclick="cashSend()">${demo ? 'إرسال التقفيلة (معاينة — مش هيتبعت)' : 'إرسال التقفيلة'}</button>
     <div class="err" id="cfMsg"></div>
@@ -1409,6 +1416,41 @@ function cashForm(demo){
   </div>
   ${demo ? '' : '<h2 style="margin-top:22px">تقفيلاتي</h2><div id="cfMine"><p class="sub">جاري التحميل…</p></div>'}`;
 }
+
+// Enter بينقل للخانة اللي بعدها (زي Tab) — أسهل في العد
+window.cfEnter = e => {
+  if (e.key !== 'Enter' || e.target.tagName === 'BUTTON') return;
+  e.preventDefault();
+  const f = [...$('cfForm').querySelectorAll('input:not([type=radio]), select')].filter(x => x.offsetParent !== null && !x.disabled);
+  const nx = f.find(x => e.target.compareDocumentPosition(x) & Node.DOCUMENT_POSITION_FOLLOWING);
+  if (nx) { nx.focus(); try { nx.select && nx.select(); } catch(_){} }
+};
+
+// تفاصيل تقفيلة كاملة — بتظهر للكاشير في "تقفيلاتي" وللمدير في لوحة الخزنة
+function cDetail(c){
+  const R = (k, v, cl) => `<div class="row ${cl || ''}"><span class="k">${k}</span><span class="v">${v}</span></div>`;
+  const den = DENOMS.filter(d => +(c.counts || {})[d]).map(d => R(`${d} ج × ${F(c.counts[d])}`, M2(d * c.counts[d]) + ' ج')).join('')
+    + (+c.coins ? R('فكة', M2(c.coins) + ' ج') : '');
+  const lst = (t, l, v) => +v ? R(t + (l && /[+\s]/.test(String(l).trim()) ? ` <span style="font-size:12px">(${esc(l)})</span>` : ''), M2(v) + ' ج') : '';
+  const ex = (c.expenses || []).map(x => R(esc(x.type) + (x.desc ? ' — ' + esc(x.desc) : ''), M2(x.amount) + ' ج')).join('');
+  const p = cPen(c);
+  return `<div class="cdet">
+    <div class="cdh">عد النقدي ${c.floatExcluded ? '(من غير الأرضية)' : `(الدرج كله ${M2(c.drawer)} − أرضية ${M2(c.float)})`}</div>
+    <div class="rows">${den || R('مفيش عد متسجل', '')}${R('النقدي', M2(c.cashToSafe) + ' ج', 'total')}</div>
+    <div class="cdh">الفيزا والمحافظ</div>
+    <div class="rows">${lst('فيزا', c.visaList, c.visa)}${lst('فودافون كاش', c.vodaList, c.voda)}${lst('إنستاباي', c.instaList, c.insta)}${
+      !(+c.visa || +c.voda || +c.insta) ? R('مفيش', '') : ''}</div>
+    <div class="cdh">المصاريف من الدرج</div>
+    <div class="rows">${ex || R('مفيش', '')}${ex ? R('إجمالي المصاريف', M2(c.expTotal) + ' ج', 'total') : ''}</div>
+    <div class="rows" style="margin-top:10px">${R('إجمالي التقفيلة', M2(cTotal(c)) + ' ج', 'total')}
+      ${R('نتيجة السيستم', esc(c.posKind) + (+c.posAmount ? ' ' + M2(c.posAmount) + ' ج' : ''))}
+      ${p ? R('الخصم (فوق السماح)', M2(p) + ' ج', 'minus') : ''}
+      ${R('الأرضية', c.floatOk ? 'استلمها كاملة' : `استلم ${M2(c.floatGot)} ج بس`)}</div>
+    ${(c.fixes || []).map(f => `<div class="banner" style="margin-top:8px">تصحيح مدير الفرع ← ${f.variance < 0 ? 'عجز' : f.variance > 0 ? 'زيادة' : 'مظبوط'} ${M2(Math.abs(f.variance))} ج — ${esc(f.reason)}</div>`).join('')}
+    ${c.void ? `<div class="banner bad" style="margin-top:8px">ملغية: ${esc(c.void.reason || '')}</div>` : ''}
+    ${c.note ? `<p class="sub" style="margin-top:8px">ملاحظة: ${esc(c.note)}</p>` : ''}</div>`;
+}
+window.cdTog = id => { const r = $('cd_' + id); if (r) r.classList.toggle('hide'); };
 
 async function cashEmp(){
   const box = $('cashBox'); if (!box) return;
@@ -1419,8 +1461,8 @@ async function cashEmp(){
 window.cashExpAdd = () => {
   const row = document.createElement('div'); row.className = 'exprow';
   row.innerHTML = `<select class="exT" onchange="cashCalc()" aria-label="نوع المصروف"><option value="">النوع</option>${EXP_TYPES.map(t => `<option>${t}</option>`).join('')}</select>
-    <input class="exD" placeholder="البيان (مثال: فاتورة ابن سينا)" aria-label="البيان">
-    <input class="exA" type="number" min="0" step="0.01" inputmode="decimal" placeholder="المبلغ" oninput="cashCalc()" aria-label="المبلغ">
+    <input class="exD" enterkeyhint="next" placeholder="البيان (مثال: فاتورة ابن سينا)" aria-label="البيان">
+    <input class="exA" enterkeyhint="next" type="number" min="0" step="0.01" inputmode="decimal" placeholder="المبلغ" oninput="cashCalc()" aria-label="المبلغ">
     <button type="button" class="sm ghost" onclick="this.parentNode.remove();cashCalc()" aria-label="امسح المصروف">✕</button>`;
   $('cfExp').appendChild(row);
 };
@@ -1540,17 +1582,20 @@ async function cashMine(){
       <td class="num"><b>${ms(c => c.cashToSafe)}</b></td><td class="num"><b>${ms(c => c.visa)}</b></td><td class="num"><b>${ms(c => c.voda)}</b></td>
       <td class="num"><b>${ms(c => c.insta)}</b></td><td class="num"><b>${ms(c => c.expTotal)}</b></td><td class="num"><b>${ms(cTotal)}</b></td>
       <td>${varTag(r2(MON.reduce((a, c) => a + cVar(c), 0)), 1e9)}</td><td class="num"><b>${pen ? M2(pen) + ' ج' : '—'}</b></td><td></td></tr>` : '';
-    box.innerHTML = `${pen ? `<div class="banner bad">خصومات الخزنة عليك الشهر ده: ${M2(pen)} ج — بتتخصم من المرتب.</div>` : ''}
+    box.innerHTML = `<p class="sub">دوس على أي تقفيلة تشوف تفاصيلها كاملة (العد والفيزا والمصاريف).</p>
+      ${pen ? `<div class="banner bad">خصومات الخزنة عليك الشهر ده: ${M2(pen)} ج — بتتخصم من المرتب.</div>` : ''}
       <div class="scroll"><table><tr><th>اليوم</th><th>التقفيلة</th><th>نقدي</th><th>فيزا</th><th>فودافون</th><th>إنستاباي</th>
         <th>مصاريف</th><th>إجمالي الشيفت</th><th>السيستم</th><th>الخصم</th><th>الحالة</th></tr>
       ${monRow}
       ${MYCASH.slice(0, 60).map(c => { const v = cVar(c), p = cPen(c);
-        return `<tr${c.void ? ' style="opacity:.5"' : ''}><td>${esc(dLong(c.bizDate))}</td><td>${esc(slotName(c.slot))}</td>
+        return `<tr class="clk"${c.void ? ' style="opacity:.5"' : ''} onclick="cdTog('${c.id}')"><td>${esc(dLong(c.bizDate))} ⌄</td><td>${esc(slotName(c.slot))}</td>
         <td class="num">${M2(c.cashToSafe)}</td><td class="num">${M2(c.visa)}</td><td class="num">${M2(c.voda)}</td>
         <td class="num">${M2(c.insta)}</td><td class="num">${M2(c.expTotal)}</td><td class="num"><b>${M2(cTotal(c))}</b></td>
         <td>${varTag(v, c.tol)}</td><td class="num">${p ? M2(p) + ' ج' : '—'}</td>
         <td>${c.void ? '<span class="tag">ملغية</span>' : (c.fixes || []).length ? '<span class="tag ok">اتصححت</span>'
-          : c.review ? '<span class="tag good">اتراجعت</span>' : '—'}</td></tr>`; }).join('')}
+          : c.review ? '<span class="tag good">اتراجعت</span>' : '—'}</td></tr>
+        <tr id="cd_${c.id}" class="hide"><td colspan="11" style="white-space:normal;text-align:start;padding:0">
+          <div class="cdwrap">${cDetail(c)}</div></td></tr>`; }).join('')}
       </table></div>`;
   } catch (e) { box.innerHTML = `<p class="err">مشكلة: ${esc(e.code || e.message)}</p>`; }
 }
@@ -1634,7 +1679,7 @@ function cashStats(){
     s.n++; s.net += v; s.abs += Math.abs(v); if (p) s.over++;
     (c.expenses || []).forEach(x => { const e = ex[x.type] = ex[x.type] || { t: x.type, n: 0, v: 0 };
       e.n++; e.v += +x.amount || 0;
-      if (x.type === 'دفع لمورد (فاتورة)' || x.type === 'سلفة لموظف') sup.push({ ...x, d: c.bizDate, who: c.name }); });
+      if (EXP_GOODS.includes(x.type)) sup.push({ ...x, d: c.bizDate, who: c.name }); });
   });
   return { L, days, who, sl, ex, sup,
     tot: { n: L.length, cash: sum(c => c.cashToSafe), visa: sum(c => c.visa), wal: sum(c => (+c.voda || 0) + (+c.insta || 0)),
@@ -1669,12 +1714,7 @@ function cashRender(){
       ${c.review ? '<span class="tag good">اتراجعت</span>' : ''}</div>
     ${(c.fixes || []).map(f => `<div class="sub" style="margin-top:6px">تصحيح ← ${f.variance < 0 ? 'عجز' : f.variance > 0 ? 'زيادة' : 'مظبوط'} ${M2(Math.abs(f.variance))} ج — ${esc(f.reason)} (${esc(f.at || '')}).
       الأصل من الكاشير: ${esc(c.posKind)} ${M2(c.posAmount)} ج</div>`).join('')}
-    <details style="margin-top:8px"><summary>التفاصيل</summary><div class="sub" style="line-height:1.9;margin-top:6px">
-      ${c.floatExcluded ? `النقدي المعدود (من غير الأرضية) <b>${M2(c.cashToSafe)}</b> ج (${esc(cnt) || '—'}${+c.coins ? ' · فكة ' + M2(c.coins) : ''})`
-        : `الدرج كله ${M2(c.drawer)} ج (${esc(cnt) || '—'}${+c.coins ? ' · فكة ' + M2(c.coins) : ''}) − أرضية ${M2(c.float)} = <b>${M2(c.cashToSafe)}</b>`}<br>
-      ${c.visaList ? 'الفيزا: ' + esc(c.visaList) + '<br>' : ''}${c.vodaList ? 'فودافون: ' + esc(c.vodaList) + '<br>' : ''}${c.instaList ? 'إنستاباي: ' + esc(c.instaList) + '<br>' : ''}
-      ${(c.expenses || []).map(x => `مصروف: ${esc(x.type)} — ${esc(x.desc)} — ${M2(x.amount)} ج`).join('<br>')}
-      ${c.note ? '<br>ملاحظة: ' + esc(c.note) : ''}</div></details>
+    <details style="margin-top:8px"><summary>التفاصيل</summary>${cDetail(c)}</details>
     ${isAdm && !c.void ? `<div style="margin-top:9px;display:flex;gap:8px;flex-wrap:wrap">
       ${c.review ? '' : `<button class="sm" onclick="cmReview('${c.id}')">تمت المراجعة</button>`}
       <button class="sm ghost" onclick="cmFix('${c.id}')">تصحيح الفرق</button>
@@ -1727,7 +1767,7 @@ function cashRender(){
     ${exArr.length ? `<h2 style="margin-top:20px">المصاريف من الدرج</h2><div class="scroll"><table>
       <tr><th>النوع</th><th>مرات</th><th>الإجمالي</th></tr>
       ${exArr.map(e => `<tr><td>${esc(e.t)}</td><td class="num">${e.n}</td><td class="num"><b>${M2(e.v)}</b></td></tr>`).join('')}</table></div>
-      ${S.sup.length ? `<details style="margin-top:8px"><summary>الدفع للموردين والسلف (${S.sup.length})</summary><div class="scroll" style="margin-top:6px"><table>
+      ${S.sup.length ? `<details style="margin-top:8px"><summary>الموردين والمشتريات والمستورد والسلف (${S.sup.length})</summary><div class="scroll" style="margin-top:6px"><table>
         <tr><th>اليوم</th><th>النوع</th><th>البيان</th><th>المبلغ</th><th>الكاشير</th></tr>
         ${S.sup.map(x => `<tr><td>${esc(dLong(x.d))}</td><td>${esc(x.type)}</td><td style="white-space:normal">${esc(x.desc)}</td>
           <td class="num">${M2(x.amount)}</td><td>${esc(x.who)}</td></tr>`).join('')}</table></div></details>` : ''}` : ''}
