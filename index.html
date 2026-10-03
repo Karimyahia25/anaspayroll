@@ -364,7 +364,7 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="emp" class="hide"></div>
 <div id="adm" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-03-F</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-03-G</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -742,7 +742,7 @@ function buildKPI(people, sales, items, W0){
 const IDLE_MIN = 15;
 let idleTimer = null;
 function idleReset(){
-  if (!ME) return;
+  if (!ME || ROLE === 'cashier') return;
   clearTimeout(idleTimer);
   idleTimer = setTimeout(async () => {
     try { sessionStorage.setItem('idleOut', '1'); } catch(e){}
@@ -787,8 +787,12 @@ onAuthStateChanged(auth, async user => {
   if (ROLE === 'emp'){
     try { if ((await getDoc(doc(db, 'viewers', user.uid))).exists()) ROLE = 'viewer'; } catch(e){}
   }
+  if (ROLE === 'emp'){
+    try { if ((await getDoc(doc(db, 'cashiers', user.uid))).exists()) ROLE = 'cashier'; } catch(e){}
+  }
   DASH = { periods: [], staff: [], rows: [], period: null };
   if (ROLE === 'admin' || ROLE === 'viewer') { $('adm').classList.remove('hide'); renderAdmin(); }
+  else if (ROLE === 'cashier') { $('emp').classList.remove('hide'); await renderStation(); }
   else { $('emp').classList.remove('hide'); await renderEmp(); }
 });
 
@@ -1381,6 +1385,10 @@ function cashForm(demo){
     <b id="dt${v}">—</b></div>`).join('');
   return `<div id="cfForm" onkeydown="cfEnter(event)">
     <h2>تقفيل شيفت</h2>
+    ${ROLE === 'cashier' ? `<h3 class="cfh">اسم اللي بيقفل</h3>
+      <select id="cfEmp" onchange="cashCalc()" aria-label="اسم الموظف"><option value="">— اختار اسمك —</option>
+        ${STAFFL.map(x => `<option value="${esc(x.uid)}">${esc(x.name)} (${esc(x.code)})</option>`).join('')}</select>
+      <p class="sub">الخصم (لو فيه) بيتسجل على الاسم ده — اتأكد إنه اسمك.</p>` : ''}
     <p class="sub" id="cfWhen"></p>
     <h3 class="cfh">١. الأرضية (${M2(CASH.FLOAT)} ج)</h3>
     <label class="chk"><input type="radio" name="cfFl" value="ok" onchange="cashCalc()"> استلمت الأرضية ${M2(CASH.FLOAT)} ج كاملة أول الشيفت</label>
@@ -1414,7 +1422,7 @@ function cashForm(demo){
     <div class="note">بعد الإرسال التقفيلة <b>متتعدلش</b>. لو فيه غلط، كلّم مدير الفرع وهو يسجّل التصحيح بسبب، والأصل بيفضل محفوظ.
       قبل ما تقفل: احفظ على السيستم أي أوردر طيار استلمت فلوسه.</div>
   </div>
-  ${demo ? '' : '<h2 style="margin-top:22px">تقفيلاتي</h2><div id="cfMine"><p class="sub">جاري التحميل…</p></div>'}`;
+  ${demo ? '' : `<h2 style="margin-top:22px">${ROLE === 'cashier' ? 'آخر التقفيلات من الجهاز ده' : 'تقفيلاتي'}</h2><div id="cfMine"><p class="sub">جاري التحميل…</p></div>`}`;
 }
 
 // Enter بينقل للخانة اللي بعدها (زي Tab) — أسهل في العد
@@ -1448,9 +1456,25 @@ function cDetail(c){
       ${R('الأرضية', c.floatOk ? 'استلمها كاملة' : `استلم ${M2(c.floatGot)} ج بس`)}</div>
     ${(c.fixes || []).map(f => `<div class="banner" style="margin-top:8px">تصحيح مدير الفرع ← ${f.variance < 0 ? 'عجز' : f.variance > 0 ? 'زيادة' : 'مظبوط'} ${M2(Math.abs(f.variance))} ج — ${esc(f.reason)}</div>`).join('')}
     ${c.void ? `<div class="banner bad" style="margin-top:8px">ملغية: ${esc(c.void.reason || '')}</div>` : ''}
-    ${c.note ? `<p class="sub" style="margin-top:8px">ملاحظة: ${esc(c.note)}</p>` : ''}</div>`;
+    ${c.note ? `<p class="sub" style="margin-top:8px">ملاحظة: ${esc(c.note)}</p>` : ''}
+    <p class="sub" style="margin-top:6px">قفلها: ${esc(c.name)} (${esc(c.code)})${c.via ? ' — من ' + esc(c.via) : ''}</p></div>`;
 }
 window.cdTog = id => { const r = $('cd_' + id); if (r) r.classList.toggle('hide'); };
+
+// حساب الكاشير العام: بيدخل بـ cashier وبيختار اسم اللي بيقفل من القايمة (قرار 3/10: الاسم بس، من غير رقم سري)
+let STAFFL = [];
+async function renderStation(){
+  $('emp').innerHTML = `<div class="card"><div class="hdr"><div><h1>تقفيل الخزنة</h1>
+      <p class="sub">جهاز الكاشير — اختار اسمك وبعدين قفّل</p></div>
+      <button class="ghost sm" onclick="doOut()">خروج</button></div></div>
+    <div class="card"><div id="cashBox"><p class="sub">جاري التحميل…</p></div></div>`;
+  try {
+    const snap = await getDocs(collection(db, 'staff'));
+    STAFFL = []; snap.forEach(d => { const v = d.data(); if (v.code) STAFFL.push({ uid: d.id, ...v }); });
+    STAFFL.sort((a, b) => String(a.name).localeCompare(String(b.name), 'ar'));
+  } catch (e) { $('cashBox').innerHTML = `<p class="err">مقدرتش أقرا أسماء الموظفين: ${esc(e.code || e.message)}</p>`; return; }
+  $('cashBox').innerHTML = ''; cashEmp();
+}
 
 async function cashEmp(){
   const box = $('cashBox'); if (!box) return;
@@ -1519,10 +1543,14 @@ window.cashCalc = () => {
 };
 
 window.cashSend = async () => {
-  if (ROLE !== 'emp'){ const m = $('cfMsg'); m.style.color = 'var(--amber)';
+  const station = ROLE === 'cashier';
+  if (ROLE !== 'emp' && !station){ const m = $('cfMsg'); m.style.color = 'var(--amber)';
     m.textContent = 'دي معاينة بس — الكاشير بيبعت التقفيلة من حسابه هو (بكود البصمة).'; return; }
   const s = cashRead(), m = $('cfMsg');
   const bad = t => { m.style.color = 'var(--red)'; m.textContent = t; };
+  const empUid = station ? $('cfEmp').value : ME.uid;
+  const who = station ? STAFFL.find(x => x.uid === empUid) : null;
+  if (station && !who) return bad('اختار اسمك من القايمة الأول');
   if (!s.fl) return bad('حدد: استلمت الأرضية كاملة ولا لأ');
   if (s.fl === 'no' && !(s.got >= 0 && s.got < CASH.FLOAT)) return bad(`اكتب الأرضية اللي استلمتها (أقل من ${M2(CASH.FLOAT)})`);
   if (s.badCount) return bad('عدد الفئات لازم أرقام صحيحة من غير سالب');
@@ -1536,9 +1564,9 @@ window.cashSend = async () => {
   if (!s.posKind) return bad('اختار نتيجة السيستم (مظبوط / عجز / زيادة)');
   if (s.posKind !== 'مظبوط' && !(s.posAmount > 0)) return bad('اكتب مبلغ العجز أو الزيادة زي السيستم بالظبط');
   const now = new Date(), w = bizOf(now);
-  const last = MYCASH[0] && cTime(MYCASH[0]);
-  if (last && now - last < 45 * 60000 && !confirm('إنت قفلت من أقل من ٤٥ دقيقة. دي تقفيلة جديدة فعلاً؟')) return;
-  if (!confirm(`${dLong(w.biz)} — ${slotName(w.slot)}
+  const prev = MYCASH.find(c => (c.empUid || c.uid) === empUid), last = prev && cTime(prev);
+  if (last && now - last < 45 * 60000 && !confirm(`${station ? who.name + ' قفل' : 'إنت قفلت'} من أقل من ٤٥ دقيقة. دي تقفيلة جديدة فعلاً؟`)) return;
+  if (!confirm(`${station ? 'باسم: ' + who.name + '\n' : ''}${dLong(w.biz)} — ${slotName(w.slot)}
 نقدي للخزنة: ${M2(s.cashToSafe)} ج
 فيزا: ${M2(s.visa.sum)} — فودافون: ${M2(s.voda.sum)} — إنستاباي: ${M2(s.insta.sum)}
 مصاريف: ${M2(s.expTotal)} ج
@@ -1547,10 +1575,12 @@ window.cashSend = async () => {
 بعد الإرسال مش هتقدر تعدّل. متأكد؟`)) return;
   const btn = $('cfBtn'); btn.disabled = true; m.style.color = 'var(--muted)'; m.textContent = 'جاري الإرسال…';
   try {
-    const st = await getDoc(doc(db, 'staff', ME.uid)); const v = st.exists() ? st.data() : {};
-    if (!v.code) throw { message: 'حسابك مش مربوط بكود موظف — كلّم مدير الفرع' };
+    let v = who;
+    if (!station){ const st = await getDoc(doc(db, 'staff', ME.uid)); v = st.exists() ? st.data() : {}; }
+    if (!v.code) throw { message: 'الحساب ده مش مربوط بكود موظف — كلّم مدير الفرع' };
     await addDoc(collection(db, 'closings'), {
-      uid: ME.uid, code: String(v.code), name: v.name || '', status: 'مرسل',
+      uid: ME.uid, empUid, via: station ? 'جهاز الكاشير' : 'حساب الموظف',
+      code: String(v.code), name: v.name || '', status: 'مرسل',
       at: serverTimestamp(), clientAt: now.toISOString(), bizDate: w.biz, slot: w.slot, timeLocal: w.time,
       floatOk: s.fl === 'ok', floatGot: s.got, float: CASH.FLOAT,
       counts: s.counts, coins: r2(s.coins), drawer: s.drawer, cashToSafe: s.cashToSafe, floatExcluded: true,
@@ -1562,7 +1592,8 @@ window.cashSend = async () => {
       tol: CASH.TOL, surplusCharged: CASH.SURPLUS_CHARGED, penalty: s.pen,
       note: $('cfNote').value.trim() });
     $('cashBox').innerHTML = cashForm(); cashCalc();
-    const m2 = $('cfMsg'); m2.style.color = 'var(--green)'; m2.textContent = 'اتسجلت ✔ — هتلاقيها تحت في "تقفيلاتي".';
+    const m2 = $('cfMsg'); m2.style.color = 'var(--green)';
+    m2.textContent = station ? `اتسجلت باسم ${v.name} ✔ — هتلاقيها تحت.` : 'اتسجلت ✔ — هتلاقيها تحت في "تقفيلاتي".';
     cashMine();
   } catch (e) { btn.disabled = false; bad('متبعتتش: ' + (e.code || e.message)); }
 };
@@ -1570,10 +1601,19 @@ window.cashSend = async () => {
 async function cashMine(){
   const box = $('cfMine'); if (!box) return;
   try {
-    const snap = await getDocs(query(collection(db, 'closings'), where('uid', '==', ME.uid)));
-    MYCASH = []; snap.forEach(d => MYCASH.push({ id: d.id, ...d.data() }));
+    const station = ROLE === 'cashier', seen = {};
+    MYCASH = [];
+    const qs = station ? [where('uid', '==', ME.uid)] : [where('empUid', '==', ME.uid), where('uid', '==', ME.uid)];
+    let ok = 0, err = null;
+    for (const w of qs){
+      try { const snap = await getDocs(query(collection(db, 'closings'), w)); ok++;
+        snap.forEach(d => { if (!seen[d.id]) { seen[d.id] = 1; MYCASH.push({ id: d.id, ...d.data() }); } }); }
+      catch (e) { err = e; }
+    }
+    if (!ok && err) throw err;
+    if (!station) MYCASH = MYCASH.filter(c => (c.empUid || c.uid) === ME.uid);
     MYCASH.sort((a, b) => (cTime(b) || 0) - (cTime(a) || 0));
-    if (!MYCASH.length){ box.innerHTML = '<p class="sub">لسه مقفلتش أي شيفت.</p>'; return; }
+    if (!MYCASH.length){ box.innerHTML = `<p class="sub">${station ? 'لسه محدش قفل من الجهاز ده.' : 'لسه مقفلتش أي شيفت.'}</p>`; return; }
     const mon = bizOf(new Date()).biz.slice(0, 7);
     const MON = MYCASH.filter(c => String(c.bizDate).startsWith(mon) && !c.void);
     const pen = MON.reduce((a, c) => a + cPen(c), 0);
@@ -1583,12 +1623,12 @@ async function cashMine(){
       <td class="num"><b>${ms(c => c.insta)}</b></td><td class="num"><b>${ms(c => c.expTotal)}</b></td><td class="num"><b>${ms(cTotal)}</b></td>
       <td>${varTag(r2(MON.reduce((a, c) => a + cVar(c), 0)), 1e9)}</td><td class="num"><b>${pen ? M2(pen) + ' ج' : '—'}</b></td><td></td></tr>` : '';
     box.innerHTML = `<p class="sub">دوس على أي تقفيلة تشوف تفاصيلها كاملة (العد والفيزا والمصاريف).</p>
-      ${pen ? `<div class="banner bad">خصومات الخزنة عليك الشهر ده: ${M2(pen)} ج — بتتخصم من المرتب.</div>` : ''}
+      ${pen && !station ? `<div class="banner bad">خصومات الخزنة عليك الشهر ده: ${M2(pen)} ج — بتتخصم من المرتب.</div>` : ''}
       <div class="scroll"><table><tr><th>اليوم</th><th>التقفيلة</th><th>نقدي</th><th>فيزا</th><th>فودافون</th><th>إنستاباي</th>
         <th>مصاريف</th><th>إجمالي الشيفت</th><th>السيستم</th><th>الخصم</th><th>الحالة</th></tr>
       ${monRow}
       ${MYCASH.slice(0, 60).map(c => { const v = cVar(c), p = cPen(c);
-        return `<tr class="clk"${c.void ? ' style="opacity:.5"' : ''} onclick="cdTog('${c.id}')"><td>${esc(dLong(c.bizDate))} ⌄</td><td>${esc(slotName(c.slot))}</td>
+        return `<tr class="clk"${c.void ? ' style="opacity:.5"' : ''} onclick="cdTog('${c.id}')"><td>${esc(dLong(c.bizDate))} ⌄</td><td>${esc(slotName(c.slot))}${station ? '<br><b>' + esc(c.name) + '</b>' : ''}</td>
         <td class="num">${M2(c.cashToSafe)}</td><td class="num">${M2(c.visa)}</td><td class="num">${M2(c.voda)}</td>
         <td class="num">${M2(c.insta)}</td><td class="num">${M2(c.expTotal)}</td><td class="num"><b>${M2(cTotal(c))}</b></td>
         <td>${varTag(v, c.tol)}</td><td class="num">${p ? M2(p) + ' ج' : '—'}</td>
@@ -1622,7 +1662,7 @@ async function cashAdmin(){
     <button class="sm ghost" onclick="cashAdmin()">تحديث</button>
     <button class="sm ghost" onclick="cashExport()">تصدير Excel</button>
     <button class="sm" onclick="cmDemo()">شوف شاشة الكاشير</button></div>
-    <div id="cmDemoBox"></div>
+    <div id="cmDemoBox"></div><div id="cmAcct"></div>
     <div class="note" style="margin-top:12px;border-top:0;padding-top:0">
       <b>إزاي القسم ده بيشتغل:</b> الكاشير بيدخل الموقع بكود البصمة بتاعه، ويلاقي تبويب <b>"تقفيل الخزنة"</b>:
       يعد الفئات، ويكتب الفيزا وفودافون كاش وإنستاباي والمصاريف ونتيجة السيستم، ويبعت.
@@ -1640,8 +1680,40 @@ async function cashAdmin(){
       e.code === 'permission-denied' ? ' — قواعد Firebase الجديدة لسه متحطتش' : ''}</p>`; return;
   }
   CM.ledger = await safeLedger();
-  cashRender();
+  cashRender(); cashAcct();
 }
+
+async function cashAcct(){
+  const b = $('cmAcct'); if (!b || ROLE !== 'admin') return;
+  const list = [];
+  try { const sn = await getDocs(collection(db, 'cashiers')); sn.forEach(d => list.push({ id: d.id, ...d.data() })); }
+  catch (e) { b.innerHTML = `<p class="err">حساب الكاشير العام: ${esc(e.code || e.message)}${
+    e.code === 'permission-denied' ? ' — حط قواعد Firebase الجديدة الأول' : ''}</p>`; return; }
+  b.innerHTML = list.length
+    ? `<div class="banner" style="margin-top:12px">حساب جهاز الكاشير موجود ✔ — الدخول بـ <b>cashier</b> والرقم السري بتاعه. لو عايز تغيّر الرقم السري:
+        Firebase Console ← Authentication ← cashier@${DOMAIN} ← Reset password.</div>`
+    : `<div class="cfsum" style="margin-top:12px"><b>حساب جهاز الكاشير</b>
+        <p class="sub">حساب واحد للجهاز اللي على الكاشير، اسم الدخول <b>cashier</b>. من جوه الموظف بيختار اسمه ويقفل. مبيشوفش أي مرتبات — التقفيل بس.</p>
+        <label for="caPass">الرقم السري للحساب (٦ على الأقل)</label><input id="caPass" type="text" autocomplete="off">
+        <button class="sm" style="margin-top:10px" onclick="cashAcctMake()">إنشاء الحساب</button><div class="err" id="caMsg"></div></div>`;
+}
+let CA_APP = null;
+window.cashAcctMake = async () => {
+  const pw = $('caPass').value, m = $('caMsg'); m.style.color = 'var(--red)';
+  if (!pw || pw.length < 6) { m.textContent = 'الرقم السري ٦ حروف أو أرقام على الأقل'; return; }
+  try {
+    if (!CA_APP) CA_APP = initializeApp(CFG, 'cashierAcct');
+    const a2 = getAuth(CA_APP);
+    const cr = await createUserWithEmailAndPassword(a2, `cashier@${DOMAIN}`, pw);
+    const uid = cr.user.uid; await signOut(a2);
+    await setDoc(doc(db, 'cashiers', uid), { username: 'cashier', at: serverTimestamp() });
+    cashAcct();
+  } catch (e) {
+    m.textContent = e.code === 'auth/email-already-in-use'
+      ? `الحساب cashier@${DOMAIN} متعمل قبل كده. امسحه من Firebase Console ← Authentication وجرّب تاني.`
+      : 'مشكلة: ' + (e.code || e.message);
+  }
+};
 window.cmSetMonth = v => { if (!v) return; CM.month = v; CM.day = ''; cashAdmin(); };
 
 // رصيد الخزنة الجوانية = آخر جرد + نقدي التقفيلات اللي بعده − السحب + الإيداع
