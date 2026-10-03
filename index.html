@@ -361,7 +361,7 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="emp" class="hide"></div>
 <div id="adm" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-03-D</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-03-E</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -1359,6 +1359,8 @@ const cPen = c => { if (c.void) return 0;
   const sc = c.surplusCharged != null ? c.surplusCharged : CASH.SURPLUS_CHARGED;
   if (v > 0 && !sc) return 0;
   return Math.max(0, r2(Math.abs(v) - tol)); };
+// إجمالي التقفيلة = كل الفلوس اللي الشيفت بيحاسب عليها: نقدي + فيزا + محافظ + المصاريف اللي اتدفعت من الدرج
+const cTotal = c => r2((+c.cashToSafe || 0) + (+c.visa || 0) + (+c.voda || 0) + (+c.insta || 0) + (+c.expTotal || 0));
 const cTime = c => c.at?.seconds ? new Date(c.at.seconds * 1000) : (c.clientAt ? new Date(c.clientAt) : null);
 const clockOff = c => c.at?.seconds && c.clientAt && Math.abs(c.at.seconds * 1000 - new Date(c.clientAt)) > 15 * 60000;
 const varTag = (v, tol) => !v ? '<span class="tag good">مظبوط</span>'
@@ -1468,7 +1470,9 @@ window.cashCalc = () => {
   $('cfSum').innerHTML = `<div class="rows">
     ${R('نقدي للخزنة', M2(s.cashToSafe) + ' ج')}${R('فيزا', M2(s.visa.sum) + ' ج')}
     ${R('فودافون كاش', M2(s.voda.sum) + ' ج')}${R('إنستاباي', M2(s.insta.sum) + ' ج')}
-    ${R('مصاريف من الدرج', M2(s.expTotal) + ' ج')}${verdict}</div>
+    ${R('مصاريف من الدرج', M2(s.expTotal) + ' ج')}
+    ${R('إجمالي التقفيلة', M2(s.cashToSafe + s.visa.sum + s.voda.sum + s.insta.sum + s.expTotal) + ' ج', 'total')}
+    <div class="sub">الإجمالي = نقدي + فيزا + فودافون + إنستاباي + المصاريف اللي اتدفعت من الدرج.</div>${verdict}</div>
     ${s.fl === 'no' && s.got < CASH.FLOAT ? `<div class="banner bad" style="margin-top:10px">الأرضية ناقصة ${M2(CASH.FLOAT - s.got)} ج — هتتسجل على التسليم من الشيفت اللي قبلك.</div>` : ''}`;
 };
 
@@ -1529,11 +1533,21 @@ async function cashMine(){
     MYCASH.sort((a, b) => (cTime(b) || 0) - (cTime(a) || 0));
     if (!MYCASH.length){ box.innerHTML = '<p class="sub">لسه مقفلتش أي شيفت.</p>'; return; }
     const mon = bizOf(new Date()).biz.slice(0, 7);
-    const pen = MYCASH.filter(c => String(c.bizDate).startsWith(mon)).reduce((a, c) => a + cPen(c), 0);
+    const MON = MYCASH.filter(c => String(c.bizDate).startsWith(mon) && !c.void);
+    const pen = MON.reduce((a, c) => a + cPen(c), 0);
+    const ms = f => M2(MON.reduce((a, c) => a + (+f(c) || 0), 0));
+    const monRow = MON.length ? `<tr class="sel"><td colspan="2"><b>إجمالي الشهر ده (${F(MON.length)} تقفيلة)</b></td>
+      <td class="num"><b>${ms(c => c.cashToSafe)}</b></td><td class="num"><b>${ms(c => c.visa)}</b></td><td class="num"><b>${ms(c => c.voda)}</b></td>
+      <td class="num"><b>${ms(c => c.insta)}</b></td><td class="num"><b>${ms(c => c.expTotal)}</b></td><td class="num"><b>${ms(cTotal)}</b></td>
+      <td>${varTag(r2(MON.reduce((a, c) => a + cVar(c), 0)), 1e9)}</td><td class="num"><b>${pen ? M2(pen) + ' ج' : '—'}</b></td><td></td></tr>` : '';
     box.innerHTML = `${pen ? `<div class="banner bad">خصومات الخزنة عليك الشهر ده: ${M2(pen)} ج — بتتخصم من المرتب.</div>` : ''}
-      <div class="scroll"><table><tr><th>اليوم</th><th>التقفيلة</th><th>نقدي</th><th>السيستم</th><th>الخصم</th><th>الحالة</th></tr>
+      <div class="scroll"><table><tr><th>اليوم</th><th>التقفيلة</th><th>نقدي</th><th>فيزا</th><th>فودافون</th><th>إنستاباي</th>
+        <th>مصاريف</th><th>إجمالي الشيفت</th><th>السيستم</th><th>الخصم</th><th>الحالة</th></tr>
+      ${monRow}
       ${MYCASH.slice(0, 60).map(c => { const v = cVar(c), p = cPen(c);
-        return `<tr><td>${esc(dLong(c.bizDate))}</td><td>${esc(slotName(c.slot))}</td><td class="num">${M2(c.cashToSafe)}</td>
+        return `<tr${c.void ? ' style="opacity:.5"' : ''}><td>${esc(dLong(c.bizDate))}</td><td>${esc(slotName(c.slot))}</td>
+        <td class="num">${M2(c.cashToSafe)}</td><td class="num">${M2(c.visa)}</td><td class="num">${M2(c.voda)}</td>
+        <td class="num">${M2(c.insta)}</td><td class="num">${M2(c.expTotal)}</td><td class="num"><b>${M2(cTotal(c))}</b></td>
         <td>${varTag(v, c.tol)}</td><td class="num">${p ? M2(p) + ' ج' : '—'}</td>
         <td>${c.void ? '<span class="tag">ملغية</span>' : (c.fixes || []).length ? '<span class="tag ok">اتصححت</span>'
           : c.review ? '<span class="tag good">اتراجعت</span>' : '—'}</td></tr>`; }).join('')}
@@ -1610,8 +1624,8 @@ function cashStats(){
   const days = {}, who = {}, sl = {}, ex = {}, sup = [];
   L.forEach(c => {
     const v = cVar(c), p = cPen(c);
-    const d = days[c.bizDate] = days[c.bizDate] || { d: c.bizDate, n: 0, cash: 0, visa: 0, wal: 0, exp: 0, net: 0, pen: 0, over: 0 };
-    d.n++; d.cash += +c.cashToSafe || 0; d.visa += +c.visa || 0; d.wal += (+c.voda || 0) + (+c.insta || 0);
+    const d = days[c.bizDate] = days[c.bizDate] || { d: c.bizDate, n: 0, cash: 0, visa: 0, wal: 0, exp: 0, total: 0, net: 0, pen: 0, over: 0 };
+    d.n++; d.total += cTotal(c); d.cash += +c.cashToSafe || 0; d.visa += +c.visa || 0; d.wal += (+c.voda || 0) + (+c.insta || 0);
     d.exp += +c.expTotal || 0; d.net += v; d.pen += p; if (p) d.over++;
     const w = who[c.code] = who[c.code] || { code: c.code, name: c.name, n: 0, short: 0, plus: 0, over: 0, pen: 0, small: 0, smallSum: 0 };
     w.n++; if (v < 0) w.short += -v; if (v > 0) w.plus += v;
@@ -1624,7 +1638,7 @@ function cashStats(){
   });
   return { L, days, who, sl, ex, sup,
     tot: { n: L.length, cash: sum(c => c.cashToSafe), visa: sum(c => c.visa), wal: sum(c => (+c.voda || 0) + (+c.insta || 0)),
-      exp: sum(c => c.expTotal), net: sum(cVar), pen: sum(cPen), over: L.filter(c => cPen(c) > 0).length } };
+      exp: sum(c => c.expTotal), total: sum(cTotal), net: sum(cVar), pen: sum(cPen), over: L.filter(c => cPen(c) > 0).length } };
 }
 // عجز صغير جوه السماح بيتكرر كتير = علامة تستاهل متابعة (مش بيتخصم)
 const smallFlag = w => w.small >= 4 || w.smallSum >= 60;
@@ -1646,7 +1660,7 @@ function cashRender(){
     const cnt = DENOMS.filter(d => +(c.counts || {})[d]).map(d => `${d}×${c.counts[d]}`).join(' · ');
     return `<div class="qitem${c.void ? ' void' : ''}">
     <div class="meta">${esc(dLong(c.bizDate))} — ${esc(slotName(c.slot))} — الساعة ${esc(c.timeLocal || '')} — <b>${esc(c.name)} (${esc(c.code)})</b></div>
-    <div>نقدي <b>${M2(c.cashToSafe)}</b> · فيزا <b>${M2(c.visa)}</b> · فودافون <b>${M2(c.voda)}</b> · إنستاباي <b>${M2(c.insta)}</b> · مصاريف <b>${M2(c.expTotal)}</b></div>
+    <div>نقدي <b>${M2(c.cashToSafe)}</b> · فيزا <b>${M2(c.visa)}</b> · فودافون <b>${M2(c.voda)}</b> · إنستاباي <b>${M2(c.insta)}</b> · مصاريف <b>${M2(c.expTotal)}</b> · <b>الإجمالي ${M2(cTotal(c))} ج</b></div>
     <div style="margin-top:7px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">${varTag(v, c.tol)}
       ${p ? `<span class="tag late">خصم ${M2(p)} ج</span>` : ''}
       ${!c.floatOk ? `<span class="tag late">استلم الأرضية ناقصة ${M2((+c.float || CASH.FLOAT) - (+c.floatGot || 0))} ج</span>` : ''}
@@ -1676,7 +1690,7 @@ function cashRender(){
 
   box.innerHTML = `
     ${statTiles([
-      { label: 'تقفيلات الشهر', value: F(T.n), sub: `${F(T.over)} بره السماح` },
+      { label: 'إجمالي التقفيلات', value: M2(T.total) + ' ج', hi: true, sub: `${F(T.n)} تقفيلة · ${F(T.over)} بره السماح` },
       { label: 'نقدي دخل الخزنة', value: M2(T.cash) + ' ج' },
       { label: 'فيزا + محافظ', value: M2(T.visa + T.wal) + ' ج', sub: `فيزا ${M2(T.visa)} · محافظ ${M2(T.wal)}` },
       { label: 'مصاريف من الدرج', value: M2(T.exp) + ' ج' },
@@ -1688,10 +1702,10 @@ function cashRender(){
 
     <h2 style="margin-top:20px">يوم بيوم</h2>
     <p class="sub">دوس على أي يوم يظهرلك تقفيلاته كلها. اليوم من ٩ الصبح لـ ٩ الصبح اللي بعده.</p>
-    ${dayArr.length ? `<div class="scroll"><table><tr><th>اليوم</th><th>تقفيلات</th><th>نقدي للخزنة</th><th>فيزا</th><th>محافظ</th><th>مصاريف</th><th>صافي الفرق</th><th>خصم</th></tr>
+    ${dayArr.length ? `<div class="scroll"><table><tr><th>اليوم</th><th>تقفيلات</th><th>نقدي للخزنة</th><th>فيزا</th><th>محافظ</th><th>مصاريف</th><th>إجمالي اليوم</th><th>صافي الفرق</th><th>خصم</th></tr>
       ${dayArr.map(d => `<tr class="clk${CM.day === d.d ? ' sel' : ''}" onclick="cmDay('${d.d}')"><td>${esc(dLong(d.d))}</td><td class="num">${d.n}</td>
         <td class="num">${M2(d.cash)}</td><td class="num">${M2(d.visa)}</td><td class="num">${M2(d.wal)}</td><td class="num">${M2(d.exp)}</td>
-        <td>${varTag(r2(d.net), 1e9)}</td><td class="num">${d.pen ? M2(d.pen) : '—'}</td></tr>`).join('')}</table></div>`
+        <td class="num"><b>${M2(d.total)}</b></td><td>${varTag(r2(d.net), 1e9)}</td><td class="num">${d.pen ? M2(d.pen) : '—'}</td></tr>`).join('')}</table></div>`
       : '<p class="sub">مفيش تقفيلات في الشهر ده.</p>'}
 
     <h2 style="margin-top:20px" id="cmShifts">${CM.day ? `تقفيلات ${esc(dLong(CM.day))} <button class="sm ghost" onclick="cmDay('')">رجوع</button>` : 'محتاجة نظرة'}</h2>
@@ -1788,19 +1802,20 @@ window.safeAdd = async () => {
 window.cashExport = () => {
   const S = cashStats(), all = CM.list;
   const head = ['اليوم التشغيلي','التقفيلة','الساعة','الكود','الكاشير','إجمالي الدرج','الأرضية','نقدي للخزنة','فيزا','فودافون كاش','إنستاباي',
-    'مصاريف','نتيجة السيستم','مبلغ السيستم','الفرق المعتمد','الخصم','الأرضية استلمها كاملة','ملغية','تصحيح','المصاريف بالتفصيل','ملاحظات'];
+    'مصاريف','إجمالي التقفيلة','نتيجة السيستم','مبلغ السيستم','الفرق المعتمد','الخصم','الأرضية استلمها كاملة','ملغية','تصحيح','المصاريف بالتفصيل','ملاحظات'];
   const body = all.slice().reverse().map(c => [c.bizDate, slotName(c.slot), c.timeLocal || '', c.code, c.name, c.drawer, c.float, c.cashToSafe,
-    c.visa, c.voda, c.insta, c.expTotal, c.posKind, c.posAmount, cVar(c), cPen(c), c.floatOk ? 'نعم' : `لا (${c.floatGot})`,
+    c.visa, c.voda, c.insta, c.expTotal, cTotal(c), c.posKind, c.posAmount, cVar(c), cPen(c), c.floatOk ? 'نعم' : `لا (${c.floatGot})`,
     c.void ? c.void.reason : '', (c.fixes || []).map(f => `${f.variance} — ${f.reason}`).join(' | '),
     (c.expenses || []).map(x => `${x.type}: ${x.desc} ${x.amount}`).join(' | '), c.note || '']);
   const days = Object.values(S.days).sort((a, b) => a.d < b.d ? -1 : 1).map(d =>
-    [d.d, d.n, r2(d.cash), r2(d.visa), r2(d.wal), r2(d.exp), r2(d.net), r2(d.pen)]);
+    [d.d, d.n, r2(d.cash), r2(d.visa), r2(d.wal), r2(d.exp), r2(d.total), r2(d.net), r2(d.pen)]);
   const who = Object.values(S.who).map(w => [w.code, w.name, w.n, r2(w.short), r2(w.plus), w.over, r2(w.pen), w.small, r2(w.smallSum)]);
   const ex1 = S.L.find(c => cPen(c) > 0);
   const how = [
     ['طريقة الحساب — تقفيل الخزنة'], [],
     ['الهدف', 'نعرف كل شيفت قفل بعجز أو زيادة، ونحمّل الكاشير اللي فوق السماح، ونتابع رصيد الخزنة الجوانية.'],
     ['النقدي للخزنة', `عد النقدي بالفئات من غير الأرضية (${M2(CASH.FLOAT)} ج) اللي بتفضل في الدرج ومش داخلة في التقفيل.`],
+    ['إجمالي التقفيلة', 'نقدي + فيزا + فودافون كاش + إنستاباي + المصاريف اللي اتدفعت من الدرج (المصاريف اتدفعت من فلوس الشيفت، فبتتجمع مش بتتطرح).'],
     ['الفرق', 'الرقم اللي السيستم طلّعه وقت التقفيل: العجز بالسالب والزيادة بالموجب. لو مدير الفرع صحّحه بسبب، بياخد التصحيح.'],
     ['الخصم', `لو الفرق (عجز أو زيادة) أكبر من ${CASH.TOL} ج: الخصم = الفرق − ${CASH.TOL}. جوه السماح مفيش خصم.`],
     ['مثال', ex1 ? `${ex1.name} — ${dLong(ex1.bizDate)} ${slotName(ex1.slot)}: الفرق ${cVar(ex1)} ج ← الخصم ${Math.abs(cVar(ex1))} − ${ex1.tol} = ${cPen(ex1)} ج`
@@ -1811,7 +1826,7 @@ window.cashExport = () => {
   const wb = XLSX.utils.book_new(); wb.Workbook = { Views: [{ RTL: true }] };
   const add = (rows, name) => XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), name);
   add([[`تقفيلات الخزنة — ${CM.month}`], [], head, ...body], 'التقفيلات');
-  add([['اليوم','تقفيلات','نقدي للخزنة','فيزا','محافظ','مصاريف','صافي الفرق','الخصم'], ...days], 'يوم بيوم');
+  add([['اليوم','تقفيلات','نقدي للخزنة','فيزا','محافظ','مصاريف','إجمالي اليوم','صافي الفرق','الخصم'], ...days], 'يوم بيوم');
   add([['الكود','الكاشير','تقفيلات','إجمالي العجز','إجمالي الزيادة','بره السماح','الخصم','عجز صغير (مرات)','عجز صغير (مبلغ)'], ...who], 'الكاشيرية');
   add(how, 'طريقة الحساب');
   XLSX.writeFile(wb, `تقفيلات_الخزنة_${CM.month}.xlsx`);
