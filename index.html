@@ -147,6 +147,24 @@ td.num{font-variant-numeric:tabular-nums;font-family:"IBM Plex Sans Arabic",sans
 
 .qitem{border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:9px}
 .qitem .meta{font-size:12px;color:var(--muted);margin-bottom:5px}
+.qitem.void{opacity:.55}
+.tag.good{background:var(--green-soft);color:var(--green)}
+.tag.mid{background:var(--paper);color:var(--ink);border:1px solid var(--line)}
+.cfh{font-size:14.5px;margin:22px 0 6px;color:var(--ink)}
+label.chk{display:flex;gap:10px;align-items:center;font-size:14px;color:var(--ink);margin:6px 0 0;min-height:44px;cursor:pointer}
+label.chk input{width:22px;height:22px;margin:0;flex:none}
+.dens{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
+.den{display:grid;grid-template-columns:auto 1fr;gap:4px 8px;align-items:center;border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.den span{font-weight:600;font-size:13.5px;min-width:44px}
+.den b{grid-column:1/-1;font-size:12px;color:var(--muted);font-weight:500}
+.exprow{display:grid;grid-template-columns:1.2fr 1.6fr 1fr auto;gap:6px;align-items:center;margin-bottom:6px}
+@media (max-width:560px){.exprow{grid-template-columns:1fr 1fr}}
+.cfsum{margin-top:18px;border:1.5px solid var(--line);border-radius:12px;padding:12px 14px;background:var(--paper)}
+.cfsum .row .k,.cfsum .row .v{background:var(--paper)}
+.sfform{display:grid;grid-template-columns:1fr 1fr;gap:0 10px;margin-top:10px}
+tr.clk{cursor:pointer}
+tr.clk:hover td,tr.sel td{background:var(--green-soft)}
+details summary{cursor:pointer;color:var(--green);font-size:13px;font-weight:600}
 code{background:var(--green-soft);color:var(--green);padding:2px 7px;border-radius:5px;
   font-size:12.5px;font-family:"IBM Plex Sans Arabic",monospace;font-weight:600}
 .foot{text-align:center;color:var(--muted);font-size:11.5px;padding:14px 0 28px;letter-spacing:.01em}
@@ -343,7 +361,7 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="emp" class="hide"></div>
 <div id="adm" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-03-A</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-03-B</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -784,12 +802,7 @@ async function renderEmp(){
   $('emp').innerHTML = `<div class="card"><p class="sub">جاري تحميل كشفك…</p></div>`;
   let periods = [];
   try { periods = await latestPeriod(); } catch(e){}
-  if (!periods.length){
-    $('emp').innerHTML = `<div class="card"><div class="hdr"><h1>أهلاً بيك</h1>
-      <button class="ghost sm" onclick="doOut()">خروج</button></div>
-      <div class="banner">لسه مفيش كشف منشور للشهر ده. هيظهرلك أول ما مدير الفرع ينشره.</div></div>`;
-    return;
-  }
+  if (!periods.length) return empNoSlip('لسه مفيش كشف منشور للشهر ده. هيظهرلك أول ما مدير الفرع ينشره.');
   let pi = 0, docSnap = null;
   for (; pi < periods.length; pi++){
     try {
@@ -797,12 +810,7 @@ async function renderEmp(){
       if (s.exists()) { docSnap = s; break; }
     } catch(e){}
   }
-  if (!docSnap){
-    $('emp').innerHTML = `<div class="card"><div class="hdr"><h1>أهلاً بيك</h1>
-      <button class="ghost sm" onclick="doOut()">خروج</button></div>
-      <div class="banner">مفيش كشف باسمك في آخر فترة منشورة. كلّم مدير الفرع.</div></div>`;
-    return;
-  }
+  if (!docSnap) return empNoSlip('مفيش كشف باسمك في آخر فترة منشورة. لو ده غلط كلّم مدير الفرع.');
   const d = docSnap.data(), P = periods[pi];
   const days = d.days || [];
 
@@ -820,6 +828,7 @@ async function renderEmp(){
   if (d.lateDed) br += R(`خصم التأخير (${(d.q||0)+(d.half||0)} مرة)`, '− ' + F(d.lateDed) + ' ج', 'minus');
   if (d.absPen) br += R(`جزاء غياب (${d.absDays||0} يوم)`, '− ' + F(d.absPen) + ' ج', 'minus');
   if (d.adminPen) br += R('جزاءات إدارية', '− ' + F(d.adminPen) + ' ج', 'minus');
+  if (d.cashPen) br += R(`عجز/زيادة الخزنة فوق السماح (${d.cashN || 0} تقفيلة)`, '− ' + M2(d.cashPen) + ' ج', 'minus');
   if (d.adv) br += R('مسحوبات آجلة', '− ' + F(d.adv) + ' ج', 'minus');
   br += R('صافي المستحق', F(d.net) + ' ج', 'total');
 
@@ -870,6 +879,7 @@ async function renderEmp(){
     <button id="et2" onclick="etab(2)">التأخيرات</button>
     <button id="et3" onclick="etab(3)">أيام الشهر</button>
     ${d.sales ? '<button id="et5" onclick="etab(5)">مبيعاتي</button>' : ''}
+    <button id="et7" onclick="etab(7)">تقفيل الخزنة</button>
     <button id="et6" onclick="etab(6)">طلباتي</button>
     <button id="et4" onclick="etab(4)">حسابي</button>
   </div>
@@ -908,6 +918,19 @@ async function renderEmp(){
     <div class="note">${d.sales.include
       ? 'الدرجة محسوبة من: المبيعات لكل ساعة، وسيط قيمة الفاتورة، نسبة البوشينج، ونسبة تسجيل اسم العميل.'
       : 'وظيفتك مش داخلة في تقييم المبيعات، فمفيش درجة — الأرقام دي للعلم بس.'}</div></div>` : ''}
+${reqPanel()}
+  <div id="ep7" class="card hide"><div id="cashBox"></div></div>
+${passPanel()}
+  <div class="card"><h2>عندك استفسار؟</h2>
+    <p class="sub">لو فيه بند مش مظبوط، اكتبه وهيوصل لمدير الفرع.</p>
+    <textarea id="qt" rows="3" placeholder="مثال: يوم ٧ سبتمبر كان عندي إذن"></textarea>
+    <button class="full" onclick="sendQ('${esc(P.id)}')">إرسال</button>
+    <div class="ok" id="qOk"></div>
+    <div id="myQ" style="margin-top:14px"></div></div>`;
+  myQueries();
+}
+
+const reqPanel = () => `
   <div id="ep6" class="card hide"><h2>طلب جديد</h2>
     <p class="sub">الوقت الإضافي بيتقدم على يوم فات. الإذن والأجازة ينفعوا قبل أو بعد.</p>
     <label>نوع الطلب</label>
@@ -924,21 +947,31 @@ async function renderEmp(){
     <label>السبب</label><input id="otWhy" placeholder="مثال: غطيت وردية أحمد لحد 11">
     <button class="full" onclick="pmSend()">إرسال الطلب</button>
     <div class="err" id="otMsg"></div>
-    <h2 style="margin-top:20px">طلباتي</h2><div id="otList"></div></div>
+    <h2 style="margin-top:20px">طلباتي</h2><div id="otList"></div></div>`;
+const passPanel = () => `
   <div id="ep4" class="card hide"><h2>تغيير الرقم السري</h2>
     <label>الرقم السري الجديد (٦ حروف أو أرقام على الأقل)</label>
     <input id="np" type="password"><button class="full" onclick="chpass()">حفظ</button>
-    <div class="err" id="npErr"></div></div>
-  <div class="card"><h2>عندك استفسار؟</h2>
-    <p class="sub">لو فيه بند مش مظبوط، اكتبه وهيوصل لمدير الفرع.</p>
-    <textarea id="qt" rows="3" placeholder="مثال: يوم ٧ سبتمبر كان عندي إذن"></textarea>
-    <button class="full" onclick="sendQ('${esc(P.id)}')">إرسال</button>
-    <div class="ok" id="qOk"></div>
-    <div id="myQ" style="margin-top:14px"></div></div>`;
-  myQueries();
+    <div class="err" id="npErr"></div></div>`;
+
+// الموظف من غير كشف منشور (مثلاً أول الشهر بعد أرشفة اللي فات): يقدر يقفل الخزنة ويبعت طلبات
+async function empNoSlip(msg){
+  let st = {};
+  try { const x = await getDoc(doc(db, 'staff', ME.uid)); if (x.exists()) st = x.data(); } catch(e){}
+  $('emp').innerHTML = `<div class="card"><div class="hdr"><div><h1>${esc(st.name || 'أهلاً بيك')}</h1>
+      <p class="sub">${esc(st.job || '')}</p></div>
+      <button class="ghost sm" onclick="doOut()">خروج</button></div>
+      <div class="banner">${esc(msg)}</div></div>
+  <div class="tabs">
+    <button id="et7" class="on" onclick="etab(7)">تقفيل الخزنة</button>
+    <button id="et6" onclick="etab(6)">طلباتي</button>
+    <button id="et4" onclick="etab(4)">حسابي</button></div>
+  <div id="ep7" class="card"><div id="cashBox"></div></div>
+  ${reqPanel()}${passPanel()}`;
+  cashEmp();
 }
 
-window.etab = n => { if (n === 6) otMine(); [1,2,3,4,5,6].forEach(i => {
+window.etab = n => { if (n === 6) otMine(); if (n === 7) cashEmp(); [1,2,3,4,5,6,7].forEach(i => {
   const p = $('ep'+i), t = $('et'+i);
   if (p) p.classList.toggle('hide', i !== n);
   if (t) t.classList.toggle('on', i === n);
@@ -1275,6 +1308,517 @@ window.pmNo = async id => { const r = prompt('سبب الرفض؟'); if (r === n
   try { await updateDoc(doc(db, 'permits', id), { status: 'مرفوض', rejectReason: r || '' }); pmAdmin(); }
   catch (e) { alert('مشكلة: ' + (e.code || e.message)); } };
 
+/* ================= تقفيل الخزنة ================= */
+// القواعد (3/10): الأرضية 500 ج بتفضل في الدرج ومش داخلة في التقفيل.
+// السماح ±20 ج على الفرق اللي السيستم طلّعه، واللي فوقه (عجز أو زيادة) بيتخصم من اللي قفل.
+// كل تقفيلة بتتحفظ بالقواعد اللي اتقفلت بيها (tol / surplusCharged) علشان تغيير الإعداد ميغيّرش اللي فات.
+const CASH = { TOL: 20, FLOAT: 500, SURPLUS_CHARGED: true, DAY_START: 9 };
+const DENOMS = [200, 100, 50, 20, 10, 5, 1];
+const EXP_TYPES = ['أكياس وتغليف','منظفات','بوفيه وضيافة','مواصلات','صيانة','شحن رصيد','دفع لمورد (فاتورة)','سلفة لموظف','أخرى'];
+const EXP_NEED_DESC = ['دفع لمورد (فاتورة)','سلفة لموظف','أخرى'];
+const SLOTS = [[14,'14','تقفيلة ٢ الضهر'],[18,'18','تقفيلة ٦ المغرب'],[23,'23','تقفيلة ١١ بالليل'],[29,'05','تقفيلة ٥ الفجر']];
+const slotName = k => (SLOTS.find(s => s[1] === k) || [0, k, k])[2];
+const r2 = n => Math.round((+n || 0) * 100) / 100;
+const M2 = n => r2(n).toLocaleString('ar-EG', { maximumFractionDigits: 2 });
+const enNum = s => String(s == null ? '' : s).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/٫/g, '.').replace(/−/g, '-');
+
+// "89 + 86 + 1387" أو كل مبلغ في سطر ← المجموع
+function parseList(s){
+  const t = enNum(s).trim();
+  if (!t) return { sum: 0, n: 0, bad: false };
+  const parts = t.split(/[+\s]+/).filter(Boolean);
+  let sum = 0, bad = false;
+  parts.forEach(x => { const v = Number(x); if (!isFinite(v) || v < 0) bad = true; else sum += v; });
+  return { sum: r2(sum), n: parts.length, bad };
+}
+
+function cairo(d){
+  const p = {};
+  new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(d).forEach(x => p[x.type] = x.value);
+  return { y: +p.year, m: +p.month, d: +p.day, h: (+p.hour) % 24, mi: +p.minute };
+}
+// اليوم التشغيلي من ٩ الصبح لـ ٩ الصبح: تقفيلة ٥ الفجر بتتحسب على اليوم اللي قبله
+function bizOf(date){
+  const c = cairo(date);
+  let day = new Date(Date.UTC(c.y, c.m - 1, c.d));
+  if (c.h < CASH.DAY_START) day = new Date(day.getTime() - 86400000);
+  let hh = c.h + c.mi / 60; if (hh < CASH.DAY_START) hh += 24;
+  const slot = SLOTS.reduce((a, s) => Math.abs(s[0] - hh) < Math.abs(a[0] - hh) ? s : a)[1];
+  return { biz: day.toISOString().slice(0, 10), slot, time: `${d2(c.h)}:${d2(c.mi)}` };
+}
+const dLong = biz => { const [y, m, d] = String(biz || '').split('-').map(Number);
+  if (!d) return biz || ''; return `${AR_D[new Date(y, m - 1, d).getDay()]} ${d}/${m}`; };
+
+// الفرق: سالب = عجز، موجب = زيادة. لو مدير الفرع صحّحه، آخر تصحيح هو اللي بيتاخد
+const cVar = c => { const f = (c.fixes || []).slice(-1)[0];
+  if (f) return +f.variance || 0;
+  return c.posKind === 'عجز' ? -(+c.posAmount || 0) : c.posKind === 'زيادة' ? (+c.posAmount || 0) : 0; };
+const cPen = c => { if (c.void) return 0;
+  const v = cVar(c), tol = c.tol != null ? +c.tol : CASH.TOL;
+  const sc = c.surplusCharged != null ? c.surplusCharged : CASH.SURPLUS_CHARGED;
+  if (v > 0 && !sc) return 0;
+  return Math.max(0, r2(Math.abs(v) - tol)); };
+const cTime = c => c.at?.seconds ? new Date(c.at.seconds * 1000) : (c.clientAt ? new Date(c.clientAt) : null);
+const clockOff = c => c.at?.seconds && c.clientAt && Math.abs(c.at.seconds * 1000 - new Date(c.clientAt)) > 15 * 60000;
+const varTag = (v, tol) => !v ? '<span class="tag good">مظبوط</span>'
+  : `<span class="tag ${Math.abs(v) > (tol != null ? tol : CASH.TOL) ? 'late' : 'mid'}">${v < 0 ? 'عجز' : 'زيادة'} ${M2(Math.abs(v))}</span>`;
+
+/* ---------- شاشة الكاشير ---------- */
+let MYCASH = [];
+function cashForm(){
+  const den = DENOMS.map(v => `<div class="den"><span>${v} ج</span>
+    <input id="dn${v}" type="number" inputmode="numeric" min="0" step="1" placeholder="0" oninput="cashCalc()" aria-label="عدد ورق ${v}">
+    <b id="dt${v}">—</b></div>`).join('');
+  return `<div id="cfForm">
+    <h2>تقفيل شيفت</h2>
+    <p class="sub" id="cfWhen"></p>
+    <h3 class="cfh">١. الأرضية (${CASH.FLOAT} ج)</h3>
+    <label class="chk"><input type="radio" name="cfFl" value="ok" onchange="cashCalc()"> استلمت الأرضية ${CASH.FLOAT} ج كاملة أول الشيفت</label>
+    <label class="chk"><input type="radio" name="cfFl" value="no" onchange="cashCalc()"> لأ، استلمتها ناقصة</label>
+    <div id="cfGotRow" class="hide"><label>استلمت كام؟</label>
+      <input id="cfGot" type="number" min="0" step="0.5" inputmode="decimal" oninput="cashCalc()"></div>
+    <h3 class="cfh">٢. عِد الدرج كله (بالأرضية)</h3>
+    <div class="dens">${den}
+      <div class="den"><span>فكة</span><input id="dnCoins" type="number" min="0" step="0.25" inputmode="decimal" placeholder="المبلغ" oninput="cashCalc()" aria-label="مبلغ الفكة">
+        <b id="dtCoins">—</b></div></div>
+    <div class="rows" style="margin-top:8px">
+      <div class="row"><span class="k">إجمالي الدرج</span><span class="v" id="cfDrawer">٠ ج</span></div>
+      <div class="row minus"><span class="k">الأرضية اللي هتفضل في الدرج</span><span class="v">− ${CASH.FLOAT} ج</span></div>
+      <div class="row total"><span class="k">النقدي اللي رايح الخزنة</span><span class="v" id="cfCash">٠ ج</span></div></div>
+    <h3 class="cfh">٣. الفيزا والمحافظ</h3>
+    <p class="sub">اكتب كل عملية لوحدها وبينهم + (مثال: 89 + 86 + 1387) والموقع هيجمعهم.</p>
+    <label for="cfVisa">الفيزا</label><input id="cfVisa" inputmode="decimal" oninput="cashCalc()"><div class="sub" id="cfVisaT"></div>
+    <label for="cfVoda">فودافون كاش</label><input id="cfVoda" inputmode="decimal" oninput="cashCalc()"><div class="sub" id="cfVodaT"></div>
+    <label for="cfInsta">إنستاباي</label><input id="cfInsta" inputmode="decimal" oninput="cashCalc()"><div class="sub" id="cfInstaT"></div>
+    <h3 class="cfh">٤. المصاريف اللي اتدفعت من الدرج</h3>
+    <div id="cfExp"></div>
+    <button class="sm ghost" type="button" onclick="cashExpAdd()">+ مصروف</button>
+    <h3 class="cfh">٥. نتيجة السيستم</h3>
+    <select id="cfPos" onchange="cashCalc()" aria-label="نتيجة السيستم"><option value="">— السيستم قال إيه؟ —</option>
+      <option>مظبوط</option><option>عجز</option><option>زيادة</option></select>
+    <div id="cfPosRow" class="hide"><label for="cfPosAmt">المبلغ زي ما السيستم كاتبه</label>
+      <input id="cfPosAmt" type="number" min="0" step="0.01" inputmode="decimal" oninput="cashCalc()"></div>
+    <label for="cfNote">ملاحظات (اختياري)</label><input id="cfNote" placeholder="مثال: أوردر طيار لسه مرجعش">
+    <div id="cfSum" class="cfsum"></div>
+    <button class="full" id="cfBtn" onclick="cashSend()">إرسال التقفيلة</button>
+    <div class="err" id="cfMsg"></div>
+    <div class="note">بعد الإرسال التقفيلة <b>متتعدلش</b>. لو فيه غلط، كلّم مدير الفرع وهو يسجّل التصحيح بسبب، والأصل بيفضل محفوظ.
+      قبل ما تقفل: احفظ على السيستم أي أوردر طيار استلمت فلوسه.</div>
+  </div>
+  <h2 style="margin-top:22px">تقفيلاتي</h2><div id="cfMine"><p class="sub">جاري التحميل…</p></div>`;
+}
+
+async function cashEmp(){
+  const box = $('cashBox'); if (!box) return;
+  if (!$('cfForm')) box.innerHTML = cashForm();
+  cashCalc(); cashMine();
+}
+
+window.cashExpAdd = () => {
+  const row = document.createElement('div'); row.className = 'exprow';
+  row.innerHTML = `<select class="exT" onchange="cashCalc()" aria-label="نوع المصروف"><option value="">النوع</option>${EXP_TYPES.map(t => `<option>${t}</option>`).join('')}</select>
+    <input class="exD" placeholder="البيان (مثال: فاتورة ابن سينا)" aria-label="البيان">
+    <input class="exA" type="number" min="0" step="0.01" inputmode="decimal" placeholder="المبلغ" oninput="cashCalc()" aria-label="المبلغ">
+    <button type="button" class="sm ghost" onclick="this.parentNode.remove();cashCalc()" aria-label="امسح المصروف">✕</button>`;
+  $('cfExp').appendChild(row);
+};
+
+function cashRead(){
+  const counts = {}; let drawer = 0, badCount = false;
+  DENOMS.forEach(v => { const c = +($('dn' + v).value || 0);
+    if (c < 0 || !Number.isInteger(c)) badCount = true; counts[v] = c; drawer += c * v; });
+  const coins = +($('dnCoins').value || 0); if (coins < 0) badCount = true;
+  drawer = r2(drawer + coins);
+  const fl = (document.querySelector('input[name="cfFl"]:checked') || {}).value || '';
+  const got = fl === 'ok' ? CASH.FLOAT : r2(+($('cfGot').value || 0));
+  const visa = parseList($('cfVisa').value), voda = parseList($('cfVoda').value), insta = parseList($('cfInsta').value);
+  const exps = [...document.querySelectorAll('#cfExp .exprow')].map(r => ({ type: r.querySelector('.exT').value,
+    desc: r.querySelector('.exD').value.trim(), amount: r2(+r.querySelector('.exA').value || 0) }))
+    .filter(x => x.type || x.desc || x.amount);
+  const expTotal = r2(exps.reduce((a, x) => a + x.amount, 0));
+  const posKind = $('cfPos').value;
+  const posAmount = posKind && posKind !== 'مظبوط' ? r2(+$('cfPosAmt').value || 0) : 0;
+  const variance = posKind === 'عجز' ? -posAmount : posKind === 'زيادة' ? posAmount : 0;
+  const pen = cPen({ posKind, posAmount, tol: CASH.TOL, surplusCharged: CASH.SURPLUS_CHARGED });
+  return { counts, coins, drawer, badCount, fl, got, visa, voda, insta, exps, expTotal,
+    posKind, posAmount, variance, pen, cashToSafe: r2(drawer - CASH.FLOAT) };
+}
+
+window.cashCalc = () => {
+  if (!$('cfForm')) return;
+  const s = cashRead(), w = bizOf(new Date());
+  $('cfWhen').innerHTML = `هتتسجل على يوم <b>${dLong(w.biz)}</b> — <b>${slotName(w.slot)}</b> (الساعة دلوقتي ${w.time})`;
+  DENOMS.forEach(v => { const c = +($('dn' + v).value || 0); $('dt' + v).textContent = c ? M2(c * v) + ' ج' : '—'; });
+  $('dtCoins').textContent = s.coins ? M2(s.coins) + ' ج' : '—';
+  $('cfDrawer').textContent = M2(s.drawer) + ' ج';
+  $('cfCash').textContent = M2(s.cashToSafe) + ' ج';
+  $('cfGotRow').classList.toggle('hide', s.fl !== 'no');
+  $('cfPosRow').classList.toggle('hide', !s.posKind || s.posKind === 'مظبوط');
+  [['cfVisaT', s.visa], ['cfVodaT', s.voda], ['cfInstaT', s.insta]].forEach(([id, x]) =>
+    $(id).textContent = x.bad ? '⚠ فيه رقم مش مفهوم — اكتب أرقام بس وبينهم +' : x.n > 1 ? `${x.n} عمليات = ${M2(x.sum)} ج` : '');
+  const R = (k, v, c) => `<div class="row ${c || ''}"><span class="k">${k}</span><span class="v">${v}</span></div>`;
+  let verdict = '';
+  if (s.posKind){
+    const a = Math.abs(s.variance);
+    verdict = !a ? R('نتيجة السيستم', 'مظبوط ✔', 'plus')
+      : R('نتيجة السيستم', `${s.posKind} ${M2(a)} ج`, s.variance < 0 ? 'minus' : '') +
+        (s.pen ? R('هيتخصم منك', M2(s.pen) + ' ج', 'minus') +
+            `<div class="sub">السماح ${M2(CASH.TOL)} ج — اللي فوقه بيتخصم: ${M2(a)} − ${M2(CASH.TOL)} = ${M2(s.pen)} ج</div>`
+          : `<div class="sub">جوه السماح (${M2(CASH.TOL)} ج) — مفيش خصم.</div>`);
+  }
+  $('cfSum').innerHTML = `<div class="rows">
+    ${R('نقدي للخزنة', M2(s.cashToSafe) + ' ج')}${R('فيزا', M2(s.visa.sum) + ' ج')}
+    ${R('فودافون كاش', M2(s.voda.sum) + ' ج')}${R('إنستاباي', M2(s.insta.sum) + ' ج')}
+    ${R('مصاريف من الدرج', M2(s.expTotal) + ' ج')}${verdict}</div>
+    ${s.fl === 'no' && s.got < CASH.FLOAT ? `<div class="banner bad" style="margin-top:10px">الأرضية ناقصة ${M2(CASH.FLOAT - s.got)} ج — هتتسجل على التسليم من الشيفت اللي قبلك.</div>` : ''}`;
+};
+
+window.cashSend = async () => {
+  const s = cashRead(), m = $('cfMsg');
+  const bad = t => { m.style.color = 'var(--red)'; m.textContent = t; };
+  if (!s.fl) return bad('حدد: استلمت الأرضية كاملة ولا لأ');
+  if (s.fl === 'no' && !(s.got >= 0 && s.got < CASH.FLOAT)) return bad(`اكتب الأرضية اللي استلمتها (أقل من ${CASH.FLOAT})`);
+  if (s.badCount) return bad('عدد الفئات لازم أرقام صحيحة من غير سالب');
+  if (s.drawer <= 0) return bad('عِد الدرج الأول');
+  if (s.drawer < CASH.FLOAT) return bad(`الدرج كله ${M2(s.drawer)} ج — أقل من الأرضية ${CASH.FLOAT}. راجع العد.`);
+  if (s.visa.bad || s.voda.bad || s.insta.bad) return bad('فيه رقم مش مفهوم في الفيزا أو المحافظ');
+  for (const x of s.exps){
+    if (!x.type) return bad('حدد نوع كل مصروف');
+    if (!(x.amount > 0)) return bad('اكتب مبلغ كل مصروف');
+    if (EXP_NEED_DESC.includes(x.type) && !x.desc) return bad(`اكتب بيان "${x.type}" (مين / فاتورة إيه)`);
+  }
+  if (!s.posKind) return bad('اختار نتيجة السيستم (مظبوط / عجز / زيادة)');
+  if (s.posKind !== 'مظبوط' && !(s.posAmount > 0)) return bad('اكتب مبلغ العجز أو الزيادة زي السيستم بالظبط');
+  const now = new Date(), w = bizOf(now);
+  const last = MYCASH[0] && cTime(MYCASH[0]);
+  if (last && now - last < 45 * 60000 && !confirm('إنت قفلت من أقل من ٤٥ دقيقة. دي تقفيلة جديدة فعلاً؟')) return;
+  if (!confirm(`${dLong(w.biz)} — ${slotName(w.slot)}
+نقدي للخزنة: ${M2(s.cashToSafe)} ج
+فيزا: ${M2(s.visa.sum)} — فودافون: ${M2(s.voda.sum)} — إنستاباي: ${M2(s.insta.sum)}
+مصاريف: ${M2(s.expTotal)} ج
+السيستم: ${s.posKind}${s.posAmount ? ' ' + M2(s.posAmount) + ' ج' : ''}${s.pen ? `\nهيتخصم منك: ${M2(s.pen)} ج` : ''}
+
+بعد الإرسال مش هتقدر تعدّل. متأكد؟`)) return;
+  const btn = $('cfBtn'); btn.disabled = true; m.style.color = 'var(--muted)'; m.textContent = 'جاري الإرسال…';
+  try {
+    const st = await getDoc(doc(db, 'staff', ME.uid)); const v = st.exists() ? st.data() : {};
+    if (!v.code) throw { message: 'حسابك مش مربوط بكود موظف — كلّم مدير الفرع' };
+    await addDoc(collection(db, 'closings'), {
+      uid: ME.uid, code: String(v.code), name: v.name || '', status: 'مرسل',
+      at: serverTimestamp(), clientAt: now.toISOString(), bizDate: w.biz, slot: w.slot, timeLocal: w.time,
+      floatOk: s.fl === 'ok', floatGot: s.got, float: CASH.FLOAT,
+      counts: s.counts, coins: r2(s.coins), drawer: s.drawer, cashToSafe: s.cashToSafe,
+      visa: s.visa.sum, visaList: $('cfVisa').value.trim(),
+      voda: s.voda.sum, vodaList: $('cfVoda').value.trim(),
+      insta: s.insta.sum, instaList: $('cfInsta').value.trim(),
+      expenses: s.exps, expTotal: s.expTotal,
+      posKind: s.posKind, posAmount: s.posAmount, variance: s.variance,
+      tol: CASH.TOL, surplusCharged: CASH.SURPLUS_CHARGED, penalty: s.pen,
+      note: $('cfNote').value.trim() });
+    $('cashBox').innerHTML = cashForm(); cashCalc();
+    const m2 = $('cfMsg'); m2.style.color = 'var(--green)'; m2.textContent = 'اتسجلت ✔ — هتلاقيها تحت في "تقفيلاتي".';
+    cashMine();
+  } catch (e) { btn.disabled = false; bad('متبعتتش: ' + (e.code || e.message)); }
+};
+
+async function cashMine(){
+  const box = $('cfMine'); if (!box) return;
+  try {
+    const snap = await getDocs(query(collection(db, 'closings'), where('uid', '==', ME.uid)));
+    MYCASH = []; snap.forEach(d => MYCASH.push({ id: d.id, ...d.data() }));
+    MYCASH.sort((a, b) => (cTime(b) || 0) - (cTime(a) || 0));
+    if (!MYCASH.length){ box.innerHTML = '<p class="sub">لسه مقفلتش أي شيفت.</p>'; return; }
+    const mon = bizOf(new Date()).biz.slice(0, 7);
+    const pen = MYCASH.filter(c => String(c.bizDate).startsWith(mon)).reduce((a, c) => a + cPen(c), 0);
+    box.innerHTML = `${pen ? `<div class="banner bad">خصومات الخزنة عليك الشهر ده: ${M2(pen)} ج — بتتخصم من المرتب.</div>` : ''}
+      <div class="scroll"><table><tr><th>اليوم</th><th>التقفيلة</th><th>نقدي</th><th>السيستم</th><th>الخصم</th><th>الحالة</th></tr>
+      ${MYCASH.slice(0, 60).map(c => { const v = cVar(c), p = cPen(c);
+        return `<tr><td>${esc(dLong(c.bizDate))}</td><td>${esc(slotName(c.slot))}</td><td class="num">${M2(c.cashToSafe)}</td>
+        <td>${varTag(v, c.tol)}</td><td class="num">${p ? M2(p) + ' ج' : '—'}</td>
+        <td>${c.void ? '<span class="tag">ملغية</span>' : (c.fixes || []).length ? '<span class="tag ok">اتصححت</span>'
+          : c.review ? '<span class="tag good">اتراجعت</span>' : '—'}</td></tr>`; }).join('')}
+      </table></div>`;
+  } catch (e) { box.innerHTML = `<p class="err">مشكلة: ${esc(e.code || e.message)}</p>`; }
+}
+
+/* ---------- لوحة الخزنة (مدير الفرع + صاحب الصيدلية) ---------- */
+const CM = { month: '', day: '', list: [], safe: [], ledger: null };
+
+async function cashAdmin(){
+  const box = $('cashAdm'); if (!box) return;
+  if (!CM.month) CM.month = bizOf(new Date()).biz.slice(0, 7);
+  box.innerHTML = `<div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap">
+    <div style="min-width:180px"><label for="cmMonth" style="margin-top:0">الشهر</label>
+      <input type="month" id="cmMonth" value="${CM.month}" onchange="cmSetMonth(this.value)"></div>
+    <button class="sm ghost" onclick="cashAdmin()">تحديث</button>
+    <button class="sm ghost" onclick="cashExport()">تصدير Excel</button></div>
+    <div id="cmBody"><p class="sub">جاري التحميل…</p></div>`;
+  try {
+    const snap = await getDocs(query(collection(db, 'closings'),
+      where('bizDate', '>=', CM.month + '-01'), where('bizDate', '<=', CM.month + '-31')));
+    CM.list = []; snap.forEach(d => CM.list.push({ id: d.id, ...d.data() }));
+    CM.list.sort((x, y) => (cTime(y) || 0) - (cTime(x) || 0));
+    const ss = await getDocs(collection(db, 'safe'));
+    CM.safe = []; ss.forEach(d => CM.safe.push({ id: d.id, ...d.data() }));
+  } catch (e) {
+    $('cmBody').innerHTML = `<p class="err">مقدرتش أقرا التقفيلات: ${esc(e.code || e.message)}${
+      e.code === 'permission-denied' ? ' — قواعد Firebase الجديدة لسه متحطتش' : ''}</p>`; return;
+  }
+  CM.ledger = await safeLedger();
+  cashRender();
+}
+window.cmSetMonth = v => { if (!v) return; CM.month = v; CM.day = ''; cashAdmin(); };
+
+// رصيد الخزنة الجوانية = آخر جرد + نقدي التقفيلات اللي بعده − السحب + الإيداع
+async function safeLedger(){
+  const S = CM.safe.slice().sort((x, y) => (x.at?.seconds || 0) - (y.at?.seconds || 0));
+  let base = null; S.forEach(e => { if (e.kind === 'جرد') base = e; });
+  const baseSec = base ? (base.at?.seconds || 0) : 0;
+  const cl = [];
+  try {
+    const from = base ? new Date((baseSec - 2 * 86400) * 1000).toISOString().slice(0, 10) : '0000';
+    const snap = await getDocs(query(collection(db, 'closings'), where('bizDate', '>=', from)));
+    snap.forEach(d => { const c = d.data(); const t = cTime(c);
+      if (!c.void && t && t.getTime() / 1000 > baseSec) cl.push(c); });
+  } catch (e) { return { err: e.code || e.message }; }
+  const after = S.filter(e => (e.at?.seconds || 0) > baseSec && e.kind !== 'جرد');
+  const inC = r2(cl.reduce((a, c) => a + (+c.cashToSafe || 0), 0));
+  const out = r2(after.filter(e => e.kind === 'سحب').reduce((a, e) => a + (+e.amount || 0), 0));
+  const dep = r2(after.filter(e => e.kind === 'إيداع').reduce((a, e) => a + (+e.amount || 0), 0));
+  return { base, inC, out, dep, n: cl.length, bal: r2((base ? +base.amount : 0) + inC - out + dep), entries: S.slice().reverse() };
+}
+
+function cashStats(){
+  const L = CM.list.filter(c => !c.void);
+  const sum = f => r2(L.reduce((a, c) => a + (+f(c) || 0), 0));
+  const days = {}, who = {}, sl = {}, ex = {}, sup = [];
+  L.forEach(c => {
+    const v = cVar(c), p = cPen(c);
+    const d = days[c.bizDate] = days[c.bizDate] || { d: c.bizDate, n: 0, cash: 0, visa: 0, wal: 0, exp: 0, net: 0, pen: 0, over: 0 };
+    d.n++; d.cash += +c.cashToSafe || 0; d.visa += +c.visa || 0; d.wal += (+c.voda || 0) + (+c.insta || 0);
+    d.exp += +c.expTotal || 0; d.net += v; d.pen += p; if (p) d.over++;
+    const w = who[c.code] = who[c.code] || { code: c.code, name: c.name, n: 0, short: 0, plus: 0, over: 0, pen: 0, small: 0, smallSum: 0 };
+    w.n++; if (v < 0) w.short += -v; if (v > 0) w.plus += v;
+    if (p) { w.over++; w.pen += p; } else if (v < 0) { w.small++; w.smallSum += -v; }
+    const s = sl[c.slot] = sl[c.slot] || { k: c.slot, n: 0, net: 0, abs: 0, over: 0 };
+    s.n++; s.net += v; s.abs += Math.abs(v); if (p) s.over++;
+    (c.expenses || []).forEach(x => { const e = ex[x.type] = ex[x.type] || { t: x.type, n: 0, v: 0 };
+      e.n++; e.v += +x.amount || 0;
+      if (x.type === 'دفع لمورد (فاتورة)' || x.type === 'سلفة لموظف') sup.push({ ...x, d: c.bizDate, who: c.name }); });
+  });
+  return { L, days, who, sl, ex, sup,
+    tot: { n: L.length, cash: sum(c => c.cashToSafe), visa: sum(c => c.visa), wal: sum(c => (+c.voda || 0) + (+c.insta || 0)),
+      exp: sum(c => c.expTotal), net: sum(cVar), pen: sum(cPen), over: L.filter(c => cPen(c) > 0).length } };
+}
+// عجز صغير جوه السماح بيتكرر كتير = علامة تستاهل متابعة (مش بيتخصم)
+const smallFlag = w => w.small >= 4 || w.smallSum >= 60;
+
+function cashRender(){
+  const box = $('cmBody'); if (!box) return;
+  const isAdm = ROLE === 'admin', S = cashStats(), T = S.tot, Lg = CM.ledger || {};
+  const today = bizOf(new Date()).biz, [yy, mm] = CM.month.split('-').map(Number);
+  const miss = [];
+  for (let i = 1; i <= new Date(yy, mm, 0).getDate(); i++){
+    const k = `${CM.month}-${d2(i)}`; if (k >= today) break; if (!S.days[k]) miss.push(i); }
+  const few = Object.values(S.days).filter(d => d.n < 3 && d.d < today).map(d => dLong(d.d));
+  const flagged = S.L.filter(c => !c.floatOk || clockOff(c));
+  const dayArr = Object.values(S.days).sort((a, b) => a.d < b.d ? 1 : -1);
+  const shifts = CM.day ? CM.list.filter(c => c.bizDate === CM.day)
+    : CM.list.filter(c => !c.void && (cPen(c) > 0 || !c.floatOk || clockOff(c)));
+
+  const card = c => { const v = cVar(c), p = cPen(c);
+    const cnt = DENOMS.filter(d => +(c.counts || {})[d]).map(d => `${d}×${c.counts[d]}`).join(' · ');
+    return `<div class="qitem${c.void ? ' void' : ''}">
+    <div class="meta">${esc(dLong(c.bizDate))} — ${esc(slotName(c.slot))} — الساعة ${esc(c.timeLocal || '')} — <b>${esc(c.name)} (${esc(c.code)})</b></div>
+    <div>نقدي <b>${M2(c.cashToSafe)}</b> · فيزا <b>${M2(c.visa)}</b> · فودافون <b>${M2(c.voda)}</b> · إنستاباي <b>${M2(c.insta)}</b> · مصاريف <b>${M2(c.expTotal)}</b></div>
+    <div style="margin-top:7px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">${varTag(v, c.tol)}
+      ${p ? `<span class="tag late">خصم ${M2(p)} ج</span>` : ''}
+      ${!c.floatOk ? `<span class="tag late">استلم الأرضية ناقصة ${M2((+c.float || CASH.FLOAT) - (+c.floatGot || 0))} ج</span>` : ''}
+      ${clockOff(c) ? '<span class="tag late">ساعة الجهاز مش مظبوطة</span>' : ''}
+      ${c.void ? `<span class="tag">ملغية: ${esc(c.void.reason || '')}</span>` : ''}
+      ${c.review ? '<span class="tag good">اتراجعت</span>' : ''}</div>
+    ${(c.fixes || []).map(f => `<div class="sub" style="margin-top:6px">تصحيح ← ${f.variance < 0 ? 'عجز' : f.variance > 0 ? 'زيادة' : 'مظبوط'} ${M2(Math.abs(f.variance))} ج — ${esc(f.reason)} (${esc(f.at || '')}).
+      الأصل من الكاشير: ${esc(c.posKind)} ${M2(c.posAmount)} ج</div>`).join('')}
+    <details style="margin-top:8px"><summary>التفاصيل</summary><div class="sub" style="line-height:1.9;margin-top:6px">
+      الدرج كله ${M2(c.drawer)} ج (${esc(cnt) || '—'}${+c.coins ? ' · فكة ' + M2(c.coins) : ''}) − أرضية ${M2(c.float)} = <b>${M2(c.cashToSafe)}</b><br>
+      ${c.visaList ? 'الفيزا: ' + esc(c.visaList) + '<br>' : ''}${c.vodaList ? 'فودافون: ' + esc(c.vodaList) + '<br>' : ''}${c.instaList ? 'إنستاباي: ' + esc(c.instaList) + '<br>' : ''}
+      ${(c.expenses || []).map(x => `مصروف: ${esc(x.type)} — ${esc(x.desc)} — ${M2(x.amount)} ج`).join('<br>')}
+      ${c.note ? '<br>ملاحظة: ' + esc(c.note) : ''}</div></details>
+    ${isAdm && !c.void ? `<div style="margin-top:9px;display:flex;gap:8px;flex-wrap:wrap">
+      ${c.review ? '' : `<button class="sm" onclick="cmReview('${c.id}')">تمت المراجعة</button>`}
+      <button class="sm ghost" onclick="cmFix('${c.id}')">تصحيح الفرق</button>
+      <button class="sm ghost" onclick="cmVoid('${c.id}')">إلغاء (مكررة)</button></div>` : ''}</div>`; };
+
+  const whoArr = Object.values(S.who).sort((a, b) => b.pen - a.pen || b.short - a.short);
+  const slArr = SLOTS.map(s => S.sl[s[1]]).filter(Boolean);
+  const exArr = Object.values(S.ex).sort((a, b) => b.v - a.v);
+  const sfRows = (Lg.entries || []).slice(0, 40).map(e => `<tr><td>${e.at?.seconds ? new Date(e.at.seconds * 1000).toLocaleString('ar-EG', { timeZone: 'Africa/Cairo', dateStyle: 'short', timeStyle: 'short' }) : ''}</td>
+    <td>${e.kind === 'جرد' ? (e.opening ? 'رصيد بداية' : 'جرد') : esc(e.kind)}</td><td class="num">${M2(e.amount)}</td>
+    <td class="num">${e.kind === 'جرد' && !e.opening ? `${M2(e.expected)} / <b style="color:${e.diff < 0 ? 'var(--red)' : 'inherit'}">${e.diff > 0 ? '+' : ''}${M2(e.diff)}</b>` : '—'}</td>
+    <td style="white-space:normal">${esc(e.note || '')}</td></tr>`).join('');
+
+  box.innerHTML = `
+    ${statTiles([
+      { label: 'تقفيلات الشهر', value: F(T.n), sub: `${F(T.over)} بره السماح` },
+      { label: 'نقدي دخل الخزنة', value: M2(T.cash) + ' ج' },
+      { label: 'فيزا + محافظ', value: M2(T.visa + T.wal) + ' ج', sub: `فيزا ${M2(T.visa)} · محافظ ${M2(T.wal)}` },
+      { label: 'مصاريف من الدرج', value: M2(T.exp) + ' ج' },
+      { label: 'صافي العجز والزيادة', value: (T.net < 0 ? 'عجز ' : T.net > 0 ? 'زيادة ' : '') + M2(Math.abs(T.net)) + ' ج' },
+      { label: 'خصومات على الكاشيرية', value: M2(T.pen) + ' ج' }])}
+    ${miss.length ? `<div class="banner bad">أيام من غير ولا تقفيلة: ${miss.map(F).join('، ')}</div>` : ''}
+    ${few.length ? `<div class="banner">أيام فيها أقل من ٣ تقفيلات: ${few.map(esc).join('، ')}</div>` : ''}
+    ${flagged.length ? `<div class="banner">${F(flagged.length)} تقفيلة فيها أرضية ناقصة أو ساعة جهاز غلط — تحت في "محتاجة نظرة".</div>` : ''}
+
+    <h2 style="margin-top:20px">يوم بيوم</h2>
+    <p class="sub">دوس على أي يوم يظهرلك تقفيلاته كلها. اليوم من ٩ الصبح لـ ٩ الصبح اللي بعده.</p>
+    ${dayArr.length ? `<div class="scroll"><table><tr><th>اليوم</th><th>تقفيلات</th><th>نقدي للخزنة</th><th>فيزا</th><th>محافظ</th><th>مصاريف</th><th>صافي الفرق</th><th>خصم</th></tr>
+      ${dayArr.map(d => `<tr class="clk${CM.day === d.d ? ' sel' : ''}" onclick="cmDay('${d.d}')"><td>${esc(dLong(d.d))}</td><td class="num">${d.n}</td>
+        <td class="num">${M2(d.cash)}</td><td class="num">${M2(d.visa)}</td><td class="num">${M2(d.wal)}</td><td class="num">${M2(d.exp)}</td>
+        <td>${varTag(r2(d.net), 1e9)}</td><td class="num">${d.pen ? M2(d.pen) : '—'}</td></tr>`).join('')}</table></div>`
+      : '<p class="sub">مفيش تقفيلات في الشهر ده.</p>'}
+
+    <h2 style="margin-top:20px" id="cmShifts">${CM.day ? `تقفيلات ${esc(dLong(CM.day))} <button class="sm ghost" onclick="cmDay('')">رجوع</button>` : 'محتاجة نظرة'}</h2>
+    ${CM.day ? '' : '<p class="sub">التقفيلات اللي فيها خصم أو أرضية ناقصة أو ساعة جهاز غلط.</p>'}
+    ${shifts.length ? shifts.map(card).join('') : '<p class="sub">مفيش — تمام.</p>'}
+
+    <h2 style="margin-top:20px">الكاشيرية</h2>
+    ${whoArr.length ? `<div class="scroll"><table><tr><th>الكاشير</th><th>تقفيلات</th><th>إجمالي العجز</th><th>إجمالي الزيادة</th><th>بره السماح</th><th>الخصم</th><th>عجز صغير متكرر</th></tr>
+      ${whoArr.map(w => `<tr><td>${esc(w.name)} (${esc(w.code)})</td><td class="num">${w.n}</td><td class="num">${M2(w.short)}</td>
+        <td class="num">${M2(w.plus)}</td><td class="num">${w.over}</td><td class="num"><b>${M2(w.pen)}</b></td>
+        <td>${smallFlag(w) ? `<span class="tag late">${w.small} مرة = ${M2(w.smallSum)} ج</span>` : '—'}</td></tr>`).join('')}</table></div>
+      <div class="note">"عجز صغير متكرر" = عجز جوه السماح (مش بيتخصم) اتكرر ٤ مرات أو أكتر أو مجموعه ٦٠ ج أو أكتر في الشهر — يستاهل متابعة.</div>` : ''}
+
+    ${slArr.length ? `<h2 style="margin-top:20px">حسب ميعاد التقفيل</h2><div class="scroll"><table>
+      <tr><th>التقفيلة</th><th>عددها</th><th>صافي الفرق</th><th>متوسط الفرق (من غير إشارة)</th><th>بره السماح</th></tr>
+      ${slArr.map(s => `<tr><td>${esc(slotName(s.k))}</td><td class="num">${s.n}</td><td>${varTag(r2(s.net), 1e9)}</td>
+        <td class="num">${M2(s.abs / s.n)}</td><td class="num">${s.over}</td></tr>`).join('')}</table></div>` : ''}
+
+    ${exArr.length ? `<h2 style="margin-top:20px">المصاريف من الدرج</h2><div class="scroll"><table>
+      <tr><th>النوع</th><th>مرات</th><th>الإجمالي</th></tr>
+      ${exArr.map(e => `<tr><td>${esc(e.t)}</td><td class="num">${e.n}</td><td class="num"><b>${M2(e.v)}</b></td></tr>`).join('')}</table></div>
+      ${S.sup.length ? `<details style="margin-top:8px"><summary>الدفع للموردين والسلف (${S.sup.length})</summary><div class="scroll" style="margin-top:6px"><table>
+        <tr><th>اليوم</th><th>النوع</th><th>البيان</th><th>المبلغ</th><th>الكاشير</th></tr>
+        ${S.sup.map(x => `<tr><td>${esc(dLong(x.d))}</td><td>${esc(x.type)}</td><td style="white-space:normal">${esc(x.desc)}</td>
+          <td class="num">${M2(x.amount)}</td><td>${esc(x.who)}</td></tr>`).join('')}</table></div></details>` : ''}` : ''}
+
+    <h2 style="margin-top:24px">الخزنة الجوانية</h2>
+    ${Lg.err ? `<p class="err">مقدرتش أحسب الرصيد: ${esc(Lg.err)}</p>` : `
+      ${statTiles([
+        { label: 'الرصيد المفروض يكون فيها دلوقتي', value: M2(Lg.bal) + ' ج', hi: true,
+          sub: Lg.base ? 'من آخر جرد' : 'مفيش جرد متسجل لسه' },
+        { label: 'دخل من التقفيلات', value: M2(Lg.inC) + ' ج', sub: `${Lg.n} تقفيلة بعد آخر جرد` },
+        { label: 'اتسحب منها', value: M2(Lg.out) + ' ج', sub: Lg.dep ? `واتحط فيها ${M2(Lg.dep)} ج` : '' }])}
+      ${!Lg.base ? '<div class="banner">أول خطوة: عِد الخزنة الجوانية وسجّل "جرد" بالمبلغ اللي فيها — ده هيبقى رصيد البداية.</div>' : ''}
+      ${isAdm ? `<div class="sfform">
+        <div><label for="sfKind">العملية</label><select id="sfKind">
+          <option value="جرد">جرد (عدّيت الخزنة)</option><option value="سحب">سحب من الخزنة</option><option value="إيداع">إيداع في الخزنة</option></select></div>
+        <div><label for="sfAmt">المبلغ</label><input id="sfAmt" type="number" min="0" step="0.01" inputmode="decimal"></div>
+        <div style="grid-column:1/-1"><label for="sfNote">البيان</label><input id="sfNote" placeholder="مثال: د. أنس سحب للبنك / دفع لمورد"></div></div>
+        <button class="sm" style="margin-top:10px" onclick="safeAdd()">تسجيل</button><div class="err" id="sfMsg"></div>` : ''}
+      ${sfRows ? `<div class="scroll" style="margin-top:12px"><table><tr><th>الوقت</th><th>العملية</th><th>المبلغ</th><th>المفروض / الفرق</th><th>البيان</th></tr>${sfRows}</table></div>` : ''}
+      <div class="note">الرصيد = آخر جرد + النقدي اللي دخل من التقفيلات بعده − السحب + الإيداع. أي عملية في الخزنة <b>متتمسحش ولا تتعدل</b> — لو فيه غلط سجّل عملية عكسها.
+        اعمل جرد مرة في الأسبوع على الأقل: لو العد طلع أقل من المفروض، الفرق ده فلوس خرجت من غير ما تتسجل.</div>`}`;
+}
+
+window.cmDay = d => { CM.day = CM.day === d ? '' : d; cashRender();
+  const h = $('cmShifts'); if (h && d) h.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+
+async function cmUpdate(id, data, patch){
+  try { await updateDoc(doc(db, 'closings', id), { ...data, reviewedAt: serverTimestamp() });
+    Object.assign(CM.list.find(x => x.id === id) || {}, patch || data);
+    CM.ledger = await safeLedger(); cashRender(); }
+  catch (e) { alert('مشكلة: ' + (e.code || e.message)); }
+}
+window.cmReview = id => cmUpdate(id, { review: 'تمت المراجعة' });
+window.cmFix = id => {
+  const c = CM.list.find(x => x.id === id); if (!c) return;
+  const s = prompt(`الفرق الصحيح للتقفيلة دي؟
+سالب للعجز (مثلاً -35)، موجب للزيادة، و 0 لو طلعت مظبوطة.
+الحالي: ${cVar(c)}`);
+  if (s === null) return;
+  const v = Number(enNum(s).trim());
+  if (s.trim() === '' || !isFinite(v)) { alert('رقم مش مفهوم'); return; }
+  const r = prompt('سبب التصحيح؟ (لازم — هيظهر للكاشير)'); if (!r || !r.trim()) return;
+  const fixes = [...(c.fixes || []), { variance: r2(v), reason: r.trim(), at: new Date().toLocaleString('ar-EG') }];
+  cmUpdate(id, { fixes });
+};
+window.cmVoid = id => {
+  const r = prompt('سبب الإلغاء؟ (مثلاً: اتبعتت مرتين)'); if (!r || !r.trim()) return;
+  if (!confirm('التقفيلة دي هتتشال من الحسابات والخصم ورصيد الخزنة (بس هتفضل محفوظة). متأكد؟')) return;
+  cmUpdate(id, { void: { reason: r.trim(), at: new Date().toLocaleString('ar-EG') } });
+};
+
+window.safeAdd = async () => {
+  const k = $('sfKind').value, raw = $('sfAmt').value, a = r2(+raw || 0), n = $('sfNote').value.trim(), m = $('sfMsg');
+  m.style.color = 'var(--red)';
+  if (raw === '' || a < 0 || (k !== 'جرد' && !(a > 0))) { m.textContent = 'اكتب المبلغ'; return; }
+  if (k !== 'جرد' && !n) { m.textContent = 'اكتب البيان (مين وليه)'; return; }
+  const Lg = CM.ledger || {}, rec = { kind: k, amount: a, note: n, at: serverTimestamp(), clientAt: new Date().toISOString() };
+  let ask = `${k} ${M2(a)} ج — ${n || ''}\nمتأكد؟ العملية مش هتتمسح بعد كده.`;
+  if (k === 'جرد'){
+    if (!Lg.base){ rec.opening = true; ask = `هيتسجل رصيد بداية للخزنة = ${M2(a)} ج.\nمتأكد؟`; }
+    else { rec.expected = Lg.bal; rec.diff = r2(a - Lg.bal);
+      ask = `المفروض في الخزنة: ${M2(Lg.bal)} ج\nإنت عدّيت: ${M2(a)} ج\nالفرق: ${rec.diff > 0 ? '+' : ''}${M2(rec.diff)} ج\n\nتسجيل الجرد؟`; }
+  }
+  if (!confirm(ask)) return;
+  try { await addDoc(collection(db, 'safe'), rec); cashAdmin(); }
+  catch (e) { m.textContent = 'متسجلش: ' + (e.code || e.message); }
+};
+
+window.cashExport = () => {
+  const S = cashStats(), all = CM.list;
+  const head = ['اليوم التشغيلي','التقفيلة','الساعة','الكود','الكاشير','إجمالي الدرج','الأرضية','نقدي للخزنة','فيزا','فودافون كاش','إنستاباي',
+    'مصاريف','نتيجة السيستم','مبلغ السيستم','الفرق المعتمد','الخصم','الأرضية استلمها كاملة','ملغية','تصحيح','المصاريف بالتفصيل','ملاحظات'];
+  const body = all.slice().reverse().map(c => [c.bizDate, slotName(c.slot), c.timeLocal || '', c.code, c.name, c.drawer, c.float, c.cashToSafe,
+    c.visa, c.voda, c.insta, c.expTotal, c.posKind, c.posAmount, cVar(c), cPen(c), c.floatOk ? 'نعم' : `لا (${c.floatGot})`,
+    c.void ? c.void.reason : '', (c.fixes || []).map(f => `${f.variance} — ${f.reason}`).join(' | '),
+    (c.expenses || []).map(x => `${x.type}: ${x.desc} ${x.amount}`).join(' | '), c.note || '']);
+  const days = Object.values(S.days).sort((a, b) => a.d < b.d ? -1 : 1).map(d =>
+    [d.d, d.n, r2(d.cash), r2(d.visa), r2(d.wal), r2(d.exp), r2(d.net), r2(d.pen)]);
+  const who = Object.values(S.who).map(w => [w.code, w.name, w.n, r2(w.short), r2(w.plus), w.over, r2(w.pen), w.small, r2(w.smallSum)]);
+  const ex1 = S.L.find(c => cPen(c) > 0);
+  const how = [
+    ['طريقة الحساب — تقفيل الخزنة'], [],
+    ['الهدف', 'نعرف كل شيفت قفل بعجز أو زيادة، ونحمّل الكاشير اللي فوق السماح، ونتابع رصيد الخزنة الجوانية.'],
+    ['النقدي للخزنة', `إجمالي عد الدرج بالفئات − الأرضية (${CASH.FLOAT} ج) اللي بتفضل في الدرج.`],
+    ['الفرق', 'الرقم اللي السيستم طلّعه وقت التقفيل: العجز بالسالب والزيادة بالموجب. لو مدير الفرع صحّحه بسبب، بياخد التصحيح.'],
+    ['الخصم', `لو الفرق (عجز أو زيادة) أكبر من ${CASH.TOL} ج: الخصم = الفرق − ${CASH.TOL}. جوه السماح مفيش خصم.`],
+    ['مثال', ex1 ? `${ex1.name} — ${dLong(ex1.bizDate)} ${slotName(ex1.slot)}: الفرق ${cVar(ex1)} ج ← الخصم ${Math.abs(cVar(ex1))} − ${ex1.tol} = ${cPen(ex1)} ج`
+      : `عجز 35 ج ← الخصم 35 − ${CASH.TOL} = 15 ج. عجز 18 ج ← مفيش خصم.`],
+    ['اليوم التشغيلي', 'من ٩ الصبح لـ ٩ الصبح اللي بعده — تقفيلة ٥ الفجر بتتحسب على اليوم اللي قبلها.'],
+    ['رصيد الخزنة', 'آخر جرد + نقدي التقفيلات بعده − السحب + الإيداع.'],
+    ['الإجراء المطلوب', 'راجع التقفيلات اللي بره السماح والأرضية الناقصة، وتابع "العجز الصغير المتكرر"، واعمل جرد للخزنة مرة في الأسبوع على الأقل.']];
+  const wb = XLSX.utils.book_new(); wb.Workbook = { Views: [{ RTL: true }] };
+  const add = (rows, name) => XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), name);
+  add([[`تقفيلات الخزنة — ${CM.month}`], [], head, ...body], 'التقفيلات');
+  add([['اليوم','تقفيلات','نقدي للخزنة','فيزا','محافظ','مصاريف','صافي الفرق','الخصم'], ...days], 'يوم بيوم');
+  add([['الكود','الكاشير','تقفيلات','إجمالي العجز','إجمالي الزيادة','بره السماح','الخصم','عجز صغير (مرات)','عجز صغير (مبلغ)'], ...who], 'الكاشيرية');
+  add(how, 'طريقة الحساب');
+  XLSX.writeFile(wb, `تقفيلات_الخزنة_${CM.month}.xlsx`);
+};
+
+/* ---------- ربط خصومات الخزنة بالمرتب ---------- */
+// بيتحسب وقت النشر من التقفيلات اللي يومها التشغيلي جوه دورة المرتب
+let CASHP = null;
+const isoLocal = d => `${d.getFullYear()}-${d2(d.getMonth() + 1)}-${d2(d.getDate())}`;
+const cashKey = P => P && P.ps && P.pe ? isoLocal(P.ps) + '|' + isoLocal(P.pe) : '';
+function loadCashPen(P){
+  const key = cashKey(P);
+  if (CASHP && CASHP.key === key) return CASHP.p;
+  const C = CASHP = { key, map: {}, loading: true, err: '' };
+  if (!key){ C.loading = false; C.err = 'تواريخ الدورة مش موجودة في ملف المرتبات'; return (C.p = Promise.resolve()); }
+  const [a, b] = key.split('|');
+  C.p = getDocs(query(collection(db, 'closings'), where('bizDate', '>=', a), where('bizDate', '<=', b)))
+    .then(snap => snap.forEach(d => { const c = d.data(), pen = cPen(c); if (!pen) return;
+      const k = String(c.code).trim(), m = C.map[k] = C.map[k] || { pen: 0, n: 0 };
+      m.pen = r2(m.pen + pen); m.n++; }))
+    .catch(e => { C.err = e.code || e.message; })
+    .finally(() => { C.loading = false; });
+  return C.p;
+}
+const cashPen = code => (CASHP && !CASHP.loading && CASHP.map[String(code).trim()]) || { pen: 0, n: 0 };
+
 /* ================= تفاصيل البطاقات ================= */
 function tileRows(kind){
   const R = DASH.rows, F2 = v => F(v || 0);
@@ -1367,6 +1911,7 @@ function renderAdmin(){
     <button id="at4" onclick="atab(4)">المبيعات والتقييم</button>
     <button id="at5" onclick="atab(5)">الوقت الإضافي</button>
     <button id="at6" onclick="atab(6)">الأذونات</button>
+    <button id="at7" onclick="atab(7)">الخزنة</button>
     ${isAdm ? `<button id="at1" onclick="atab(1)">نشر كشف جديد</button>
     <button id="at2" onclick="atab(2)">الموظفين</button>
     <button id="at3" onclick="atab(3)">الاستفسارات</button>` : ''}
@@ -1375,6 +1920,7 @@ function renderAdmin(){
   <div id="ap4" class="card hide"><p class="sub">جاري التحميل…</p></div>
   <div id="ap5" class="card hide"><h2>الوقت الإضافي</h2><div id="otBox"></div></div>
   <div id="ap6" class="card hide"><h2>الأذونات</h2><div id="pmBox"></div></div>
+  <div id="ap7" class="card hide"><h2>الخزنة وتقفيل الشيفتات</h2><div id="cashAdm"></div></div>
   ${isAdm ? `
   <div id="ap1" class="card hide">${adminUploadUI()}</div>
   <div id="ap2" class="card hide"><h2>الموظفين وحساباتهم</h2><div id="staffBox"><p class="sub">جاري التحميل…</p></div></div>
@@ -1384,11 +1930,11 @@ function renderAdmin(){
 }
 
 window.atab = n => {
-  [0,4,5,6,1,2,3].forEach(i => { const p = $('ap'+i), t = $('at'+i);
+  [0,4,5,6,7,1,2,3].forEach(i => { const p = $('ap'+i), t = $('at'+i);
     if (p) p.classList.toggle('hide', i !== n); if (t) t.classList.toggle('on', i === n); });
   $('perBox').style.display = (n === 0 || n === 4) ? '' : 'none';
   if ((n === 0 || n === 4) && !DASH.periods.length) loadDash();
-  if (n === 2) loadStaff(); if (n === 3) loadQ(); if (n === 5) otAdmin(); if (n === 6) pmAdmin();
+  if (n === 2) loadStaff(); if (n === 3) loadQ(); if (n === 5) otAdmin(); if (n === 6) pmAdmin(); if (n === 7) cashAdmin();
 };
 
 async function loadDash(force){
@@ -1608,12 +2154,12 @@ window.exportDash = () => {
     'أجر الساعات','عدد التأخيرات','المعفاة','ربع يوم','نص يوم','خصم التأخير','أيام غياب','جزاء الغياب','جزاءات إدارية','إجمالي الخصومات','إجمالي الحوافز',
     'مسحوبات آجلة','عمولة البوشينج (تلقائي)','صافي المستحق','أيام محتاجة مراجعة',
     'عدد الفواتير','صافي المبيعات','نسبته من مبيعات الفرع','وسيط قيمة الفاتورة','مبيعات لكل ساعة',
-    'نسبة تسجيل العميل','قيمة البوشينج','عمولة البوشينج','درجة التقييم'];
+    'نسبة تسجيل العميل','قيمة البوشينج','عمولة البوشينج','درجة التقييم','خصم الخزنة'];
   const body = DASH.rows.map(r => [r.code, r.name, r.job||'', r.rate||0, r.hourly||0, r.hours||0, r.carried||0,
     r.wage||0, r.lates||0, r.exempt||0, r.q||0, r.half||0, r.lateDed||0, 
     r.absDays||0, r.absPen||0, r.adminPen||0, r.totalDed||0, r.bonus||0, r.adv||0, r.pushAuto||0, r.net||0, r.flags||0,
     r.sales?.invoices||0, r.sales?.net||0, r.sales?.sharePct||0, r.sales?.medInv||0, r.sales?.perHour||0,
-    r.sales?.custPct||0, r.sales?.pushValue||0, r.sales?.pushComm||0, r.sales?.score||'']);
+    r.sales?.custPct||0, r.sales?.pushValue||0, r.sales?.pushComm||0, r.sales?.score||'', r.cashPen||0]);
   const ws = XLSX.utils.aoa_to_sheet([[`كشف المرتبات — ${P.label || DASH.period}`], [], head, ...body]);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'كشف المرتب');
@@ -1678,6 +2224,7 @@ const manualPush = p => (p.extra || []).filter(x => /pushing|بوشينج/i.test
 function showPreview(){
   if (!PARSED) return;
   const P = PARSED;
+  if (!CASHP || CASHP.key !== cashKey(P)) loadCashPen(P).then(() => { if (PARSED === P) showPreview(); });
   const bad = P.people.filter(p => !p.rate), flag = P.people.filter(p => p.flags > 0);
   const left = P.people.filter(p => String(p.status || '').includes('ترك'));
   let w = '';
@@ -1689,16 +2236,19 @@ function showPreview(){
   if (dup.length) w += `<div class="banner bad">⚠ عمولة البوشينج هتتحسب مرتين لـ: ${dup.map(x => esc(x.name) + ' (' + F(manualPush(x)) + ' ج يدوي)').join('، ')}.
     العمولة بقت بتتضاف تلقائياً من ملف المبيعات — امسح "حافز Pushing" من شيت الحوافز في الإكسيل وارفع تاني.</div>`;
   if (!ITEMS) w += `<div class="banner">ملف المبيعات بالأصناف مش مرفوع — عمولة البوشينج مش هتتضاف للكشوف.</div>`;
+  if (CASHP && CASHP.loading) w += `<div class="banner">جاري حساب خصومات الخزنة من التقفيلات…</div>`;
+  else if (CASHP && CASHP.err) w += `<div class="banner bad">مقدرتش أقرا تقفيلات الخزنة (${esc(CASHP.err)}) — خصومات الخزنة مش هتتضاف.</div>`;
   const hid = P.people.filter(p => p.noPublish);
   if (hid.length) w += `<div class="banner">${hid.map(x => esc(x.name)).join('، ')} — كشفه مش هيتنشر (مش هيشوفه على الموقع)، وأرقامه داخلة في إجماليات الفرع.</div>`;
 
-  const rows = P.people.map(p => { const c = autoComm(p.code);
+  const rows = P.people.map(p => { const c = autoComm(p.code), k = cashPen(p.code);
     return `<tr><td>${p.code}</td><td>${esc(p.name)}</td>
     <td class="num">${+p.basic ? F(p.basic) : '—'}</td><td class="num">${F(p.hours)}</td><td class="num">${F(p.wage)}</td><td class="num">${p.lates||0}</td>
     <td class="num">${F(p.totalDed)}</td><td class="num">${F(p.net)}</td>
-    <td class="num">${c ? '+ ' + F(c) : '—'}</td><td class="num"><b>${F((+p.net||0) + c)}</b></td>
+    <td class="num">${c ? '+ ' + F(c) : '—'}</td><td class="num">${k.pen ? '− ' + M2(k.pen) : '—'}</td>
+    <td class="num"><b>${F((+p.net||0) + c - k.pen)}</b></td>
     <td>${p.flags ? `<span class="tag late">${p.flags}</span>` : '—'}</td></tr>`; }).join('');
-  const tot = P.people.reduce((a,p)=>a+(+p.net||0)+autoComm(p.code),0);
+  const tot = P.people.reduce((a,p)=>a+(+p.net||0)+autoComm(p.code)-cashPen(p.code).pen,0);
 
   $('preview').innerHTML = `
     <h2 style="margin-top:18px">٢. راجع قبل النشر</h2>
@@ -1706,9 +2256,9 @@ function showPreview(){
     ${w}
     <div class="scroll"><table>
       <tr><th>الكود</th><th>الاسم</th><th>الأساسي</th><th>ساعات</th><th>أجر</th><th>تأخيرات</th><th>خصومات</th>
-      <th>صافي الإكسيل</th><th>عمولة بوشينج</th><th>الصافي النهائي</th><th>مراجعة</th></tr>
+      <th>صافي الإكسيل</th><th>عمولة بوشينج</th><th>خصم الخزنة</th><th>الصافي النهائي</th><th>مراجعة</th></tr>
       ${rows}</table></div>
-    <div class="note">الصافي النهائي = صافي الإكسيل + عمولة البوشينج المحسوبة تلقائياً من ملف المبيعات. ده اللي هيتنشر للموظف.</div>
+    <div class="note">الصافي النهائي = صافي الإكسيل + عمولة البوشينج المحسوبة تلقائياً من ملف المبيعات − خصم الخزنة (العجز أو الزيادة فوق ±${CASH.TOL} ج في التقفيلات اللي يومها جوه الدورة). ده اللي هيتنشر للموظف.</div>
     ${KPI ? kpiBlock() : '<div class="note">ارفع تقرير الفواتير عشان تظهر مؤشرات المبيعات.</div>'}
     <h2 style="margin-top:18px">٣. اعتماد ونشر</h2>
     <label style="display:flex;gap:10px;align-items:center;font-weight:600">
@@ -1771,6 +2321,9 @@ window.publish = async () => {
   const P = PARSED;
   const partial = !!($('pubPartial') && $('pubPartial').checked);
   const through = P.pe ? `${fmtDate(P.pe)}/${P.pe.getFullYear()}` : '';
+  await loadCashPen(P);
+  if (CASHP.err && !confirm(`مقدرتش أقرا تقفيلات الخزنة (${CASHP.err}) — خصومات الخزنة مش هتتضاف للكشوف. تكمل النشر؟`)) {
+    btn.disabled = false; return; }
 
   let map = {};
   try {
@@ -1816,6 +2369,9 @@ window.publish = async () => {
     rec.netExcel = +p.net || 0;
     rec.pushAuto = pc;
     if (pc){ rec.bonus = (+p.bonus || 0) + pc; rec.net = Math.round(((+p.net || 0) + pc) * 100) / 100; }
+    const cp = cashPen(code);
+    rec.cashPen = cp.pen; rec.cashN = cp.n;
+    if (cp.pen) rec.net = Math.round(((+rec.net || 0) - cp.pen) * 100) / 100;
     if (KPI){
       const k = KPI.rows.find(x => String(x.code) === code);
       if (k){ const rank = KPI.rows.filter(x => x.include).findIndex(x => String(x.code) === code);
