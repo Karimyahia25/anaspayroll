@@ -361,7 +361,7 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="emp" class="hide"></div>
 <div id="adm" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-03-C</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-03-D</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -1378,13 +1378,12 @@ function cashForm(demo){
     <label class="chk"><input type="radio" name="cfFl" value="no" onchange="cashCalc()"> لأ، استلمتها ناقصة</label>
     <div id="cfGotRow" class="hide"><label>استلمت كام؟</label>
       <input id="cfGot" type="number" min="0" step="0.5" inputmode="decimal" oninput="cashCalc()"></div>
-    <h3 class="cfh">٢. عِد الدرج كله (بالأرضية)</h3>
+    <h3 class="cfh">٢. عِد النقدي (من غير الأرضية)</h3>
+    <p class="sub">سيب الأرضية (${M2(CASH.FLOAT)} ج) على جنب في الدرج ومتعدهاش — اعدّ الباقي بس.</p>
     <div class="dens">${den}
       <div class="den"><span>فكة</span><input id="dnCoins" type="number" min="0" step="0.25" inputmode="decimal" placeholder="المبلغ" oninput="cashCalc()" aria-label="مبلغ الفكة">
         <b id="dtCoins">—</b></div></div>
     <div class="rows" style="margin-top:8px">
-      <div class="row"><span class="k">إجمالي الدرج</span><span class="v" id="cfDrawer">٠ ج</span></div>
-      <div class="row minus"><span class="k">الأرضية اللي هتفضل في الدرج</span><span class="v">− ${M2(CASH.FLOAT)} ج</span></div>
       <div class="row total"><span class="k">النقدي اللي رايح الخزنة</span><span class="v" id="cfCash">٠ ج</span></div></div>
     <h3 class="cfh">٣. الفيزا والمحافظ</h3>
     <p class="sub">اكتب كل عملية لوحدها وبينهم + (مثال: 89 + 86 + 1387) والموقع هيجمعهم.</p>
@@ -1442,7 +1441,7 @@ function cashRead(){
   const variance = posKind === 'عجز' ? -posAmount : posKind === 'زيادة' ? posAmount : 0;
   const pen = cPen({ posKind, posAmount, tol: CASH.TOL, surplusCharged: CASH.SURPLUS_CHARGED });
   return { counts, coins, drawer, badCount, fl, got, visa, voda, insta, exps, expTotal,
-    posKind, posAmount, variance, pen, cashToSafe: r2(drawer - CASH.FLOAT) };
+    posKind, posAmount, variance, pen, cashToSafe: drawer };
 }
 
 window.cashCalc = () => {
@@ -1451,7 +1450,6 @@ window.cashCalc = () => {
   $('cfWhen').innerHTML = `هتتسجل على يوم <b>${dLong(w.biz)}</b> — <b>${slotName(w.slot)}</b> (الساعة دلوقتي ${w.time})`;
   DENOMS.forEach(v => { const c = +($('dn' + v).value || 0); $('dt' + v).textContent = c ? M2(c * v) + ' ج' : '—'; });
   $('dtCoins').textContent = s.coins ? M2(s.coins) + ' ج' : '—';
-  $('cfDrawer').textContent = M2(s.drawer) + ' ج';
   $('cfCash').textContent = M2(s.cashToSafe) + ' ج';
   $('cfGotRow').classList.toggle('hide', s.fl !== 'no');
   $('cfPosRow').classList.toggle('hide', !s.posKind || s.posKind === 'مظبوط');
@@ -1482,8 +1480,7 @@ window.cashSend = async () => {
   if (!s.fl) return bad('حدد: استلمت الأرضية كاملة ولا لأ');
   if (s.fl === 'no' && !(s.got >= 0 && s.got < CASH.FLOAT)) return bad(`اكتب الأرضية اللي استلمتها (أقل من ${M2(CASH.FLOAT)})`);
   if (s.badCount) return bad('عدد الفئات لازم أرقام صحيحة من غير سالب');
-  if (s.drawer <= 0) return bad('عِد الدرج الأول');
-  if (s.drawer < CASH.FLOAT) return bad(`الدرج كله ${M2(s.drawer)} ج — أقل من الأرضية ${M2(CASH.FLOAT)}. راجع العد.`);
+  if (s.drawer <= 0 && !confirm('النقدي صفر؟ متأكد إنك عدّيت؟')) return;
   if (s.visa.bad || s.voda.bad || s.insta.bad) return bad('فيه رقم مش مفهوم في الفيزا أو المحافظ');
   for (const x of s.exps){
     if (!x.type) return bad('حدد نوع كل مصروف');
@@ -1510,7 +1507,7 @@ window.cashSend = async () => {
       uid: ME.uid, code: String(v.code), name: v.name || '', status: 'مرسل',
       at: serverTimestamp(), clientAt: now.toISOString(), bizDate: w.biz, slot: w.slot, timeLocal: w.time,
       floatOk: s.fl === 'ok', floatGot: s.got, float: CASH.FLOAT,
-      counts: s.counts, coins: r2(s.coins), drawer: s.drawer, cashToSafe: s.cashToSafe,
+      counts: s.counts, coins: r2(s.coins), drawer: s.drawer, cashToSafe: s.cashToSafe, floatExcluded: true,
       visa: s.visa.sum, visaList: $('cfVisa').value.trim(),
       voda: s.voda.sum, vodaList: $('cfVoda').value.trim(),
       insta: s.insta.sum, instaList: $('cfInsta').value.trim(),
@@ -1659,7 +1656,8 @@ function cashRender(){
     ${(c.fixes || []).map(f => `<div class="sub" style="margin-top:6px">تصحيح ← ${f.variance < 0 ? 'عجز' : f.variance > 0 ? 'زيادة' : 'مظبوط'} ${M2(Math.abs(f.variance))} ج — ${esc(f.reason)} (${esc(f.at || '')}).
       الأصل من الكاشير: ${esc(c.posKind)} ${M2(c.posAmount)} ج</div>`).join('')}
     <details style="margin-top:8px"><summary>التفاصيل</summary><div class="sub" style="line-height:1.9;margin-top:6px">
-      الدرج كله ${M2(c.drawer)} ج (${esc(cnt) || '—'}${+c.coins ? ' · فكة ' + M2(c.coins) : ''}) − أرضية ${M2(c.float)} = <b>${M2(c.cashToSafe)}</b><br>
+      ${c.floatExcluded ? `النقدي المعدود (من غير الأرضية) <b>${M2(c.cashToSafe)}</b> ج (${esc(cnt) || '—'}${+c.coins ? ' · فكة ' + M2(c.coins) : ''})`
+        : `الدرج كله ${M2(c.drawer)} ج (${esc(cnt) || '—'}${+c.coins ? ' · فكة ' + M2(c.coins) : ''}) − أرضية ${M2(c.float)} = <b>${M2(c.cashToSafe)}</b>`}<br>
       ${c.visaList ? 'الفيزا: ' + esc(c.visaList) + '<br>' : ''}${c.vodaList ? 'فودافون: ' + esc(c.vodaList) + '<br>' : ''}${c.instaList ? 'إنستاباي: ' + esc(c.instaList) + '<br>' : ''}
       ${(c.expenses || []).map(x => `مصروف: ${esc(x.type)} — ${esc(x.desc)} — ${M2(x.amount)} ج`).join('<br>')}
       ${c.note ? '<br>ملاحظة: ' + esc(c.note) : ''}</div></details>
@@ -1802,7 +1800,7 @@ window.cashExport = () => {
   const how = [
     ['طريقة الحساب — تقفيل الخزنة'], [],
     ['الهدف', 'نعرف كل شيفت قفل بعجز أو زيادة، ونحمّل الكاشير اللي فوق السماح، ونتابع رصيد الخزنة الجوانية.'],
-    ['النقدي للخزنة', `إجمالي عد الدرج بالفئات − الأرضية (${M2(CASH.FLOAT)} ج) اللي بتفضل في الدرج.`],
+    ['النقدي للخزنة', `عد النقدي بالفئات من غير الأرضية (${M2(CASH.FLOAT)} ج) اللي بتفضل في الدرج ومش داخلة في التقفيل.`],
     ['الفرق', 'الرقم اللي السيستم طلّعه وقت التقفيل: العجز بالسالب والزيادة بالموجب. لو مدير الفرع صحّحه بسبب، بياخد التصحيح.'],
     ['الخصم', `لو الفرق (عجز أو زيادة) أكبر من ${CASH.TOL} ج: الخصم = الفرق − ${CASH.TOL}. جوه السماح مفيش خصم.`],
     ['مثال', ex1 ? `${ex1.name} — ${dLong(ex1.bizDate)} ${slotName(ex1.slot)}: الفرق ${cVar(ex1)} ج ← الخصم ${Math.abs(cVar(ex1))} − ${ex1.tol} = ${cPen(ex1)} ج`
