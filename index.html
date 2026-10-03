@@ -343,7 +343,7 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="emp" class="hide"></div>
 <div id="adm" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-01-E</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-03-A</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -775,7 +775,7 @@ onAuthStateChanged(auth, async user => {
 async function latestPeriod(){
   const snap = await getDocs(collection(db, 'periods'));
   const list = [];
-  snap.forEach(d => { const v = d.data(); if (v.published) list.push({ id: d.id, ...v }); });
+  snap.forEach(d => { const v = d.data(); if (v.published && !v.archived) list.push({ id: d.id, ...v }); });
   list.sort((a, b) => a.id < b.id ? 1 : -1);
   return list;
 }
@@ -787,7 +787,7 @@ async function renderEmp(){
   if (!periods.length){
     $('emp').innerHTML = `<div class="card"><div class="hdr"><h1>أهلاً بيك</h1>
       <button class="ghost sm" onclick="doOut()">خروج</button></div>
-      <div class="banner">لسه مفيش كشف منشور. هيظهرلك أول ما مدير الفرع يعتمده.</div></div>`;
+      <div class="banner">لسه مفيش كشف منشور للشهر ده. هيظهرلك أول ما مدير الفرع ينشره.</div></div>`;
     return;
   }
   let pi = 0, docSnap = null;
@@ -854,13 +854,14 @@ async function renderEmp(){
     <div class="hdr"><div><h1>${esc(d.name)}</h1><p class="sub">${esc(d.job || '')}</p></div>
       <button class="ghost sm" onclick="doOut()">خروج</button></div>
     <div class="wallet" id="wallet">
-      <div class="wcard c1" data-go="1"><span class="wt">صافي المستحق</span><b class="wv">${F(d.net)} ج</b><span class="ws">${esc(P.label || P.id)}</span></div>
+      <div class="wcard c1" data-go="1"><span class="wt">${P.partial ? 'صافي المستحق لحد دلوقتي' : 'صافي المستحق'}</span><b class="wv">${F(d.net)} ج</b><span class="ws">${esc(P.label || P.id)}</span></div>
       <div class="wcard c2" data-go="1"><span class="wt">أجر الساعات</span><b class="wv">${F(d.wage)} ج</b><span class="ws">${HN(d.hours)} ساعة × ${F(d.hourly)} ج</span></div>
       <div class="wcard c3" data-go="2"><span class="wt">التأخيرات</span><b class="wv">${d.lates || 0}</b><span class="ws">${d.lateDed ? 'خصم ' + F(d.lateDed) + ' ج' : 'مفيش خصم'}</span></div>
       <div class="wcard c4" data-go="3"><span class="wt">أيام الشهر</span><b class="wv">${days.length}</b><span class="ws">اضغط لتفاصيل كل يوم</span></div>
       ${d.sales ? `<div class="wcard c5" data-go="5"><span class="wt">مبيعاتي</span><b class="wv">${F(d.sales.net)} ج</b><span class="ws">${d.sales.invoices} فاتورة</span></div>` : ''}
     </div>
     <div class="wdots" id="wdots"></div>
+    ${P.partial ? `<div class="banner">كشف مبدئي لحد ${esc(P.through || '')} — مش المرتب النهائي. بيتحدث كل أسبوع، والنهائي بيتنشر آخر الشهر.</div>` : ''}
     ${d.flags ? `<div class="banner">فيه ${d.flags} يوم لسه تحت المراجعة ومش داخل في الحساب.</div>` : ''}
     ${!d.rate ? `<div class="banner bad">سعر الساعة لسه مش متسجل — المبالغ ناقصة. كلّم مدير الفرع.</div>` : ''}
   </div>
@@ -1105,8 +1106,8 @@ function dayColumns(days){
 
 /* ================= الوقت الإضافي ================= */
 const OT_NEW = 'قيد المراجعة', OT_MGR = 'موافقة المدير', OT_OK = 'معتمد', OT_NO = 'مرفوض';
-const otTag = st => st === OT_OK ? '<span class="tag ok">معتمد نهائي</span>'
-  : st === OT_MGR ? '<span class="tag ok">في انتظار صاحب الصيدلية</span>'
+// من 3/10: موافقة مدير الفرع نهائية، وصاحب الصيدلية اطلاع بس (حالة "موافقة المدير" القديمة = معتمد)
+const otTag = st => (st === OT_OK || st === OT_MGR) ? '<span class="tag ok">معتمد</span>'
   : st === OT_NO ? '<span class="tag late">مرفوض</span>' : '<span class="tag">قيد المراجعة</span>';
 const dLabel = d => { const x = String(d || '').split('-'); return x.length === 3 ? `${x[2]}/${x[1]}` : d; };
 
@@ -1156,41 +1157,40 @@ async function otAdmin(){
   } catch (e) { box.innerHTML = `<p class="err">مشكلة: ${esc(e.code || e.message)}</p>`; return; }
   list.sort((a,b) => a.date < b.date ? 1 : -1);
   const isAdm = ROLE === 'admin';
-  const mine = isAdm ? list.filter(x => x.status === OT_NEW) : list.filter(x => x.status === OT_MGR);
-  const done = list.filter(x => x.status === OT_OK);
-  const rest = list.filter(x => !mine.includes(x) && x.status !== OT_OK);
+  const mine = list.filter(x => x.status === OT_NEW);
+  const done = list.filter(x => x.status === OT_OK || x.status === OT_MGR);
+  const rest = list.filter(x => x.status === OT_NO);
   const card = x => `<div class="qitem">
     <div class="meta">${esc(x.name)} (${esc(x.code)}) — ${esc(dLabel(x.date))} — <b>${HN(x.hours)} ساعة</b></div>
     <div>${esc(x.reason)}</div>
-    <div style="margin-top:9px;display:flex;gap:8px;flex-wrap:wrap">
-      <button class="sm" onclick="otOk('${x.id}','${esc(x.status)}')">${isAdm ? 'موافقة وإرسال لصاحب الصيدلية' : 'اعتماد نهائي'}</button>
-      ${isAdm ? `<button class="sm ghost" onclick="otNo('${x.id}')">رفض</button>` : ''}
-      <span style="align-self:center">${otTag(x.status)}</span></div></div>`;
+    ${isAdm ? `<div style="margin-top:9px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="sm" onclick="otOk('${x.id}')">موافقة</button>
+      <button class="sm ghost" onclick="otNo('${x.id}')">رفض</button></div>`
+      : `<div style="margin-top:9px">${otTag(x.status)} — مستني مدير الفرع</div>`}</div>`;
   const byEmp = {};
   done.forEach(x => { byEmp[x.name] = byEmp[x.name] || { h:0, n:0 }; byEmp[x.name].h += +x.hours || 0; byEmp[x.name].n++; });
   box.innerHTML = `
     ${statTiles([
-      {label: isAdm ? 'محتاجة موافقتك' : 'محتاجة اعتمادك', value: mine.length, hi: mine.length > 0},
-      {label:'معتمدة نهائياً', value: done.length, sub: HN(done.reduce((a,x)=>a+(+x.hours||0),0)) + ' ساعة'},
+      {label: isAdm ? 'محتاجة موافقتك' : 'عند مدير الفرع', value: mine.length, hi: isAdm && mine.length > 0},
+      {label:'معتمدة', value: done.length, sub: HN(done.reduce((a,x)=>a+(+x.hours||0),0)) + ' ساعة'},
       {label:'إجمالي الطلبات', value: list.length}])}
-    <h2 style="margin-top:18px">${isAdm ? 'طلبات جديدة' : 'في انتظار اعتمادك'}</h2>
+    <h2 style="margin-top:18px">${isAdm ? 'طلبات جديدة' : 'طلبات لسه عند مدير الفرع'}</h2>
     ${mine.length ? mine.map(card).join('') : '<p class="sub">مفيش طلبات مستنية.</p>'}
-    ${done.length ? `<h2 style="margin-top:18px">المعتمد نهائياً</h2>
+    ${done.length ? `<h2 style="margin-top:18px">المعتمد</h2>
       <div class="scroll"><table><tr><th>الموظف</th><th>عدد الطلبات</th><th>إجمالي الساعات</th></tr>
       ${Object.entries(byEmp).map(([n,v]) => `<tr><td>${esc(n)}</td><td class="num">${v.n}</td><td class="num"><b>${HN(v.h)}</b></td></tr>`).join('')}</table></div>
       <div class="scroll" style="margin-top:8px"><table><tr><th>اليوم</th><th>الموظف</th><th>ساعات</th><th>السبب</th></tr>
       ${done.map(x => `<tr><td>${esc(dLabel(x.date))}</td><td>${esc(x.name)}</td><td class="num">${HN(x.hours)}</td>
         <td style="white-space:normal">${esc(x.reason)}</td></tr>`).join('')}</table></div>` : ''}
-    ${rest.length ? `<h2 style="margin-top:18px">باقي الطلبات</h2><div class="scroll"><table>
-      <tr><th>اليوم</th><th>الموظف</th><th>ساعات</th><th>الحالة</th></tr>
+    ${rest.length ? `<h2 style="margin-top:18px">المرفوض</h2><div class="scroll"><table>
+      <tr><th>اليوم</th><th>الموظف</th><th>ساعات</th><th>سبب الرفض</th></tr>
       ${rest.map(x => `<tr><td>${esc(dLabel(x.date))}</td><td>${esc(x.name)}</td><td class="num">${HN(x.hours)}</td>
-        <td>${otTag(x.status)}</td></tr>`).join('')}</table></div>` : ''}
+        <td style="white-space:normal">${esc(x.rejectReason || '')}</td></tr>`).join('')}</table></div>` : ''}
     <div class="note">الساعات المعتمدة <b>لسه مش بتتضاف للمرتب تلقائياً</b> — ضيفها بإيدك في شيت الحوافز لحد ما نربطها (من أول أكتوبر).</div>`;
 }
 
-window.otOk = async (id, st) => {
-  try { await updateDoc(doc(db, 'overtime', id),
-    st === OT_NEW ? { status: OT_MGR, managerAt: serverTimestamp() } : { status: OT_OK, ownerAt: serverTimestamp() });
+window.otOk = async id => {
+  try { await updateDoc(doc(db, 'overtime', id), { status: OT_OK, managerAt: serverTimestamp() });
     otAdmin(); } catch (e) { alert('مشكلة: ' + (e.code || e.message)); }
 };
 window.otNo = async id => {
@@ -1259,10 +1259,10 @@ async function pmAdmin(){
       <td>${pmTag(x.status)}</td></tr>`).join('')}</table></div>`;
   box.innerHTML = `
     ${statTiles([
-      {label:'محتاجة قرارك', value: wait.length, hi: wait.length > 0},
+      {label: isAdm ? 'محتاجة قرارك' : 'عند مدير الفرع', value: wait.length, hi: isAdm && wait.length > 0},
       {label:'أذون معتمدة', value: ok.length},
       {label:'مرفوضة', value: no.length}])}
-    <h2 style="margin-top:18px">طلبات جديدة</h2>
+    <h2 style="margin-top:18px">${isAdm ? 'طلبات جديدة' : 'طلبات لسه عند مدير الفرع'}</h2>
     ${wait.length ? wait.map(card).join('') : '<p class="sub">مفيش طلبات مستنية.</p>'}
     ${ok.length ? `<h2 style="margin-top:18px">الأذون المعتمدة</h2>${tbl(ok)}` : ''}
     ${no.length ? `<h2 style="margin-top:18px">المرفوضة</h2>${tbl(no)}` : ''}
@@ -1416,9 +1416,12 @@ async function loadPeriod(pid){
   $('perBox').innerHTML = `<div style="display:flex;gap:10px;align-items:end;margin-top:14px;flex-wrap:wrap">
     <div style="flex:1;min-width:200px"><label style="margin-top:0">الفترة</label>
       <select onchange="loadPeriod(this.value)">${DASH.periods.map(p =>
-        `<option value="${esc(p.id)}" ${p.id === pid ? 'selected' : ''}>${esc(p.label || p.id)}</option>`).join('')}</select></div>
-    <button class="sm ghost" onclick="exportDash()">تصدير Excel</button></div>
-    <p class="sub" style="margin-top:8px">آخر نشر: ${P.at?.seconds ? new Date(P.at.seconds*1000).toLocaleString('ar-EG') : '—'}</p>`;
+        `<option value="${esc(p.id)}" ${p.id === pid ? 'selected' : ''}>${esc(p.label || p.id)}${p.archived ? ' — مؤرشف' : ''}${p.partial ? ' — مبدئي' : ''}</option>`).join('')}</select></div>
+    <button class="sm ghost" onclick="exportDash()">تصدير Excel</button>
+    ${ROLE === 'admin' ? `<button class="sm ghost" onclick="archivePeriod('${esc(pid)}', ${!P.archived})">${P.archived ? 'إظهارها للموظفين تاني' : 'أرشفة (تختفي من عند الموظفين)'}</button>` : ''}</div>
+    <p class="sub" style="margin-top:8px">آخر نشر: ${P.at?.seconds ? new Date(P.at.seconds*1000).toLocaleString('ar-EG') : '—'}
+      ${P.partial ? ` · <b>كشف مبدئي لحد ${esc(P.through || '')}</b>` : ''}
+      ${P.archived ? ' · <b style="color:var(--red)">مؤرشف — الموظفين مش شايفينه</b>' : ' · ظاهر للموظفين'}</p>`;
   $('ap0').innerHTML = $('ap4').innerHTML = '<p class="sub">جاري التحميل…</p>';
 
   const rows = [];
@@ -1433,6 +1436,14 @@ async function loadPeriod(pid){
   $('ap0').innerHTML = payPanel(rows);
   $('ap4').innerHTML = salesPanel(rows, P);
 }
+
+window.archivePeriod = async (pid, on) => {
+  if (!confirm(on ? 'الفترة دي هتختفي من عند كل الموظفين (إنت وصاحب الصيدلية هتفضلوا شايفينها). متأكد؟'
+                  : 'الفترة دي هترجع تظهر للموظفين. متأكد؟')) return;
+  try { await updateDoc(doc(db, 'periods', pid), { archived: on, archivedAt: serverTimestamp() });
+    DASH.period = pid; await loadDash(true); }
+  catch (e) { alert('مشكلة: ' + (e.code || e.message)); }
+};
 
 function payPanel(rows){
   const tot = rows.filter(inTotals), weekly = rows.filter(r => !inTotals(r));
@@ -1700,8 +1711,19 @@ function showPreview(){
     <div class="note">الصافي النهائي = صافي الإكسيل + عمولة البوشينج المحسوبة تلقائياً من ملف المبيعات. ده اللي هيتنشر للموظف.</div>
     ${KPI ? kpiBlock() : '<div class="note">ارفع تقرير الفواتير عشان تظهر مؤشرات المبيعات.</div>'}
     <h2 style="margin-top:18px">٣. اعتماد ونشر</h2>
+    <label style="display:flex;gap:10px;align-items:center;font-weight:600">
+      <input type="checkbox" id="pubPartial" style="width:22px;height:22px" ${isPartial(P) ? 'checked' : ''}>
+      كشف مبدئي (نص الشهر) — هيظهر للموظف "لحد ${esc(P.pe ? fmtDate(P.pe) + '/' + P.pe.getFullYear() : '')}"</label>
+    <div class="note">الرفعة الأسبوعية لازم تبقى <b>تراكمية من أول الشهر</b> (البصمة والمبيعات)، لأن كل رفعة بتلغي اللي قبلها. شيل العلامة دي في الرفعة النهائية آخر الشهر.</div>
     <button class="full" id="pubBtn" onclick="publish()">اعتماد ونشر للفريق</button>
     <div class="err" id="pubMsg"></div><div id="pubOut"></div>`;
+}
+
+// كشف مبدئي = نهاية الدورة قبل آخر يوم في شهر البداية
+function isPartial(P){
+  if (!P || !P.ps || !P.pe) return false;
+  const last = new Date(P.ps.getFullYear(), P.ps.getMonth() + 1, 0);
+  return P.pe < last;
 }
 
 function kpiBlock(){
@@ -1747,6 +1769,8 @@ window.publish = async () => {
   const btn = $('pubBtn'); btn.disabled = true;
   const msg = $('pubMsg'); msg.style.color = 'var(--muted)';
   const P = PARSED;
+  const partial = !!($('pubPartial') && $('pubPartial').checked);
+  const through = P.pe ? `${fmtDate(P.pe)}/${P.pe.getFullYear()}` : '';
 
   let map = {};
   try {
@@ -1835,6 +1859,7 @@ window.publish = async () => {
       .map(x => ({ d:x.d, net: Math.round(x.net*100)/100, inv:x.inv }));
     await setDoc(doc(db, 'periods', P.period),
       { label: P.label, published: true, count: done, at: serverTimestamp(),
+        partial, through: partial ? through : '',
         daily: dailyArr, branchNet: KPI ? Math.round(KPI.tot.net*100)/100 : null,
         branchAll: SALES ? Math.round(branchAll*100)/100 : null,
         branchInvAll: SALES ? branchInvAll : null,
