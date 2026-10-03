@@ -364,7 +364,7 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="emp" class="hide"></div>
 <div id="adm" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-03-G</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-03-H</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -1387,7 +1387,7 @@ function cashForm(demo){
     <h2>تقفيل شيفت</h2>
     ${ROLE === 'cashier' ? `<h3 class="cfh">اسم اللي بيقفل</h3>
       <select id="cfEmp" onchange="cashCalc()" aria-label="اسم الموظف"><option value="">— اختار اسمك —</option>
-        ${STAFFL.map(x => `<option value="${esc(x.uid)}">${esc(x.name)} (${esc(x.code)})</option>`).join('')}</select>
+        ${STAFFL.map(x => `<option value="${esc(x.uid)}">${esc(x.name)}</option>`).join('')}</select>
       <p class="sub">الخصم (لو فيه) بيتسجل على الاسم ده — اتأكد إنه اسمك.</p>` : ''}
     <p class="sub" id="cfWhen"></p>
     <h3 class="cfh">١. الأرضية (${M2(CASH.FLOAT)} ج)</h3>
