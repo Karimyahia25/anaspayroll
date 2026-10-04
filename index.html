@@ -364,7 +364,7 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="emp" class="hide"></div>
 <div id="adm" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-04-A</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-04-B</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -372,7 +372,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged,
          createUserWithEmailAndPassword, updatePassword }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc,
+import { initializeFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc,
          updateDoc, deleteDoc, query, where, serverTimestamp }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
@@ -387,7 +387,9 @@ const CFG = {
 const DOMAIN = "anaspharmacy.com";
 const app = initializeApp(CFG);
 const auth = getAuth(app);
-const db = getFirestore(app);
+// long-polling تلقائي: بعض شبكات الموبايل/الواي فاي بتحجب قناة Firestore الأساسية فيطلع خطأ unavailable
+const db = initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
+const errTxt = e => e.code === 'unavailable' ? 'مفيش اتصال بالسيرفر — اتأكد من النت وجرب تاني' : (e.code || e.message);
 
 const $ = id => document.getElementById(id);
 const F = n => Math.round(+n || 0).toLocaleString('ar-EG');
@@ -1016,7 +1018,7 @@ window.sendQ = async period => {
     await addDoc(collection(db, 'queries'), { uid: ME.uid, code: st.code || '', name: st.name || '',
       period, text: t, at: serverTimestamp(), status: 'جديد' });
     $('qt').value = ''; $('qOk').textContent = 'اتبعت لمدير الفرع.'; myQueries();
-  } catch (e) { $('qOk').style.color = 'var(--warn)'; $('qOk').textContent = 'مبعتش: ' + e.code; }
+  } catch (e) { $('qOk').style.color = 'var(--warn)'; $('qOk').textContent = 'مبعتش: ' + errTxt(e); }
 };
 
 /* ================= رسومات بسيطة بدون مكتبات ================= */
@@ -1166,7 +1168,7 @@ window.otSend = async () => {
     $('otHours').value = ''; $('otWhy').value = '';
     m.style.color = 'var(--green)'; m.textContent = 'اتبعت لمدير الفرع.';
     otMine();
-  } catch (e) { m.textContent = 'مبعتش: ' + (e.code || e.message); }
+  } catch (e) { m.textContent = 'مبعتش: ' + errTxt(e); }
 };
 
 async function otMine(){
@@ -1270,7 +1272,7 @@ window.pmSend = async () => {
     $('pmMins').value = ''; $('pmDays').value = ''; $('otWhy').value = '';
     m.style.color = 'var(--green)'; m.textContent = 'اتبعت لمدير الفرع.';
     otMine();
-  } catch (e) { m.textContent = 'مبعتش: ' + (e.code || e.message); }
+  } catch (e) { m.textContent = 'مبعتش: ' + errTxt(e); }
 };
 
 async function pmAdmin(){
@@ -1651,7 +1653,7 @@ window.cashSend = async () => {
     m2.innerHTML = (station ? `اتسجلت باسم ${esc(v.name)} ✔ — هتلاقيها تحت.` : 'اتسجلت ✔ — هتلاقيها تحت في "تقفيلاتي".') +
       ` <button class="sm ghost" onclick="cPrint('${ref.id}')">🖨 اطبعها</button>`;
     await cashMine();
-  } catch (e) { btn.disabled = false; bad('متبعتتش: ' + (e.code || e.message)); }
+  } catch (e) { btn.disabled = false; bad('متبعتتش: ' + errTxt(e)); }
 };
 
 async function cashMine(){
