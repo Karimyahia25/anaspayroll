@@ -169,6 +169,15 @@ label.chk input{width:22px;height:22px;margin:0;flex:none}
 @media (max-width:560px){.exprow{grid-template-columns:1fr 1fr}}
 .cfsum{margin-top:18px;border:1.5px solid var(--line);border-radius:12px;padding:12px 14px;background:var(--paper)}
 .cfsum .row .k,.cfsum .row .v{background:var(--paper)}
+.cfsum .row .k{font-size:15px}
+.cfsum .row .v{font-size:16.5px}
+.totbox{display:flex;align-items:center;gap:12px;margin:12px 0 4px;padding:14px 16px;border-radius:14px;
+  background:var(--amber-soft);border:2.5px solid var(--amber)}
+.totbox>span{font-weight:700;font-size:16px;flex:1}
+.totbox b{font-size:28px;font-family:"Noto Kufi Arabic","IBM Plex Sans Arabic",sans-serif;white-space:nowrap;color:var(--ink)}
+button.copybtn{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:8px 14px;border-radius:10px;
+  background:var(--card);color:var(--amber);border:1.5px solid var(--amber);font-size:14px}
+button.copybtn:hover{background:var(--amber);color:var(--card)}
 .sfform{display:grid;grid-template-columns:1fr 1fr;gap:0 10px;margin-top:10px}
 tr.clk{cursor:pointer}
 tr.clk:hover td,tr.sel td{background:var(--green-soft)}
@@ -369,7 +378,7 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="emp" class="hide"></div>
 <div id="adm" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-05-A</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-05-B</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -1573,6 +1582,18 @@ function cashRead(){
     posKind, posAmount, variance, pen, cashToSafe: drawer };
 }
 
+// نسخ الإجمالي كرقم إنجليزي من غير فواصل علشان يتلزق في سيستم الكاشير على طول
+window.cfCopy = async () => {
+  const s = cashRead(), t = String(r2(s.cashToSafe + s.visa.sum + s.voda.sum + s.insta.sum + s.expTotal));
+  let ok = false;
+  try { await navigator.clipboard.writeText(t); ok = true; } catch(e){
+    try { const a = document.createElement('textarea'); a.value = t; document.body.appendChild(a); a.select();
+      ok = document.execCommand('copy'); a.remove(); } catch(_){}
+  }
+  const l = $('cfCopyT'); if (!l) return;
+  l.textContent = ok ? 'اتنسخ ✔' : 'منسخش'; setTimeout(() => { const x = $('cfCopyT'); if (x) x.textContent = 'نسخ'; }, 1800);
+};
+
 window.cashCalc = () => {
   if (!$('cfForm')) return;
   const s = cashRead(), w = bizOf(new Date());
@@ -1597,7 +1618,11 @@ window.cashCalc = () => {
     ${R('نقدي للخزنة', M2(s.cashToSafe) + ' ج')}${R('فيزا', M2(s.visa.sum) + ' ج')}
     ${R('فودافون كاش', M2(s.voda.sum) + ' ج')}${R('إنستاباي', M2(s.insta.sum) + ' ج')}
     ${R('مصاريف من الدرج', M2(s.expTotal) + ' ج')}
-    ${R('إجمالي التقفيلة', M2(s.cashToSafe + s.visa.sum + s.voda.sum + s.insta.sum + s.expTotal) + ' ج', 'total')}
+    </div><div class="totbox"><span>إجمالي التقفيلة</span>
+      <b id="cfTotal">${M2(s.cashToSafe + s.visa.sum + s.voda.sum + s.insta.sum + s.expTotal)} ج</b>
+      <button type="button" class="ghost copybtn" onclick="cfCopy()" aria-label="انسخ الإجمالي" title="انسخ الإجمالي">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>
+        <span id="cfCopyT">نسخ</span></button></div><div class="rows">
 ${verdict}</div>
     ${s.fl === 'no' && s.got < CASH.FLOAT ? `<div class="banner bad" style="margin-top:10px">الأرضية ناقصة ${M2(CASH.FLOAT - s.got)} ج — هتتسجل على التسليم من الشيفت اللي قبلك.</div>` : ''}`;
 };
