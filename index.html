@@ -378,7 +378,7 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="emp" class="hide"></div>
 <div id="adm" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-05-D</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-05-E</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -1536,6 +1536,8 @@ let STAFFL = [];
 // مش بيظهروا في قايمة جهاز الكاشير: عبدالله دليفري ٧٩، أحمد السيد ٨٢، محمد خالد ٨٤، أحمد مراد ٨٥، ويوسف
 const NO_CLOSE_CODES = ['79', '82', '84', '85'];
 const NO_CLOSE_NAME = /youssef|yousef|يوسف/i;
+const STATION_ORDER = [['76', 'ا عبدربه'], ['19', 'د اسراء'], ['63', 'د عادل'], ['70', 'ا آيـه'],
+  ['38', 'ا إيمان'], ['9', 'ا احمد علي'], ['78', 'ا العربي'], ['72', 'ا جمال']];
 async function renderStation(){
   $('emp').innerHTML = `<div class="card"><div class="hdr"><div><h1>تقفيل الخزنة</h1>
 </div>
@@ -1545,7 +1547,10 @@ async function renderStation(){
     const snap = await getDocs(collection(db, 'staff'));
     STAFFL = []; snap.forEach(d => { const v = d.data();
       if (v.code && !NO_CLOSE_CODES.includes(String(v.code)) && !NO_CLOSE_NAME.test(v.name || '')) STAFFL.push({ uid: d.id, ...v }); });
-    STAFFL.sort((a, b) => String(a.name).localeCompare(String(b.name), 'ar'));
+    // الاسم اللي بيظهر في القايمة وبيتسجل على التقفيلة + الترتيب (طلب 5/10)، والباقي بعدهم بالأبجدية
+    STAFFL.forEach(x => { const i = STATION_ORDER.findIndex(o => o[0] === String(x.code));
+      x.ord = i < 0 ? 999 : i; if (i >= 0) x.name = STATION_ORDER[i][1]; });
+    STAFFL.sort((a, b) => a.ord - b.ord || String(a.name).localeCompare(String(b.name), 'ar'));
   } catch (e) { $('cashBox').innerHTML = `<p class="err">مقدرتش أقرا أسماء الموظفين: ${esc(e.code || e.message)}</p>`; return; }
   $('cashBox').innerHTML = ''; cashEmp();
 }
