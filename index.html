@@ -378,7 +378,7 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="emp" class="hide"></div>
 <div id="adm" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-05-B</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-05-C</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -1374,6 +1374,9 @@ function bizOf(date){
   const slot = SLOTS.reduce((a, s) => Math.abs(s[0] - hh) < Math.abs(a[0] - hh) ? s : a)[1];
   return { biz: day.toISOString().slice(0, 10), slot, time: `${d2(c.h)}:${d2(c.mi)}` };
 }
+// "الإثنين ٥/١٠ — ٠٤:٤٨" من وقت السيرفر بتوقيت القاهرة
+const cWhen = c => { const t = cTime(c); if (!t) return AR(c.timeLocal || '');
+  const k = cairo(t); return `${dLong(`${k.y}-${d2(k.m)}-${d2(k.d)}`)} — ${AR(d2(k.h) + ':' + d2(k.mi))}`; };
 const AR = t => String(t == null ? '' : t).replace(/[0-9]/g, d => '٠١٢٣٤٥٦٧٨٩'[d]);
 const dLong = biz => { const [y, m, d] = String(biz || '').split('-').map(Number);
   if (!d) return biz || ''; return `${AR_D[new Date(y, m - 1, d).getDay()]} ${AR(d + '/' + m)}`; };
@@ -1454,8 +1457,9 @@ function cDetail(c){
     + (+c.coins ? R('فكة', M2(c.coins) + ' ج') : '');
   const lst = (t, l, v) => +v ? R(t + (l && /[+\s]/.test(String(l).trim()) ? ` <span style="font-size:12px">(${esc(l)})</span>` : ''), M2(v) + ' ج') : '';
   const ex = (c.expenses || []).map(x => R(esc(x.type) + (x.desc ? ' — ' + esc(x.desc) : ''), M2(x.amount) + ' ج')).join('');
-  const p = cPen(c);
+  const p = cPen(c), when = cWhen(c);
   return `<div class="cdet">
+    <div class="rows">${R('وقت التقفيل', when)}${when.indexOf(dLong(c.bizDate)) !== 0 ? R('محسوبة على يوم', esc(dLong(c.bizDate))) : ''}</div>
     <div class="cdh">عد النقدي ${c.floatExcluded ? '(من غير الأرضية)' : `(الدرج كله ${M2(c.drawer)} − أرضية ${M2(c.float)})`}</div>
     <div class="rows">${den || R('مفيش عد متسجل', '')}${R('النقدي', M2(c.cashToSafe) + ' ج', 'total')}</div>
     <div class="cdh">الفيزا والمحافظ</div>
@@ -1500,7 +1504,7 @@ window.cPrint = id => {
 </style></head><body><div class="w">
   <h1>صيدلية د. أنس نحيلة</h1>
   <p class="c">تقفيلة خزنة — ${esc(slotName(c.slot))}</p>
-  <table>${L('اليوم', esc(dLong(c.bizDate)) + ' / ' + esc(String(c.bizDate).slice(0, 4)))}${L('الساعة', AR(esc(c.timeLocal || '')))}
+  <table>${L('وقت التقفيل', cWhen(c))}${cWhen(c).indexOf(dLong(c.bizDate)) !== 0 ? L('محسوبة على يوم', esc(dLong(c.bizDate))) : ''}
     ${L('الكاشير', esc(c.name))}${c.via ? L('من', esc(c.via)) : ''}</table>
   <h2>عد النقدي ${c.floatExcluded ? '(من غير الأرضية)' : ''}</h2>
   <table>${den || L('—', '')}${L('النقدي', M2(c.cashToSafe), 1)}</table>
@@ -1713,7 +1717,7 @@ async function cashMine(){
         <th>مصاريف</th><th>إجمالي الشيفت</th><th>السيستم</th><th>الخصم</th><th>الحالة</th></tr>
       ${monRow}
       ${MYCASH.slice(0, 60).map(c => { const v = cVar(c), p = cPen(c);
-        return `<tr class="clk"${isVoid(c) ? ' style="opacity:.5"' : ''} onclick="cdTog('${c.id}')"><td style="white-space:nowrap">${esc(dLong(c.bizDate))} ⌄<br><span class="sub">الساعة ${AR(c.timeLocal || '')}</span></td><td>${esc(slotName(c.slot))}${station ? '<br><b>' + esc(c.name) + '</b>' : ''}</td>
+        return `<tr class="clk"${isVoid(c) ? ' style="opacity:.5"' : ''} onclick="cdTog('${c.id}')"><td style="white-space:nowrap">${esc(dLong(c.bizDate))} ⌄</td><td>${esc(slotName(c.slot))}${station ? '<br><b>' + esc(c.name) + '</b>' : ''}</td>
         <td class="num">${M2(c.cashToSafe)}</td><td class="num">${M2(c.visa)}</td><td class="num">${M2(c.voda)}</td>
         <td class="num">${M2(c.insta)}</td><td class="num">${M2(c.expTotal)}</td><td class="num"><b>${M2(cTotal(c))}</b></td>
         <td>${varTag(v, c.tol)}</td><td class="num">${p ? M2(p) + ' ج' : '—'}</td>
@@ -1861,7 +1865,7 @@ function cashRender(){
   const card = c => { const v = cVar(c), p = cPen(c);
     const cnt = DENOMS.filter(d => +(c.counts || {})[d]).map(d => `${d}×${c.counts[d]}`).join(' · ');
     return `<div class="qitem${isVoid(c) ? ' void' : ''}">
-    <div class="meta">${esc(dLong(c.bizDate))} — ${esc(slotName(c.slot))} — الساعة ${AR(esc(c.timeLocal || ''))} — <b>${esc(c.name)} (${esc(c.code)})</b></div>
+    <div class="meta">${esc(dLong(c.bizDate))} — ${esc(slotName(c.slot))} — <b>${esc(c.name)} (${esc(c.code)})</b></div>
     <div>نقدي <b>${M2(c.cashToSafe)}</b> · فيزا <b>${M2(c.visa)}</b> · فودافون <b>${M2(c.voda)}</b> · إنستاباي <b>${M2(c.insta)}</b> · مصاريف <b>${M2(c.expTotal)}</b> · <b>الإجمالي ${M2(cTotal(c))} ج</b></div>
     <div style="margin-top:7px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">${varTag(v, c.tol)}
       ${p ? `<span class="tag late">خصم ${M2(p)} ج</span>` : ''}
