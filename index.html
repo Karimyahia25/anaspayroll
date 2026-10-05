@@ -379,7 +379,7 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="emp" class="hide"></div>
 <div id="adm" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-05-F</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-06-A</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -1243,7 +1243,9 @@ async function otAdmin(){
       <tr><th>اليوم</th><th>الموظف</th><th>ساعات</th><th>سبب الرفض</th></tr>
       ${rest.map(x => `<tr><td>${esc(dLabel(x.date))}</td><td>${esc(x.name)}</td><td class="num">${HN(x.hours)}</td>
         <td style="white-space:normal">${esc(x.rejectReason || '')}</td></tr>`).join('')}</table></div>` : ''}
-    <div class="note">الساعات المعتمدة <b>لسه مش بتتضاف للمرتب تلقائياً</b> — ضيفها بإيدك في شيت الحوافز لحد ما نربطها (من أول أكتوبر).</div>`;
+    ${isAdm ? `<div style="margin-top:16px"><button class="sm" onclick="reqExport()">⬇ تحميل الطلبات المعتمدة للمرتب</button></div>` : ''}
+    <div class="note">من أكتوبر: الساعات المدفوعة في اليوم = ساعات الوردية بس، والزيادة عنها بتتدفع <b>لو عليها وقت إضافي معتمد هنا</b> (وبحد أقصى الوقت اللي اتشغل فعلاً).
+      قبل كل رفعة للمرتبات دوس "تحميل الطلبات المعتمدة" — الملف بيدخل شيت المرتبات وبيتحسب لوحده.</div>`;
 }
 
 window.otOk = async id => {
@@ -1323,8 +1325,28 @@ async function pmAdmin(){
     ${wait.length ? wait.map(card).join('') : '<p class="sub">مفيش طلبات مستنية.</p>'}
     ${ok.length ? `<h2 style="margin-top:18px">الأذون المعتمدة</h2>${tbl(ok)}` : ''}
     ${no.length ? `<h2 style="margin-top:18px">المرفوضة</h2>${tbl(no)}` : ''}
-    <div class="note">الأجازة الاستثنائية غير مدفوعة زي باقي الأجازات — الموافقة معناها إنها مش غياب بدون إذن، يعني <b>من غير جزاء اليومين</b>. والإذن المعتمد <b>لسه مش بيلغي الخصم تلقائياً</b> — علّمه في عمود (إذن استثنائي) في شيت البصمة لحد ما نربطه من أول أكتوبر.</div>`;
+    ${isAdm ? `<div style="margin-top:16px"><button class="sm" onclick="reqExport()">⬇ تحميل الطلبات المعتمدة للمرتب</button></div>` : ''}
+    <div class="note">الإذن المعتمد بيشيل تأخير اليوم ده من الحساب. الأجازة الاستثنائية غير مدفوعة، بس <b>من غير جزاء الغياب</b>.
+      الاتنين بيدخلوا شيت المرتبات من ملف "تحميل الطلبات المعتمدة" قبل كل رفعة.</div>`;
 }
+// ملف واحد فيه كل الوقت الإضافي والأذون والأجازات المعتمدة — بيتقري بأسماء الأعمدة في شيت المرتبات
+window.reqExport = async () => {
+  try {
+    const rows = [];
+    const a = await getDocs(collection(db, 'overtime'));
+    a.forEach(d => { const v = d.data(); if (v.status === OT_OK || v.status === OT_MGR)
+      rows.push([v.date, +v.code || v.code, v.name || '', 'وقت إضافي', +v.hours || 0, '', '', v.reason || '', d.id]); });
+    const b = await getDocs(collection(db, 'permits'));
+    b.forEach(d => { const v = d.data(); if (v.status === 'معتمد')
+      rows.push([v.date, +v.code || v.code, v.name || '', v.kind, '', v.minutes || '', v.days || '', v.reason || '', d.id]); });
+    rows.sort((x, y) => x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : String(x[1]).localeCompare(String(y[1])));
+    const ws = XLSX.utils.aoa_to_sheet([['الطلبات المعتمدة — اتحمّلت ' + new Date().toLocaleString('ar-EG')],
+      ['التاريخ', 'كود الموظف', 'اسم الموظف', 'النوع', 'ساعات', 'دقائق', 'أيام', 'السبب', 'رقم الطلب'], ...rows]);
+    const wb = XLSX.utils.book_new(); wb.Workbook = { Views: [{ RTL: true }] };
+    XLSX.utils.book_append_sheet(wb, ws, 'الطلبات_المعتمدة');
+    XLSX.writeFile(wb, 'طلبات_معتمدة.xlsx');
+  } catch (e) { alert('مشكلة: ' + (e.code || e.message)); }
+};
 window.pmOk = async id => { try { await updateDoc(doc(db, 'permits', id),
   { status: 'معتمد', decidedAt: serverTimestamp() }); pmAdmin(); }
   catch (e) { alert('مشكلة: ' + (e.code || e.message)); } };
@@ -1535,7 +1557,7 @@ window.cdTog = id => { const r = $('cd_' + id); if (r) r.classList.toggle('hide'
 // حساب الكاشير العام: بيدخل بـ cashier وبيختار اسم اللي بيقفل من القايمة (قرار 3/10: الاسم بس، من غير رقم سري)
 let STAFFL = [];
 // مش بيظهروا في قايمة جهاز الكاشير: عبدالله دليفري ٧٩، أحمد السيد ٨٢، محمد خالد ٨٤، أحمد مراد ٨٥، ويوسف
-const NO_CLOSE_CODES = ['79', '82', '84', '85'];
+const NO_CLOSE_CODES = ['79', '82', '84', '85', '47', '80', '81'];
 const NO_CLOSE_NAME = /youssef|yousef|يوسف/i;
 const STATION_ORDER = [['76', 'ا عبدربه'], ['19', 'د اسراء'], ['63', 'د عادل'], ['70', 'ا آيـه'],
   ['38', 'ا إيمان'], ['9', 'ا احمد علي'], ['78', 'ا العربي'], ['72', 'ا جمال']];
