@@ -378,7 +378,7 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="emp" class="hide"></div>
 <div id="adm" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-05-C</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-05-D</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -1426,7 +1426,7 @@ function cashForm(demo){
     <label for="cfVoda">فودافون كاش</label><input enterkeyhint="next" id="cfVoda" inputmode="decimal" placeholder="المبالغ وبينها +" oninput="cashCalc()"><div class="sub" id="cfVodaT"></div>
     <label for="cfInsta">إنستاباي</label><input enterkeyhint="next" id="cfInsta" inputmode="decimal" placeholder="المبالغ وبينها +" oninput="cashCalc()"><div class="sub" id="cfInstaT"></div>
     <h3 class="cfh">٤. المصاريف اللي اتدفعت من الدرج</h3>
-    <div id="cfExp"></div>
+    <div id="cfExp">${expRow()}${expRow()}</div>
     <button class="sm ghost" type="button" onclick="cashExpAdd()">+ مصروف</button>
     <h3 class="cfh">٥. نتيجة السيستم</h3>
     <select id="cfPos" onchange="cashCalc()" aria-label="نتيجة السيستم"><option value="">— السيستم قال إيه؟ —</option>
@@ -1556,14 +1556,12 @@ async function cashEmp(){
   cashCalc(); cashMine();
 }
 
-window.cashExpAdd = () => {
-  const row = document.createElement('div'); row.className = 'exprow';
-  row.innerHTML = `<select class="exT" onchange="cashCalc()" aria-label="نوع المصروف"><option value="">النوع</option>${EXP_TYPES.map(t => `<option>${t}</option>`).join('')}</select>
+// سطر مصروف — فيه سطرين فاضيين افتراضي، والفاضي مش بيتحسب
+const expRow = () => `<div class="exprow"><select class="exT" onchange="cashCalc()" aria-label="نوع المصروف"><option value="">النوع</option>${EXP_TYPES.map(t => `<option>${t}</option>`).join('')}</select>
     <input class="exD" enterkeyhint="next" placeholder="البيان" aria-label="البيان">
     <input class="exA" enterkeyhint="next" type="number" min="0" step="0.01" inputmode="decimal" placeholder="المبلغ" oninput="cashCalc()" aria-label="المبلغ">
-    <button type="button" class="sm ghost" onclick="this.parentNode.remove();cashCalc()" aria-label="امسح المصروف">✕</button>`;
-  $('cfExp').appendChild(row);
-};
+    <button type="button" class="sm ghost" onclick="this.parentNode.remove();cashCalc()" aria-label="امسح المصروف">✕</button></div>`;
+window.cashExpAdd = () => $('cfExp').insertAdjacentHTML('beforeend', expRow());
 
 function cashRead(){
   const counts = {}; let drawer = 0, badCount = false;
