@@ -355,6 +355,24 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 .stat:nth-child(6n+4){--tile:#FF5A5F}.stat:nth-child(6n+5){--tile:#FF9A3D}.stat:nth-child(6n){--tile:#8B7CFF}
 .slide{animation-name:slideup}
 @keyframes slideup{from{opacity:0;transform:translate(var(--sx,0),22px) scale(.985)}to{opacity:1;transform:none}}
+
+/* ===== أدلة الجزاءات (صور / فيديو) ===== */
+.evb{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;font-size:12.5px;border-radius:999px;
+  background:var(--green-soft);color:var(--green);border:1px solid color-mix(in srgb,var(--green) 35%,transparent);
+  box-shadow:none;cursor:pointer;white-space:nowrap}
+.evb:hover{background:var(--green-soft);filter:brightness(.97);transform:none}
+.evb.has{background:var(--amber-soft);color:var(--amber);border-color:color-mix(in srgb,var(--amber) 40%,transparent)}
+.evm{position:fixed;inset:0;z-index:50;background:rgba(7,13,24,.62);backdrop-filter:blur(3px);display:flex;
+  align-items:flex-end;justify-content:center;animation:fade .2s both}
+.evm>.box{background:var(--card);width:min(560px,100%);max-height:92vh;overflow:auto;border-radius:24px 24px 0 0;
+  padding:20px 18px 24px;animation:slideup .35s cubic-bezier(.2,.8,.2,1) both}
+@media (min-width:700px){.evm{align-items:center}.evm>.box{border-radius:24px}}
+.evm .imgs{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin:10px 0}
+.evm .imgs div{position:relative}
+.evm .imgs img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:12px;cursor:zoom-in;display:block}
+.evm .imgs img.big{grid-column:1/-1;aspect-ratio:auto;object-fit:contain;max-height:70vh;cursor:zoom-out;background:var(--paper)}
+.evm .imgs .x{position:absolute;top:4px;inset-inline-start:4px;padding:2px 8px;font-size:12px;background:rgba(0,0,0,.65)}
+@keyframes fade{from{opacity:0}to{opacity:1}}
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation:none!important;transition:none!important}
 }
@@ -856,14 +874,19 @@ async function renderEmp(){
   if (d.adv) br += R('مسحوبات آجلة', '− ' + F(d.adv) + ' ج', 'minus');
   br += R('صافي المستحق', F(d.net) + ' ج', 'total');
 
-  const logTbl = (rows, title, cols) => !rows || !rows.length ? '' :
+  window.EVMAP = {};
+  try { (await getDocs(query(collection(db, 'evidence'), where('uid', '==', ME.uid)))).forEach(s => EVMAP[s.id] = s.data()); } catch(e){}
+  const evCell = x => { const id = evId(ME.uid, x); const e = EVMAP[id];
+    return e && ((e.images||[]).length || e.video || e.note)
+      ? `<td><button class="evb has" onclick="evView('${id}')">📎 شوف الدليل</button></td>` : '<td>—</td>'; };
+  const logTbl = (rows, title, cols, ev) => !rows || !rows.length ? '' :
     `<h2 style="margin-top:20px">${esc(title)}</h2><div class="scroll"><table>
-      <tr>${cols.map(c => `<th>${esc(c[0])}</th>`).join('')}</tr>
+      <tr>${cols.map(c => `<th>${esc(c[0])}</th>`).join('')}${ev ? '<th>الدليل</th>' : ''}</tr>
       ${rows.map(x => `<tr>${cols.map(c => `<td${c[2] ? ' class="num"' : ' style="white-space:normal"'}>${
-        c[2] ? F(x[c[1]]) : esc(x[c[1]] || '')}</td>`).join('')}</tr>`).join('')}</table></div>`;
+        c[2] ? F(x[c[1]]) : esc(x[c[1]] || '')}</td>`).join('')}${ev ? evCell(x) : ''}</tr>`).join('')}</table></div>`;
   const detail =
     logTbl(d.penalties, 'تفاصيل الجزاءات الإدارية',
-           [['اليوم','date'],['النوع','kind'],['السبب','reason'],['القيمة (ج)','amount',1]]) +
+           [['اليوم','date'],['النوع','kind'],['السبب','reason'],['القيمة (ج)','amount',1]], true) +
     logTbl(d.bonuses, 'تفاصيل الحوافز والمكافآت',
            [['اليوم','date'],['البند','item'],['ملاحظة','reason'],['القيمة (ج)','amount',1]]) +
     logTbl(d.advances, 'تفاصيل المسحوبات',
@@ -1160,6 +1183,81 @@ function dayColumns(days){
     <span><i style="background:var(--line)"></i>بدون ساعات</span></div>`;
 }
 
+
+
+/* ================= أدلة الجزاءات ================= */
+// الدليل متربط بالموظف + بيانات الجزاء (مش بالفترة)، فلو الكشف اتنشر تاني الصور متضيعش.
+// الصور بتتضغط وتتخزن في Firestore (مفيش Storage على الباقة المجانية). الفيديو: لينك (درايف / يوتيوب غير مدرج).
+const evHash = t => { let h = 5381; for (const c of String(t)) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0; return h.toString(36); };
+const evId = (uid, x) => uid + '_' + evHash([x.date, x.kind || '', x.amount, x.reason || ''].join('|'));
+window.evId = evId;
+const evClose = () => { const m = $('evModal'); if (m) m.remove(); };
+window.evClose = evClose;
+const evShell = html => { evClose(); const m = document.createElement('div'); m.id = 'evModal'; m.className = 'evm';
+  m.innerHTML = `<div class="box">${html}</div>`; m.addEventListener('click', e => { if (e.target === m) evClose(); });
+  document.body.appendChild(m); };
+const safeUrl = u => /^https:\/\//i.test(String(u || '').trim()) ? String(u).trim() : '';
+const evImgs = (arr, del) => (arr || []).length ? `<div class="imgs">${arr.map((src, i) =>
+  `<div><img src="${src}" alt="" onclick="this.classList.toggle('big')">${del ? `<button class="x" onclick="evDel(${i})">مسح</button>` : ''}</div>`).join('')}</div>` : '';
+
+window.evView = id => { const e = (window.EVMAP || {})[id]; if (!e) return;
+  evShell(`<div class="hdr"><h2 style="margin:0">دليل الجزاء</h2><button class="sm ghost" onclick="evClose()">إغلاق</button></div>
+    <p class="sub">${esc(e.date || '')} — ${esc(e.reason || '')} — ${F(e.amount)} ج</p>
+    ${e.note ? `<div class="banner">${esc(e.note)}</div>` : ''}${evImgs(e.images)}
+    ${safeUrl(e.video) ? `<button class="full" onclick="window.open('${esc(safeUrl(e.video))}','_blank','noopener')">▶ شغّل الفيديو</button>` : ''}`); };
+
+window.evMark = async uid => {
+  try { const q = await getDocs(query(collection(db, 'evidence'), where('uid', '==', uid)));
+    const have = new Set(); q.forEach(s => { const d = s.data(); if ((d.images||[]).length || d.video || d.note) have.add(s.id); });
+    document.querySelectorAll('button[data-ev]').forEach(b => { if (have.has(b.dataset.ev)){ b.classList.add('has'); b.textContent = '📎 فيه دليل'; } });
+  } catch(e){}
+};
+
+let EVCUR = null;
+window.evEdit = async (uid, i) => {
+  const r = DASH.rows.find(x => x.uid === uid); const x = r && (r.penalties || [])[i]; if (!x) return;
+  const id = evId(uid, x); let cur = {};
+  try { const s = await getDoc(doc(db, 'evidence', id)); if (s.exists()) cur = s.data(); } catch(e){}
+  EVCUR = { id, uid, x, images: [...(cur.images || [])], video: cur.video || '', note: cur.note || '' };
+  evRender();
+};
+const evRender = () => { const C = EVCUR, adm = ROLE === 'admin';
+  evShell(`<div class="hdr"><h2 style="margin:0">دليل الجزاء</h2><button class="sm ghost" onclick="evClose()">إغلاق</button></div>
+    <p class="sub">${esc(C.x.date || '')} — ${esc(C.x.reason || '')} — ${F(C.x.amount)} ج</p>
+    ${adm ? `<label>ملاحظة للموظف (اختياري)</label><textarea id="evNote" rows="2">${esc(C.note)}</textarea>` : (C.note ? `<div class="banner">${esc(C.note)}</div>` : '')}
+    ${evImgs(C.images, adm)}${!C.images.length && !adm ? '<p class="sub">مفيش صور.</p>' : ''}
+    ${adm ? `<label>إضافة صور (لحد 4)</label><input id="evFiles" type="file" accept="image/*" multiple>
+      <label>لينك فيديو (درايف أو يوتيوب غير مدرج — لازم يبدأ بـ https)</label><input id="evVid" type="url" value="${esc(C.video)}" placeholder="https://...">
+      <button class="full" id="evSave" onclick="evSave()">حفظ</button><div class="err" id="evMsg"></div>`
+      : (safeUrl(C.video) ? `<button class="full" onclick="window.open('${esc(safeUrl(C.video))}','_blank','noopener')">▶ شغّل الفيديو</button>` : '')}`); };
+window.evDel = i => { EVCUR.note = $('evNote')?.value || ''; EVCUR.video = $('evVid')?.value || ''; EVCUR.images.splice(i, 1); evRender(); };
+
+const shrink = file => new Promise((ok, no) => { const fr = new FileReader();
+  fr.onerror = () => no(new Error('الصورة مش بتتقرا'));
+  fr.onload = () => { const im = new Image(); im.onerror = () => no(new Error('صيغة الصورة مش مدعومة'));
+    im.onload = () => { const k = Math.min(1, 1100 / Math.max(im.width, im.height)), c = document.createElement('canvas');
+      c.width = Math.round(im.width * k); c.height = Math.round(im.height * k); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+      ok(c.toDataURL('image/jpeg', 0.72)); };
+    im.src = fr.result; };
+  fr.readAsDataURL(file); });
+
+window.evSave = async () => {
+  const C = EVCUR, m = $('evMsg'), btn = $('evSave'); m.style.color = 'var(--red)'; btn.disabled = true;
+  try {
+    for (const f of [...($('evFiles').files || [])]){
+      if (C.images.length >= 4){ m.textContent = 'اتحط أول 4 صور بس'; break; }
+      C.images.push(await shrink(f));
+    }
+    C.note = $('evNote').value.trim(); C.video = $('evVid').value.trim();
+    if (C.video && !safeUrl(C.video)){ m.textContent = 'لينك الفيديو لازم يبدأ بـ https://'; btn.disabled = false; return; }
+    const size = C.images.reduce((a, b) => a + b.length, 0);
+    if (size > 850000){ m.textContent = 'الصور كبيرة — امسح واحدة أو اتنين'; btn.disabled = false; return; }
+    if (!C.images.length && !C.video && !C.note){ await deleteDoc(doc(db, 'evidence', C.id)); }
+    else await setDoc(doc(db, 'evidence', C.id), { uid: C.uid, date: C.x.date || '', kind: C.x.kind || '', reason: C.x.reason || '',
+      amount: +C.x.amount || 0, images: C.images, video: C.video, note: C.note, by: ME.uid, at: serverTimestamp() });
+    evClose(); evMark(C.uid);
+  } catch (e) { m.textContent = 'متسجلش: ' + errTxt(e); btn.disabled = false; }
+};
 
 /* ================= الوقت الإضافي ================= */
 const OT_NEW = 'قيد المراجعة', OT_MGR = 'موافقة المدير', OT_OK = 'معتمد', OT_NO = 'مرفوض';
@@ -2406,7 +2504,9 @@ window.drill = uid => {
     <div class="rows">${br}</div>
     ${sec('d_late_'+uid, 'التأخيرات والانصراف المبكر', lateRows.length, lateHtml)}
     ${sec('d_pen_'+uid, 'الجزاءات الإدارية', (r.penalties||[]).length,
-       (r.penalties||[]).length ? money(r.penalties, [['اليوم','date'],['السبب','reason'],['القيمة','amount',1]]) : '')}
+       (r.penalties||[]).length ? tbl(['اليوم','السبب','القيمة','الدليل'], r.penalties.map((x, i) =>
+         `<tr><td>${esc(x.date)}</td><td style="white-space:normal">${esc(x.reason || '')}</td><td class="num">${F(x.amount)}</td>
+          <td><button class="evb" data-ev="${evId(uid, x)}" onclick="evEdit('${esc(uid)}',${i})">📎 ${ROLE === 'admin' ? 'إضافة / عرض' : 'عرض'}</button></td></tr>`).join('')) : '')}
     ${sec('d_bon_'+uid, 'الحوافز', (r.bonuses||[]).length,
        (r.bonuses||[]).length ? money(r.bonuses, [['اليوم','date'],['البند','item'],['القيمة','amount',1]]) : '')}
     ${sec('d_adv_'+uid, 'المسحوبات', (r.advances||[]).length,
@@ -2415,6 +2515,7 @@ window.drill = uid => {
     ${sec('d_day_'+uid, 'أيام الشهر', days.length, daysHtml)}
   </div>`;
   box.scrollIntoView({ behavior:'smooth', block:'start' });
+  evMark(uid);
 };
 window.secTog = id => { const e = $(id); if (!e) return;
   e.classList.toggle('hide'); const b = e.previousElementSibling;
