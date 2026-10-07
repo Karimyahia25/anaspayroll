@@ -23,21 +23,23 @@ const CLS_HELP = {
 };
 
 let B = null, IT = [], ROLE = 'emp', ROOT = null, DB = null, VIEW = 'ov', CH = [], EXPL = { q: '', cls: '', abc: '', thc: '', sup: '', sort: 'n90', page: 0 };
-const VIEWS = [['ov', '📊 نظرة عامة'], ['dc', '🎯 قرارات'], ['it', '🔎 الأصناف'], ['sp', '🏭 الموردين'], ['pf', '💰 الربحية والتصنيف'], ['ex', '⏳ الصلاحية'], ['mo', '📆 شهري'], ['me', '📘 طريقة الحساب']];
+const VIEWS = [['ov', '📊 نظرة عامة', '#FFC83D'], ['dc', '🎯 قرارات', '#FF8A5B'], ['it', '🔎 الأصناف', '#5BC0FF'], ['sp', '🏭 الموردين', '#C9A7FF'], ['pf', '💰 الربحية والتصنيف', '#7CE3A1'], ['ex', '⏳ الصلاحية', '#FF6F91'], ['mo', '📆 شهري', '#FFE066'], ['me', '📘 طريقة الحساب', '#E2E8F0']];
 
 /* ---------- تحميل ---------- */
 function css() {
   if ($('#invCss')) return;
   const s = document.createElement('style'); s.id = 'invCss';
   s.textContent = `
-#invRoot .ivbar{display:flex;gap:6px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:4px -4px 14px;padding:6px 4px;position:sticky;top:0;z-index:4;background:color-mix(in srgb,var(--paper) 90%,transparent);backdrop-filter:blur(8px)}
+#invRoot .ivbar{display:flex;gap:6px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:4px 0 14px;padding:8px;position:sticky;top:8px;z-index:4;border-radius:18px;background:linear-gradient(135deg,#0F2C45 0%,#0B8577 100%);box-shadow:0 14px 28px -12px rgba(11,60,70,.65),0 0 0 1px rgba(255,255,255,.08) inset}
 #invRoot .ivbar::-webkit-scrollbar{display:none}
-@media(max-width:899px){#invRoot .ivbar{top:52px}}
+@media(max-width:899px){#invRoot .ivbar{top:58px}}
 #invRoot .ivbar button{flex:0 0 auto}
 #ivtop{position:fixed;bottom:18px;inset-inline-start:16px;z-index:40;width:46px;height:46px;border-radius:50%;padding:0;font-size:20px;box-shadow:0 10px 20px -8px rgba(15,27,45,.6);display:none}
 #ivtop.show{display:block}
-#invRoot .ivbar button{background:var(--card);color:var(--muted);box-shadow:0 1px 2px rgba(15,27,45,.08);border-radius:999px;padding:8px 15px;font-size:13px;font-weight:600}
-#invRoot .ivbar button.on{background:var(--navy);color:#fff}
+#invRoot .ivbar button{background:rgba(255,255,255,.12);color:#fff;box-shadow:none;border-radius:999px;padding:9px 16px;font-size:13.5px;font-weight:700;border:1px solid rgba(255,255,255,.18);transition:background .2s,transform .2s,color .2s}
+#invRoot .ivbar button:hover{background:rgba(255,255,255,.24);filter:none}
+#invRoot .ivbar button.on{background:var(--c,#FFC83D);color:#10202E;border-color:transparent;transform:translateY(-1px) scale(1.04);box-shadow:0 6px 14px -4px rgba(0,0,0,.45)}
+#invRoot .ivbar button.on:hover{background:var(--c,#FFC83D)}
 #invRoot .ivgrid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}
 #invRoot .ivk{background:var(--card);border-radius:18px;padding:14px 16px;box-shadow:0 1px 2px rgba(15,27,45,.05),0 10px 24px -18px rgba(15,27,45,.35);border-inline-start:4px solid var(--green)}
 #invRoot .ivk.r{border-inline-start-color:#C0392B}#invRoot .ivk.o{border-inline-start-color:#E67E22}#invRoot .ivk.b{border-inline-start-color:#2A6FB0}#invRoot .ivk.p{border-inline-start-color:#8E6BBF}
@@ -50,9 +52,9 @@ function css() {
 #invRoot .act{border-radius:20px;padding:16px;color:#fff;cursor:pointer;position:relative;overflow:hidden;box-shadow:0 18px 30px -20px rgba(15,27,45,.6);transition:transform .2s}
 #invRoot .act:hover{transform:translateY(-3px)}#invRoot .act .t{font-size:13px;opacity:.9}#invRoot .act .n{font-family:Alexandria,sans-serif;font-size:26px;font-weight:700;margin:2px 0}#invRoot .act .d{font-size:12px;opacity:.9;line-height:1.6}
 #invRoot .act.a1{background:linear-gradient(135deg,#0F2C45,#2A6FB0)}#invRoot .act.a2{background:linear-gradient(135deg,#7A3A00,#E67E22)}#invRoot .act.a3{background:linear-gradient(135deg,#6E1B14,#C0392B)}#invRoot .act.a4{background:linear-gradient(135deg,#0A6B60,#2DD4BF)}#invRoot .act.a5{background:linear-gradient(135deg,#5A3E00,#E0A526)}
-#invRoot .tw{overflow:auto;max-height:480px;border:1px solid var(--line);border-radius:14px}
+#invRoot .tw{overflow-x:auto;overflow-y:visible;border:1px solid var(--line);border-radius:14px}
 #invRoot table{width:100%;border-collapse:collapse;font-size:13px;min-width:600px}#invRoot th,#invRoot td{padding:8px 10px;text-align:center;white-space:nowrap}
-#invRoot th{background:color-mix(in srgb,var(--paper) 70%,var(--card));color:var(--muted);cursor:pointer;position:sticky;top:0;user-select:none;font-size:12px}
+#invRoot th{background:color-mix(in srgb,var(--paper) 70%,var(--card));color:var(--muted);cursor:pointer;user-select:none;font-size:12px}
 #invRoot td{border-top:1px solid var(--line)}#invRoot td.nm{text-align:right;white-space:normal;min-width:180px}#invRoot tbody tr.cl{cursor:pointer}#invRoot tbody tr.cl:hover td{background:var(--green-soft)}
 #invRoot .bd{display:inline-block;padding:2px 9px;border-radius:99px;font-size:11.5px;font-weight:700;color:#fff}
 #invRoot .ctl{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}#invRoot .ctl input,#invRoot .ctl select{width:auto;flex:1;min-width:130px;padding:8px 11px;font-size:13px}
@@ -381,7 +383,7 @@ function setView(v, focus, scroll) {
 function shell(adm) {
   ROOT.innerHTML = `<div class="ivcard" style="padding:14px 16px"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center"><div><h2 style="margin:0 0 2px">📦 المخزون — لوحة القرارات</h2><p class="sub" id="ivmeta"></p></div>
     <button id="ivall" data-xl="all" style="border-radius:999px">📥 تصدير كل قوايم المشتريات (Excel)</button>${adm ? `<div><label class="sm ghost" style="cursor:pointer;display:inline-block;border:1px solid var(--line);border-radius:999px;padding:7px 14px;font-size:13px;color:var(--green)">رفع نتيجة تحليل جديدة<input type="file" id="ivup" accept=".json" style="display:none"></label><div class="note" id="ivmsg"></div></div>` : ''}</div></div>
-    <button id="ivtop" title="لأعلى" onclick="window.scrollTo({top:0,behavior:'smooth'})">⬆</button><div class="ivbar" id="ivbar">${VIEWS.map(v => `<button data-v="${v[0]}">${v[1]}</button>`).join('')}</div><div id="ivbody"></div>`;
+    <button id="ivtop" title="لأعلى" onclick="window.scrollTo({top:0,behavior:'smooth'})">⬆</button><div class="ivbar" id="ivbar">${VIEWS.map(v => `<button data-v="${v[0]}" style="--c:${v[2]}">${v[1]}</button>`).join('')}</div><div id="ivbody"></div>`;
   $('#ivbar', ROOT).onclick = e => { const b = e.target.closest('button'); if (b) setView(b.dataset.v, null, true); };
   if (!window.__ivScroll) { window.__ivScroll = 1; window.addEventListener('scroll', () => { const t = document.getElementById('ivtop'); if (t) t.classList.toggle('show', window.scrollY > 500 && ROOT && ROOT.offsetParent !== null); }, { passive: true }); }
   ROOT.addEventListener('click', e => {
