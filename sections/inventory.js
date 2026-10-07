@@ -548,6 +548,13 @@ function candsOf(it) {
   return [...out.values()].map(o => [o.sup, Math.round((1 - o.c / o.r) * 1000) / 10, o.nl, Math.round(o.r)]).sort((a, b) => b[1] - a[1]);
 }
 
+// بنحتفظ بآخر ملف نواقص النهارده على الجهاز نفسه، علشان الريفريش ميضيّعوش (بيتمسح تلقائي تاني يوم)
+const STASH = 'ordStash';
+function stashPlan(rows) { try { const keep = ['الكود', 'الاسم', 'المطلوب', 'السعر', 'الموجود', 'المورد', 'ملاحظات', 'اخر شراء', 'نسبة خصم اخر شراء'];
+  localStorage.setItem(STASH, JSON.stringify({ date: today(), rows: rows.map(r => { const o = {}; keep.forEach(k => { if (r[k] != null) o[k] = r[k]; }); return o; }), ticks: [] })); } catch (e) {} }
+function stashTicks() { try { const st = JSON.parse(localStorage.getItem(STASH) || 'null'); if (!st || !ORD.plan) return; st.ticks = ORD.plan.lines.filter(l => l.done).map(l => l.id); localStorage.setItem(STASH, JSON.stringify(st)); } catch (e) {} }
+function restorePlan() { try { const st = JSON.parse(localStorage.getItem(STASH) || 'null'); if (!st || st.date !== today()) { localStorage.removeItem(STASH); return false; }
+  ORD.name = dmy(today()); ORD.plan = planOrder(st.rows); const tk = new Set(st.ticks || []); ORD.plan.lines.forEach(l => { if (tk.has(l.id)) l.done = true; }); return true; } catch (e) { return false; } }
 function groupLines(lines) {
   const groups = {}; lines.forEach(l => (groups[l.sup || '—'] = groups[l.sup || '—'] || []).push(l));
   return Object.entries(groups).map(([sup, ls]) => { const a = ls.filter(l => l.disc != null), dv = sum(a, l => l.val);
@@ -659,25 +666,27 @@ function vOrders() {
   return { html, after() {
     if (ROLE === 'admin') { buyerAcct(); syncBuyerData(); }
     const c = $('#ivbody', ROOT), plan = () => { const e = $('#ordPlan', ROOT); e.innerHTML = renderPlan(); sortable(e); }, logBox = () => { const e = $('#ordLogBox', ROOT); e.innerHTML = renderLog(); sortable(e); };
-    if (ORD.log == null || ORD.buys == null) Promise.all([ORD.log == null ? loadOrderLog() : 0, ORD.buys == null ? loadBuys() : 0]).then(() => VIEW === 'or' && logBox()).catch(() => { ORD.log = ORD.log || []; ORD.buys = ORD.buys || []; });
+    const back = () => { if (!ORD.plan && restorePlan()) { plan(); const m0 = $('#ordUpMsg', ROOT); if (m0) m0.textContent = 'رجّعت آخر ملف نواقص رفعته النهارده ✓'; } };
+    if (ORD.log == null || ORD.buys == null) Promise.all([ORD.log == null ? loadOrderLog() : 0, ORD.buys == null ? loadBuys() : 0]).then(() => { if (VIEW === 'or') { logBox(); back(); } }).catch(() => { ORD.log = ORD.log || []; ORD.buys = ORD.buys || []; if (VIEW === 'or') back(); });
+    else back();
     c.onclick = async e => {
       const b = e.target.closest('[data-ord]'); if (!b) return; const [k, v] = b.dataset.ord.split(':'), P = ORD.plan, msg = $('#ordMsg', ROOT);
       try {
         if (k === 'wa') { await copyTxt(waText(P, P.groups[+v])); const t = b.textContent; b.textContent = '✓ اتنسخت'; setTimeout(() => b.textContent = t, 1500); }
         else if (k === 'xl') await orderXl(P, v === 'all' ? null : +v);
-        else if (k === 'save') { const ls = P.lines.filter(l => l.done); if (!ls.length) return; b.disabled = true; await saveOrder(P, ls); P.ordered.push(...ls.map(l => ({ ...l, note: 'اتسجل في طلبية النهارده — ' + (l.sup || '') }))); P.lines = P.lines.filter(l => !l.done); P.groups = groupLines(P.lines); plan(); logBox(); const m2 = $('#ordMsg', ROOT); if (m2) m2.textContent = `✅ اتحفظ ${ls.length} صنف واتشالوا من الطلبية`; }
+        else if (k === 'save') { const ls = P.lines.filter(l => l.done); if (!ls.length) return; b.disabled = true; await saveOrder(P, ls); P.ordered.push(...ls.map(l => ({ ...l, note: 'اتسجل في طلبية النهارده — ' + (l.sup || '') }))); P.lines = P.lines.filter(l => !l.done); P.groups = groupLines(P.lines); stashTicks(); plan(); logBox(); const m2 = $('#ordMsg', ROOT); if (m2) m2.textContent = `✅ اتحفظ ${ls.length} صنف واتشالوا من الطلبية`; }
       } catch (err) { b.disabled = false; if (msg) msg.textContent = 'فشل: ' + (err.code || err.message); else alert('فشل: ' + (err.code || err.message)); }
     };
     c.onchange = async e => {
       const t = e.target;
-      if (t.dataset && t.dataset.ck) { const l = ORD.plan && ORD.plan.lines.find(x => x.id === +t.dataset.ck); if (l) l.done = t.checked; const bt = $('#ordSaveBtn', ROOT), n = ORD.plan.lines.filter(x => x.done).length; if (bt) { bt.disabled = !n; bt.textContent = `💾 حفظ الأصناف اللي اتطلبت (${n}) وشيلها من الطلبية`; } return; }
+      if (t.dataset && t.dataset.ck) { const l = ORD.plan && ORD.plan.lines.find(x => x.id === +t.dataset.ck); if (l) l.done = t.checked; const bt = $('#ordSaveBtn', ROOT), n = ORD.plan.lines.filter(x => x.done).length; stashTicks(); if (bt) { bt.disabled = !n; bt.textContent = `💾 حفظ الأصناف اللي اتطلبت (${n}) وشيلها من الطلبية`; } return; }
       if (t.id !== 'upAny' || !t.files.length) return; const m = $('#ordUpMsg', ROOT), out = [], files = [...t.files]; m.textContent = 'بيقرا الملفات…';
       if (ORD.buys == null) { try { await loadBuys(); } catch (err) { ORD.buys = []; } }
       if (ORD.log == null) { try { await loadOrderLog(); } catch (err) { ORD.log = []; } }
       for (const f of files) {
         try {
           const sh = await readSheetRows(f, SHORT_COLS);
-          if (sh) { ORD.name = dmy(today()); ORD.plan = planOrder(sh); out.push(`✅ ${f.name}: نواقص — ${N(sh.length)} صنف`); continue; }
+          if (sh) { ORD.name = dmy(today()); ORD.plan = planOrder(sh); stashPlan(sh); out.push(`✅ ${f.name}: نواقص — ${N(sh.length)} صنف`); continue; }
           const by = await readSheetRows(f, BUY_COLS);
           if (by) { const date = $('#buyDate', ROOT).value || yesterday(), rows = parseBuys(by, date); await saveBuys(date, rows); out.push(`✅ ${f.name}: مشتريات ${dmy(date)} — ${N(rows.length)} سطر اتحفظوا`); continue; }
           out.push(`⚠ ${f.name}: مش نواقص ولا مشتريات (الأعمدة مش مطابقة)`);
