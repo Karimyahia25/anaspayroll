@@ -548,6 +548,11 @@ function candsOf(it) {
   return [...out.values()].map(o => [o.sup, Math.round((1 - o.c / o.r) * 1000) / 10, o.nl, Math.round(o.r)]).sort((a, b) => b[1] - a[1]);
 }
 
+function groupLines(lines) {
+  const groups = {}; lines.forEach(l => (groups[l.sup || '—'] = groups[l.sup || '—'] || []).push(l));
+  return Object.entries(groups).map(([sup, ls]) => { const a = ls.filter(l => l.disc != null), dv = sum(a, l => l.val);
+    return { sup, ls, val: sum(ls, l => l.val), disc: dv ? sum(a, l => l.val * l.disc) / dv : null }; }).sort((a, b) => ((a.sup === '—') - (b.sup === '—')) || b.val - a.val);
+}
 function planOrder(rows) {
   const byId = new Map(IT.map(x => [x.id, x])), votes = {}, map = {}, rev = {};
   Object.entries(B.sdx || {}).forEach(([k, v]) => { if (!byId.has(+k)) byId.set(+k, { id: +k, sup3: v[0], sd: v[1], name: v[2] }); });
@@ -555,12 +560,14 @@ function planOrder(rows) {
   rows.forEach(r => { const ab = abOf(r), it = byId.get(+r['الكود']); if (!ab || !it || !it.sup3) return; const v = votes[ab] = votes[ab] || {}; v[it.sup3] = (v[it.sup3] || 0) + 1; });
   Object.entries(votes).forEach(([ab, v]) => { const e = Object.entries(v).sort((a, b) => b[1] - a[1]), tot = e.reduce((s, x) => s + x[1], 0);
     if (e[0][1] >= 2 && e[0][1] / tot >= .5) { map[ab] = e[0][0]; if (!rev[e[0][0]] || rev[e[0][0]][1] < e[0][1]) rev[e[0][0]] = [ab, e[0][1]]; } });
-  const lines = [], ordered = [], unmapped = new Set();
+  const lines = [], ordered = [], unmapped = new Set(), doneToday = new Map();
+  (ORD.log || []).filter(o => o.date === today()).forEach(o => o.lines.forEach(l => doneToday.set(l[0], l[4])));
   rows.forEach(r => {
     const id = +r['الكود']; if (!id) return;
     const it = byId.get(id), ab = abOf(r), lastKnown = !!(ab && map[ab]), last = ab ? (map[ab] || ab) : null; if (ab && !map[ab]) unmapped.add(ab);
     const req = +r['المطلوب'] || 1, qty = Math.max(1, Math.ceil(req - 1e-9)), price = +r['السعر'] || 0, ld = last ? pctv(r['نسبة خصم اخر شراء']) : null;
     const base = { id, name: String(r['الاسم'] || (it && it.name) || ''), qty, price, val: qty * price, last, ld, stock: r['الموجود'], note: String(r['ملاحظات'] || '').trim() };
+    if (doneToday.has(id)) { ordered.push({ ...base, note: 'اتسجل في طلبية النهارده — ' + (doneToday.get(id) || '') }); return; }
     if (/طلب من/.test(base.note)) { ordered.push(base); return; }
     const cand = candsOf(it), best = cand.find(c => c[3] >= 500) || cand[0];
     let sup = null, disc = null, why = 'محتاج تحديد مورد', sw = false, save = 0, small = false;
@@ -574,9 +581,7 @@ function planOrder(rows) {
     }
     lines.push({ ...base, sup, disc, why, sw, save, small });
   });
-  const groups = {}; lines.forEach(l => (groups[l.sup || '—'] = groups[l.sup || '—'] || []).push(l));
-  const gl = Object.entries(groups).map(([sup, ls]) => { const a = ls.filter(l => l.disc != null), dv = sum(a, l => l.val);
-    return { sup, ls, val: sum(ls, l => l.val), disc: dv ? sum(a, l => l.val * l.disc) / dv : null }; }).sort((a, b) => ((a.sup === '—') - (b.sup === '—')) || b.val - a.val);
+  const gl = groupLines(lines);
   return { lines, ordered, groups: gl, rev, unmapped: [...unmapped] };
 }
 const supLab = (P, s) => s === '—' ? 'محتاج تحديد مورد' : (P.rev[s] ? `${s} (${P.rev[s][0]})` : s);
@@ -607,9 +612,9 @@ async function loadOrderLog() {
   const q = query(collection(DB, 'purchasing'), where(documentId(), '>=', 'order_'), where(documentId(), '<', 'order_')), sn = await getDocs(q);
   ORD.log = sn.docs.map(d => { try { return JSON.parse(d.data().d); } catch (e) { return null; } }).filter(Boolean).sort((a, b) => a.at < b.at ? -1 : 1);
 }
-async function saveOrder(P) {
-  const K = orderKpis(P), at = new Date().toISOString().slice(0, 16).replace('T', '_').replace(':', ''), rec = { at, date: today(), n: K.n, val: Math.round(K.val), dNew: K.dNew, dOld: K.dOld, sw: K.sw, save: Math.round(K.save),
-    lines: P.lines.map(l => [l.id, l.name, l.qty, l.price, l.sup, l.disc == null ? null : +l.disc.toFixed(1), l.last, l.ld == null ? null : +l.ld.toFixed(1), l.sw ? 1 : 0]) };
+async function saveOrder(P, ls) {
+  const K = orderKpis({ lines: ls }), at = new Date().toISOString().slice(0, 16).replace('T', '_').replace(':', ''), rec = { at, date: today(), n: K.n, val: Math.round(K.val), dNew: K.dNew, dOld: K.dOld, sw: K.sw, save: Math.round(K.save),
+    lines: ls.map(l => [l.id, l.name, l.qty, l.price, l.sup, l.disc == null ? null : +l.disc.toFixed(1), l.last, l.ld == null ? null : +l.ld.toFixed(1), l.sw ? 1 : 0]) };
   if (!DB) throw new Error('التسجيل بيشتغل على الموقع الحقيقي بس');
   await setDoc(doc(DB, 'purchasing', 'order_' + at), { d: JSON.stringify(rec), at }); (ORD.log = ORD.log || []).push(rec);
 }
@@ -629,11 +634,11 @@ function renderPlan() {
   const P = ORD.plan; if (!P) return '';
   const K = orderKpis(P);
   const cards = P.groups.map((g, i) => `<div class="ivcard" style="border-inline-start:5px solid ${g.sup === '—' ? '#C0392B' : '#1F9B76'}"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center"><h3 style="margin:0">${esc(supLab(P, g.sup))} <span class="sm" style="font-weight:400">· ${g.ls.length} صنف · ${M(g.val)}${g.disc != null ? ' · خصم متوقع ' + P1(g.disc) : ''}</span></h3>${g.sup === '—' ? '' : `<span style="display:flex;gap:6px;flex-wrap:wrap"><button class="sm" data-ord="wa:${i}">📋 انسخ رسالة واتساب</button><button class="sm ghost" data-ord="xl:${i}">📥 Excel</button></span>`}</div>
-    ${table([['id', 'الكود'], ['name', 'الصنف', 'nm'], ['qty', 'اطلب', 'n'], ['price', 'السعر', 'n'], [l => l.disc == null ? '—' : P1(l.disc), 'الخصم المتوقع', 'raw'], [l => l.last ? esc(supLab(P, l.last)) + (l.ld != null ? ' · ' + P1(l.ld) : '') : '—', 'المورد الأخير', 'raw'], [l => esc(l.why) + (l.small ? ' <b style="color:#C0392B">⚠ عينة صغيرة</b>' : ''), 'السبب', 'raw']], g.ls)}</div>`).join('');
-  const od = P.ordered.length ? `<div class="ivcard"><h3>⏱ اتطلبت النهارده قبل كده (${P.ordered.length}) — مش داخلة في الطلبية</h3><p class="why">الملف نفسه عليه ملاحظة "طلب من 0 يوم" للأصناف دي، فاستبعدتها علشان متتطلبش مرتين.</p>${table([['id', 'الكود'], ['name', 'الصنف', 'nm'], ['qty', 'مطلوب', 'n'], ['note', 'الملاحظة']], P.ordered)}</div>` : '';
+    ${table([[l => `<input type="checkbox" class="ck" data-ck="${l.id}" ${l.done ? 'checked' : ''}>`, 'اتطلب ✓', 'raw'], ['id', 'الكود'], ['name', 'الصنف', 'nm'], ['qty', 'اطلب', 'n'], ['price', 'السعر', 'n'], [l => l.disc == null ? '—' : P1(l.disc), 'الخصم المتوقع', 'raw'], [l => l.last ? esc(supLab(P, l.last)) + (l.ld != null ? ' · ' + P1(l.ld) : '') : '—', 'المورد الأخير', 'raw'], [l => esc(l.why) + (l.small ? ' <b style="color:#C0392B">⚠ عينة صغيرة</b>' : ''), 'السبب', 'raw']], g.ls)}</div>`).join('');
+  const od = P.ordered.length ? `<div class="ivcard"><h3>⏱ اتطلبت النهارده قبل كده (${P.ordered.length}) — مش داخلة في الطلبية</h3><p class="why">الأصناف دي إما اتحفظت في طلبية النهارده، أو الملف نفسه عليه ملاحظة "طلب من 0 يوم". استبعدتها علشان متتطلبش مرتين.</p>${table([['id', 'الكود'], ['name', 'الصنف', 'nm'], ['qty', 'مطلوب', 'n'], ['note', 'الملاحظة']], P.ordered)}</div>` : '';
   const un = P.unmapped.length ? `<p class="sm">أكواد موردين مقدرتش أربطها باسم مورد (بتظهر زي ما هي): <b>${esc(P.unmapped.join('، '))}</b></p>` : '';
   return `<div class="ivgrid">${kpi('أصناف الطلبية', N(K.n), `${N(P.groups.filter(g => g.sup !== '—').length)} مورد`)}${kpi('قيمة الطلبية (بيعي)', M(K.val), 'الكمية بعد التقريب لأعلى')}${kpi('متوسط الخصم المتوقع', P1(K.dNew), K.dOld != null ? 'المورد الأخير كان ' + P1(K.dOld) : '')}${kpi('وفر متوقع', M(K.save), `${N(K.sw)} صنف اتحولوا لمورد أعلى خصم`)}${kpi('محتاجة مورد', N(K.unk), 'مفيش سجل شراء ليها', K.unk ? 'r' : '')}</div>
-  <p style="margin:10px 0"><button data-ord="xl:all">📥 كل الطلبية (Excel — شيت لكل مورد)</button> <button class="${ORD.saved ? 'ghost' : ''}" data-ord="save" ${ORD.saved ? 'disabled' : ''}>${ORD.saved ? '✅ اتسجلت' : '✅ اعتمد وسجّل الطلبية للقياس'}</button> <span class="note" id="ordMsg"></span></p>${un}${cards}${od}`;
+  <p style="margin:10px 0"><button data-ord="xl:all">📥 كل الطلبية (Excel — شيت لكل مورد)</button> <button id="ordSaveBtn" data-ord="save" ${P.lines.some(l => l.done) ? '' : 'disabled'}>💾 حفظ الأصناف اللي اتطلبت (${P.lines.filter(l => l.done).length}) وشيلها من الطلبية</button> <span class="note" id="ordMsg"></span></p><p class="sm" style="margin:0 0 8px">علّم ✓ قدام كل صنف بعد ما تطلبه من المورد، وفي الآخر اضغط "حفظ" — الأصناف المعلّمة بتتشال، ويفضل قدامك اللي لسه متطلبش. لو رفعت ملف نواقص تاني النهارده، اللي اتحفظ مش هيرجع.</p>${un}${cards}${od}`;
 }
 function renderLog() {
   const bs = ORD.buys || [], L = ORD.log || [], days = bs.map(dayStats), orderDays = [...new Set(L.map(o => o.date))].sort();
@@ -660,16 +665,19 @@ function vOrders() {
       try {
         if (k === 'wa') { await copyTxt(waText(P, P.groups[+v])); const t = b.textContent; b.textContent = '✓ اتنسخت'; setTimeout(() => b.textContent = t, 1500); }
         else if (k === 'xl') await orderXl(P, v === 'all' ? null : +v);
-        else if (k === 'save') { b.disabled = true; await saveOrder(P); ORD.saved = true; plan(); logBox(); }
+        else if (k === 'save') { const ls = P.lines.filter(l => l.done); if (!ls.length) return; b.disabled = true; await saveOrder(P, ls); P.ordered.push(...ls.map(l => ({ ...l, note: 'اتسجل في طلبية النهارده — ' + (l.sup || '') }))); P.lines = P.lines.filter(l => !l.done); P.groups = groupLines(P.lines); plan(); logBox(); const m2 = $('#ordMsg', ROOT); if (m2) m2.textContent = `✅ اتحفظ ${ls.length} صنف واتشالوا من الطلبية`; }
       } catch (err) { b.disabled = false; if (msg) msg.textContent = 'فشل: ' + (err.code || err.message); else alert('فشل: ' + (err.code || err.message)); }
     };
     c.onchange = async e => {
-      const t = e.target; if (t.id !== 'upAny' || !t.files.length) return; const m = $('#ordUpMsg', ROOT), out = [], files = [...t.files]; m.textContent = 'بيقرا الملفات…';
+      const t = e.target;
+      if (t.dataset && t.dataset.ck) { const l = ORD.plan && ORD.plan.lines.find(x => x.id === +t.dataset.ck); if (l) l.done = t.checked; const bt = $('#ordSaveBtn', ROOT), n = ORD.plan.lines.filter(x => x.done).length; if (bt) { bt.disabled = !n; bt.textContent = `💾 حفظ الأصناف اللي اتطلبت (${n}) وشيلها من الطلبية`; } return; }
+      if (t.id !== 'upAny' || !t.files.length) return; const m = $('#ordUpMsg', ROOT), out = [], files = [...t.files]; m.textContent = 'بيقرا الملفات…';
       if (ORD.buys == null) { try { await loadBuys(); } catch (err) { ORD.buys = []; } }
+      if (ORD.log == null) { try { await loadOrderLog(); } catch (err) { ORD.log = []; } }
       for (const f of files) {
         try {
           const sh = await readSheetRows(f, SHORT_COLS);
-          if (sh) { ORD.name = dmy(today()); ORD.plan = planOrder(sh); ORD.saved = false; out.push(`✅ ${f.name}: نواقص — ${N(sh.length)} صنف`); continue; }
+          if (sh) { ORD.name = dmy(today()); ORD.plan = planOrder(sh); out.push(`✅ ${f.name}: نواقص — ${N(sh.length)} صنف`); continue; }
           const by = await readSheetRows(f, BUY_COLS);
           if (by) { const date = $('#buyDate', ROOT).value || yesterday(), rows = parseBuys(by, date); await saveBuys(date, rows); out.push(`✅ ${f.name}: مشتريات ${dmy(date)} — ${N(rows.length)} سطر اتحفظوا`); continue; }
           out.push(`⚠ ${f.name}: مش نواقص ولا مشتريات (الأعمدة مش مطابقة)`);
