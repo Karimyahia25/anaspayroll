@@ -133,7 +133,7 @@ function vOverview() {
     <div class="act a1" data-go="dc:short"><div class="t">⚠️ اطلب النهارده</div><div class="n">${ca.length} صنف A</div><div class="d">رصيدهم تحت الحد الآمن — بيتباع منهم ~${M(lost)} في اليوم</div></div>
     <div class="act a2" data-go="dc:stop"><div class="t">✋ وقّف الشراء</div><div class="n">${bought.length} صنف</div><div class="d">فائض واتشترى آخر 30 يوم — زيادتهم ${M(sum(bought, x => x.excess))}</div></div>
     <div class="act a3" data-go="dc:ret"><div class="t">↩️ رجّع للمورد / صفّي</div><div class="n">${M(sum(dead, x => x.cost) + k.expRisk)}</div><div class="d">${dead.length} صنف ميت + نير معرّض</div></div>
-    <div class="act a4" data-go="sp"><div class="t">🤝 فاوض</div><div class="n">${M(savings().reduce((a, x) => a + x.save, 0))}</div><div class="d">وفر تقديري على مشتريات 2026 لو الموردين الأضعف وصلوا لمتوسط الخصم (تقريبي)</div></div>
+    <div class="act a4" data-go="sp"><div class="t">🤝 فاوض</div><div class="n">${M(savings().reduce((a, x) => a + x.retail * Math.min(3, B.kpi.discAvg - x.disc) / 100, 0))}</div><div class="d">وفر واقعي لو الموردين الكبار اللي خصمهم تحت المتوسط زادوا 3 نقاط بس</div></div>
     <div class="act a5" data-go="dc:season"><div class="t">🍂 زوّد قبل الموسم</div><div class="n">${seasonLow().length} صنف</div><div class="d">موسميين وتغطيتهم قليلة والموسم بدأ</div></div>
   </div>
   <div class="two" style="margin-top:14px">
@@ -242,7 +242,7 @@ function vDecisions(focus) {
     table([['id', 'الكود'], ['name', 'الصنف', 'nm'], ['xPacks', 'عبوات زيادة', 'n'], ['excess', 'قيمة الزيادة', 'm'], ['dsi', 'تغطية', 'n'], ['sinceBuy', 'أيام من آخر شراء', 'n'], ['sup', 'المورد']], over.slice(0, 15), { click: 1 }), { cls: 'فائض' })}
   ${sec('ret', '↩️ رجّع للمورد أو صفّي — مجمّعة بالمورد', `الميت (<b>${M(sum(dead, x => x.cost))}</b>) والنير المعرّض (<b>${M(B.kpi.expRisk)}</b>) مجمّعين على المورد عشان تبعت لكل مورد قايمة واحدة. ابدأ بالأعلى قيمة. <b>مهلة المرتجع حسب سياسة كل مورد</b> — متأخرش في النير.`,
     table([['sup', 'المورد', 'nm'], ['dn', 'أصناف ميتة', 'n'], ['dc', 'تكلفة الميت', 'm'], ['en', 'دفعات نير معرّضة', 'n'], ['ec', 'تكلفة النير المعرّض', 'm'], ['tot', 'الإجمالي', 'm']], sr.slice(0, 15)), { cls: 'ميت' })}
-  ${sec('neg', '🤝 فاوض — موردين حجمهم كبير وخصمهم أقل من المتوسط', `متوسط الخصم ${B.kpi.discAvg}%. لو الموردين دول وصلوا للمتوسط التوفير التقديري عن نفس حجم الشراء <b>${M(sv.reduce((a, x) => a + x.save, 0))}</b> (على مشتريات 2026 لحد دلوقتي). <b>رقم تقريبي:</b> موردين المستورد واللبن خصمهم أقل بطبيعته، فالواقعي جزء منه — ابدأ بالأكبر حجماً.`,
+  ${sec('neg', '🤝 فاوض — موردين حجمهم كبير وخصمهم أقل من المتوسط', `متوسط الخصم ${B.kpi.discAvg}%. لو الموردين دول زادوا الخصم 3 نقاط بس نوفر حوالي <b>${M(sv.reduce((a, x) => a + x.retail * Math.min(3, B.kpi.discAvg - x.disc) / 100, 0))}</b>، ولو وصلوا للمتوسط كله حوالي <b>${M(sv.reduce((a, x) => a + x.save, 0))}</b> (على مشتريات 2026 لحد دلوقتي). <b>الرقم الأول هو الواقعي:</b> موردين المستورد واللبن خصمهم أقل بطبيعته — ابدأ بالأكبر حجماً.`,
     table([['sup', 'المورد', 'nm'], ['cost', 'مشتريات (تكلفة)', 'm'], ['disc', 'خصمه %', 'p'], ['retPct', 'مرتجع %', 'p'], ['save', 'وفر تقديري', 'm']], sv.slice(0, 10)))}
   ${sec('season', '🍂 زوّد قبل الموسم — موسميين تغطيتهم قليلة', `أصناف مبيعاتها الشتوية (سبتمبر–ديسمبر 2025) كبيرة ورصيدها الحالي أقل من 25 يوم. الموسم بدأ فعلاً.`,
     table([['id', 'الكود'], ['name', 'الصنف', 'nm'], ['packs', 'رصيد', 'n'], ['dsi', 'تغطية (يوم)', 'n'], ['sv', 'مبيعات سبتمبر–ديسمبر 2025', 'm'], ['sup', 'المورد']], sl.slice(0, 15), { click: 1 }), { })}
@@ -309,14 +309,42 @@ function closeItem() { const m = $('#invMM'); if (m) { if (window.__itC) window.
 /* ---------- موردين ---------- */
 function vSuppliers() {
   const avg = B.kpi.discAvg, S = B.suppliers.filter(s => s.cost > 0);
-  const html = `<div class="ivcard"><h3>حجم الشراء مقابل الخصم</h3><p class="why">كل فقاعة = مورد (الحجم = قيمة المرتجع). المطلوب: موردين <b>على اليمين</b> (حجم كبير) <b>ومرتفعين</b> (خصم عالي). اللي على اليمين ومنخفضين هما فرصة التفاوض — الخط = متوسط الخصم ${avg}%.</p><div class="ch tall"><canvas id="cSp"></canvas></div></div>
+  const LABELS = { id: 'supLabels', afterDatasetsDraw(ch) { const c = ch.ctx, m = ch.getDatasetMeta(0); c.save(); c.font = '600 11px Alexandria, sans-serif'; c.fillStyle = '#10202E'; c.textAlign = 'center';
+    S.forEach((s, i) => { if (s.cost > 330000) { const e = m.data[i]; if (e) c.fillText(s.sup.trim().slice(0, 18), e.x, e.y - e.options.radius - 4); } }); c.restore(); } };
+  const sv = savings().map(x => ({ ...x, gap: avg - x.disc, save3: x.retail * Math.min(3, avg - x.disc) / 100 })), big = sv[0];
+  const tot3 = sv.reduce((q, x) => q + x.save3, 0), totAll = sv.reduce((q, x) => q + x.save, 0);
+  const topBuy = [...S].sort((x, y) => y.cost - x.cost)[0];
+  const html = `<div class="ivcard"><h3>الصفحة دي بتقول إيه؟ (بالبساطة)</h3>
+  <p class="why">كل مورد بنشتري منه بيدّينا <b>خصم</b> عن سعر البيع للجمهور. مثال: علبة بتتباع بـ 100 ج وإحنا بنشتريها بـ 72 ج = خصم <b>28%</b>. كل ما الخصم أعلى كل ما كسبنا أكتر على نفس الصنف من غير ما نغيّر سعر البيع.<br>
+  ⚠ <b>الـ 28% دي متوسط خصم الشراء</b> من كل الموردين — مش هامش الربح الكلي للصيدلية (هامش الربح بيتحسب من المبيعات وبيتأثر بالتسعير). فالهدف مش "نوصل هامش 28%" لكن <b>نشتري بخصم أحسن من الموردين الكبار اللي خصمهم تحت المتوسط</b>.</p>
+  <div class="ivgrid">
+    ${kpi('متوسط الخصم على كل المشتريات', avg + '%', 'ده الخط المتقطع في الرسم', 'b')}
+    ${kpi('أكبر مورد حجماً', esc(topBuy.sup), M(topBuy.cost) + ' — خصمه ' + topBuy.disc + '%')}
+    ${kpi('موردين نفاوضهم', sv.length + ' موردين', 'حجمهم كبير وخصمهم أقل من المتوسط', 'r')}
+    ${kpi('وفر واقعي (لو زادوا 3 نقاط)', M(tot3), 'على مشتريات 2026 لحد دلوقتي', 'o')}
+  </div></div>
+  <div class="ivcard"><h3>حجم الشراء مقابل الخصم</h3>
+  <ol class="note" style="margin:0 18px 10px 0;line-height:2">
+    <li>كل <b>دايرة = مورد</b>.</li>
+    <li>كل ما الدايرة راحت <b>يمين</b> = بنشتري منه أكتر (حجم الشراء).</li>
+    <li>كل ما <b>طلعت فوق</b> = خصمه أعلى (وده أحسن لينا).</li>
+    <li><b>حجم</b> الدايرة = قيمة اللي رجّعناه له (مرتجع).</li>
+    <li>الخط المتقطع = متوسط الخصم (${avg}%).</li>
+    <li>🔴 <b>أحمر</b> = مورد كبير وتحت الخط = <b>ده اللي محتاج نتفاوض معاه</b>. 🟢 أخضر = تمام.</li>
+  </ol>
+  <div class="ch tall"><canvas id="cSp"></canvas></div></div>
+  <div class="ivcard"><h3>🎯 الخلاصة: نتفاوض مع مين وبكام؟</h3>
+  <p class="why">${sv.length ? `الموردين دول بنشتري منهم كتير وخصمهم أقل من المتوسط. مثال: <b>${esc(big.sup)}</b> اشترينا منه بـ <b>${M(big.cost)}</b> وخصمه <b>${big.disc}%</b> مقابل متوسط ${avg}% (فرق ${big.gap.toFixed(1)} نقطة). لو خصمه زاد ${Math.min(3, big.gap).toFixed(0)} نقاط بس نوفر حوالي <b>${M(big.save3)}</b>، ولو وصل للمتوسط كله نوفر حوالي <b>${M(big.save)}</b> على نفس حجم الشراء.` : 'مفيش موردين كبار تحت المتوسط.'}</p>
+  ${table([['sup', 'المورد', 'nm'], ['cost', 'بنشتري منه (تكلفة)', 'm'], ['disc', 'خصمه الحالي %', 'p'], [x => avg, 'المتوسط %', 'p'], [x => x.gap.toFixed(1), 'الفرق (نقطة)', 'raw'], ['save3', 'وفر لو زاد 3 نقاط (واقعي)', 'm'], ['save', 'وفر لو وصل للمتوسط (طموح)', 'm']], sv)}
+  <p class="note"><b>إزاي نقرا الأرقام:</b> "الفرق" = المتوسط − خصم المورد. "الوفر" = القيمة البيعية لمشترياتنا منه × الفرق. <b>تنبيه مهم:</b> موردين المستورد واللبن خصمهم قليل بطبيعته (أسعارهم شبه مسعّرة)، فالواقعي نطلب <b>زيادة 2 لـ 3 نقاط</b> مش الوصول للمتوسط كله. ابدأ بأكبر مورد حجماً لأن كل نقطة معاه بتفرق أكتر.</p>
+  <p style="margin:8px 0 0"><button class="sm ghost" data-xl="neg">📥 تصدير القايمة دي Excel للمشتريات</button></p></div>
   <div class="ivcard"><h3>كل الموردين</h3><p style="margin:0 0 8px"><button class="sm ghost" data-xl="suppliers">📥 تصدير Excel</button></p>${table([['sup', 'المورد', 'nm'], ['cost', 'مشتريات (تكلفة)', 'm'], ['retail', 'قيمة بيعية', 'm'], ['disc', 'الخصم المرجّح %', 'p'], [x => Math.round(x.retail * (avg - x.disc) / 100), 'فرق عن المتوسط (ج)', 'n'], ['items', 'أصناف', 'n'], ['ret', 'مرتجع', 'm'], ['retPct', 'مرتجع %', 'p']], S)}
   <p class="note">الخصم المرجّح = 1 − (تكلفة الفواتير بعد المرتجع ÷ قيمتها البيعية). "فرق عن المتوسط" موجب = المورد أقل من المتوسط (فرصة توفير).</p></div>
   <div class="ivcard"><h3>الخصم حسب الشكل الدوائي</h3><div class="ch"><canvas id="cCt"></canvas></div><p class="note">اللبن والمستلزمات مسعّرة جبرياً — خصمها المنخفض طبيعي ومش مادة تفاوض.</p></div>`;
   return { html, after() {
     mk('cSp', { type: 'bubble', data: { datasets: [{ label: 'مورد', data: S.map(s => ({ x: s.cost, y: s.disc, r: 4 + Math.sqrt(Math.max(s.ret, 0)) / 12, n: s.sup })), backgroundColor: S.map(s => s.disc < avg - 2 && s.cost > 150000 ? 'rgba(192,57,43,.65)' : 'rgba(11,133,119,.55)') }] },
       options: { maintainAspectRatio: false, scales: { x: { title: { display: true, text: 'مشتريات 2026 (تكلفة)' }, ticks: { callback: v => K(v) } }, y: { title: { display: true, text: 'الخصم المرجّح %' }, suggestedMin: 10 } }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.raw.n}: ${M(c.raw.x)} · خصم ${c.raw.y}%` } } } },
-      plugins: [{ id: 'avgLine', afterDraw(ch) { const y = ch.scales.y.getPixelForValue(avg), c = ch.ctx; c.save(); c.strokeStyle = '#999'; c.setLineDash([5, 4]); c.beginPath(); c.moveTo(ch.chartArea.left, y); c.lineTo(ch.chartArea.right, y); c.stroke(); c.restore(); } }] });
+      plugins: [LABELS, { id: 'avgLine', afterDraw(ch) { const y = ch.scales.y.getPixelForValue(avg), c = ch.ctx; c.save(); c.strokeStyle = '#999'; c.setLineDash([5, 4]); c.beginPath(); c.moveTo(ch.chartArea.left, y); c.lineTo(ch.chartArea.right, y); c.stroke(); c.restore(); } }] });
     mk('cCt', { type: 'bar', data: { labels: B.cats.map(c => c.cat), datasets: [{ data: B.cats.map(c => c.disc), backgroundColor: B.cats.map(c => c.disc < avg - 5 ? '#E67E22' : '#0B8577'), borderRadius: 5 }] }, options: { indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { callback: v => v + '%' } } } } });
   } };
 }
