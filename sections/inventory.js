@@ -160,16 +160,74 @@ function savings() {
 }
 function seasonLow() { return IT.filter(x => x.winter && x.sv > 800 && x.packs > 0 && (x.dsi == null || x.dsi < 25)).sort((a, b) => b.sv - a.sv); }
 
+function retBySup() {
+  const sup = {}; byCls('ميت').forEach(x => { const s = x.sup || '—'; (sup[s] = sup[s] || { sup: s, dn: 0, dc: 0, en: 0, ec: 0 }).dn++; sup[s].dc += x.cost; });
+  B.expiry.forEach(e => { if (e.riskCost > 0) { const s = (e.sup || '—').trim(); (sup[s] = sup[s] || { sup: s, dn: 0, dc: 0, en: 0, ec: 0 }).en++; sup[s].ec += e.riskCost; } });
+  return Object.values(sup).map(s => ({ ...s, tot: s.dc + s.ec })).sort((a, b) => b.tot - a.tot);
+}
+
+/* ---------- تصدير Excel (للمشتريات) ---------- */
+const NOTE = 'ملاحظات المشتريات';
+const LISTS = {
+  short: () => ({ name: 'اطلب النهارده', why: 'أصناف رصيدها تحت الحد الآمن، الأهم (A) الأول. الموردين بيوصلوا يومياً.',
+    head: ['الكود', 'الصنف', 'ABC', 'الرصيد (عبوات)', 'اطلب (عبوات)', 'التغطية (يوم)', 'مبيعات/يوم (ج)', 'المورد', NOTE],
+    rows: byCls('خطر نفاد').sort((a, b) => (a.abc === b.abc ? b.n90 - a.n90 : a.abc < b.abc ? -1 : 1)).map(x => [x.id, x.name, x.abc, x.packs, x.nPacks, x.dsi, Math.round(x.daily), x.sup, '']) }),
+  stop: () => ({ name: 'وقّف الشراء', why: 'أصناف فائض (تغطيتها أعلى من الحد) واتشترت آخر 30 يوم — مفيش شراء جديد لحد ما التغطية تنزل.',
+    head: ['الكود', 'الصنف', 'عبوات زيادة', 'قيمة الزيادة (ج)', 'التغطية (يوم)', 'الحد الأعلى (يوم)', 'أيام من آخر شراء', 'المورد', NOTE],
+    rows: byCls('فائض').filter(x => x.sinceBuy != null && x.sinceBuy <= 30).sort((a, b) => b.excess - a.excess).map(x => [x.id, x.name, x.xPacks, x.excess, x.dsi, x.max, x.sinceBuy, x.sup, '']) }),
+  excess: () => ({ name: 'كل الفائض', why: 'كل أصناف الفائض مرتبة بقيمة الزيادة — للمرتجع أو العروض أو إيقاف الشراء.',
+    head: ['الكود', 'الصنف', 'ABC', 'الرصيد (عبوات)', 'عبوات زيادة', 'قيمة الزيادة (ج)', 'التغطية (يوم)', 'أيام من آخر شراء', 'المورد', NOTE],
+    rows: byCls('فائض').sort((a, b) => b.excess - a.excess).map(x => [x.id, x.name, x.abc, x.packs, x.xPacks, x.excess, x.dsi, x.sinceBuy, x.sup, '']) }),
+  dead: () => ({ name: 'ميت - رجّع أو صفّي', why: 'أصناف واقفة (مفيش بيع 180 يوم) مرتبة بالمورد عشان قايمة مرتجع لكل مورد.',
+    head: ['المورد', 'الكود', 'الصنف', 'الرصيد (عبوات)', 'التكلفة (ج)', 'أيام من آخر بيع', 'مرات البيع 2026', NOTE],
+    rows: byCls('ميت').sort((a, b) => String(a.sup).localeCompare(String(b.sup), 'ar') || b.cost - a.cost).map(x => [x.sup, x.id, x.name, x.packs, x.cost, x.idle, x.freq, '']) }),
+  ret: () => ({ name: 'ملخص المرتجع بالمورد', why: 'الميت والنير المعرّض لكل مورد — ابدأ بالأعلى قيمة.',
+    head: ['المورد', 'أصناف ميتة', 'تكلفة الميت (ج)', 'دفعات نير معرّضة', 'تكلفة النير المعرّض (ج)', 'الإجمالي (ج)', NOTE],
+    rows: retBySup().map(s => [s.sup, s.dn, s.dc, s.en, s.ec, s.tot, '']) }),
+  neg: () => ({ name: 'تفاوض الموردين', why: 'موردين حجمهم كبير وخصمهم أقل من المتوسط. الوفر تقديري ومعظم المستورد واللبن خصمهم أقل بطبيعته.',
+    head: ['المورد', 'مشتريات 2026 (تكلفة)', 'قيمة بيعية', 'الخصم %', 'مرتجع %', 'وفر تقديري لو وصل للمتوسط (ج)', NOTE],
+    rows: savings().map(s => [s.sup, s.cost, s.retail, s.disc, s.retPct, Math.round(s.save), '']) }),
+  suppliers: () => ({ name: 'كل الموردين', why: 'ترتيب كل الموردين بحجم الشراء والخصم المرجّح والمرتجع.',
+    head: ['المورد', 'مشتريات (تكلفة)', 'قيمة بيعية', 'الخصم المرجّح %', 'أصناف', 'مرتجع (ج)', 'مرتجع %'], rows: B.suppliers.filter(s => s.cost > 0).map(s => [s.sup, s.cost, s.retail, s.disc, s.items, s.ret, s.retPct]) }),
+  season: () => ({ name: 'زوّد قبل الموسم', why: 'أصناف موسمية مبيعاتها الشتوية 2025 كبيرة وتغطيتها الحالية أقل من 25 يوم.',
+    head: ['الكود', 'الصنف', 'الرصيد (عبوات)', 'التغطية (يوم)', 'مبيعات سبتمبر–ديسمبر 2025 (ج)', 'المورد', NOTE], rows: seasonLow().map(x => [x.id, x.name, x.packs, x.dsi, x.sv, x.sup, '']) }),
+  watch: () => ({ name: 'تحت المراقبة', why: 'وقفت حركتهم آخر 90 يوم — تدخل قبل ما يتحولوا لميت.',
+    head: ['الكود', 'الصنف', 'الرصيد (عبوات)', 'التكلفة (ج)', 'أيام من آخر بيع', 'المورد', NOTE], rows: byCls('تحت المراقبة').sort((a, b) => b.cost - a.cost).map(x => [x.id, x.name, x.packs, x.cost, x.idle, x.sup, '']) }),
+  expiry: () => ({ name: 'نير 6 شهور', why: 'دفعات صلاحيتها خلال 6 شهور والمعرّض منها للانتهاء قبل البيع (تقدير من معدل بيع 90 يوم).',
+    head: ['الكود', 'الصنف', 'الصلاحية', 'أيام متبقية', 'عبوات', 'مباع 90 يوم', 'عبوات معرّضة', 'تكلفة معرّضة (ج)', '% معرّض', 'المورد', NOTE],
+    rows: [...B.expiry].sort((a, b) => (b.riskCost || 0) - (a.riskCost || 0)).map(e => [e.id, e.name, e.exp, e.days, e.qty, e.p90, e.risk, e.riskCost, e.riskPct, e.sup, '']) }),
+  ex: () => ({ name: 'الأصناف (حسب الفلتر)', why: 'نتيجة البحث والفلاتر الحالية في شاشة الأصناف.',
+    head: ['الكود', 'الصنف', 'المجموعة العلاجية', 'التصنيف', 'ABC', 'الرصيد (عبوات)', 'التكلفة (ج)', 'مبيعات 90 يوم (ج)', 'التغطية (يوم)', 'عبوات زيادة', 'اطلب (عبوات)', 'هامش %', 'خصم الشراء %', 'آخر بيع', 'آخر شراء', 'المورد', NOTE],
+    rows: filtered().map(x => [x.id, x.name, x.thc, x.cls, x.abc, x.packs, x.cost, x.n90, x.dsi, x.xPacks, x.nPacks, x.margin, x.disc, x.lastSale, x.lastBuy, x.sup, '']) })
+};
+function loadXlsx() {
+  if (window.XLSX) return Promise.resolve();
+  return new Promise((ok, no) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload = ok; s.onerror = () => no(new Error('مقدرتش أحمّل مكتبة الإكسل')); document.head.appendChild(s); });
+}
+const rnd = v => typeof v === 'number' ? Math.round(v * 10) / 10 : v;
+function sheetOf(L) {
+  const aoa = [[L.name], [L.why], ['تاريخ التحليل: ' + B.at + ' — لقطة المخزون ' + B.kpi.refDate], [], L.head, ...L.rows.map(r => r.map(rnd))];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = L.head.map((h, i) => ({ wch: Math.min(46, Math.max(String(h).length + 2, ...L.rows.slice(0, 80).map(r => String(r[i] ?? '').length + 2), 9)) }));
+  return ws;
+}
+async function exportXl(key) {
+  await loadXlsx(); const wb = XLSX.utils.book_new(); wb.Workbook = { Views: [{ RTL: true }] };
+  const keys = key === 'all' ? ['short', 'stop', 'dead', 'ret', 'neg', 'season', 'watch', 'expiry'] : [key];
+  keys.forEach(k => { const L = LISTS[k](); XLSX.utils.book_append_sheet(wb, sheetOf(L), L.name.slice(0, 31).replace(/[\/?*\[\]:]/g, '-')); });
+  const nm = key === 'all' ? 'مخزون_للمشتريات' : LISTS[key]().name.replace(/[^\u0600-\u06FFA-Za-z0-9]+/g, '_');
+  XLSX.writeFile(wb, `${nm}_${B.kpi.refDate}.xlsx`);
+}
+
 /* ---------- عرض: قرارات ---------- */
 const COLS_IT = [['id', 'الكود'], ['name', 'الصنف', 'nm'], ['abc', 'ABC'], ['packs', 'رصيد', 'n']];
 function vDecisions(focus) {
   const ca = byCls('خطر نفاد').sort((a, b) => b.n90 - a.n90), caA = ca.filter(x => x.abc === 'A'), over = byCls('فائض').filter(x => x.sinceBuy != null && x.sinceBuy <= 30).sort((a, b) => b.excess - a.excess);
   const dead = byCls('ميت'), watch = byCls('تحت المراقبة').sort((a, b) => b.cost - a.cost);
-  const sup = {}; dead.forEach(x => { const s = x.sup || '—'; (sup[s] = sup[s] || { sup: s, dn: 0, dc: 0, en: 0, ec: 0 }).dn++; sup[s].dc += x.cost; });
-  B.expiry.forEach(e => { if (e.riskCost > 0) { const s = (e.sup || '—').trim(); (sup[s] = sup[s] || { sup: s, dn: 0, dc: 0, en: 0, ec: 0 }).en++; sup[s].ec += e.riskCost; } });
-  const sr = Object.values(sup).map(s => ({ ...s, tot: s.dc + s.ec })).sort((a, b) => b.tot - a.tot);
+  const sr = retBySup();
   const sl = seasonLow(), sv = savings();
-  const sec = (id, title, why, body, go) => `<div class="ivcard" id="dc_${id}"><h3>${title}</h3><p class="why">${why}</p>${body}${go ? `<p style="margin:10px 0 0"><button class="sm ghost" data-ex='${esc(JSON.stringify(go))}'>افتح كل القايمة في الأصناف ←</button></p>` : ''}</div>`;
+  const XLK = { short: 'short', stop: 'stop', ret: 'dead', neg: 'neg', season: 'season', watch: 'watch' };
+  const sec = (id, title, why, body, go) => `<div class="ivcard" id="dc_${id}"><h3>${title}</h3><p class="why">${why}</p>${body}<p style="margin:10px 0 0;display:flex;gap:8px;flex-wrap:wrap">${go ? `<button class="sm ghost" data-ex='${esc(JSON.stringify(go))}'>افتح كل القايمة في الأصناف ←</button>` : ''}<button class="sm ghost" data-xl="${XLK[id]}">📥 تصدير Excel (القايمة كاملة)</button></p></div>`;
   const html = `
   ${sec('short', '⚠️ اطلب النهارده — أصناف مهمة قربت تخلص', `<b>${caA.length}</b> صنف من فئة A (اللي بتجيب 80% من المبيعات) رصيدهم تحت الحد الآمن. بيتباع منهم تقريباً <b>${M(sum(caA, x => x.daily))}</b> في اليوم، فكل يوم نفاد = مبيعات ضايعة. الموردين بيوصلوا يومياً فمفيش مبرر للنفاد.`,
     table([...COLS_IT, ['nPacks', 'اطلب (عبوات)', 'n'], ['dsi', 'تغطية (يوم)', 'n'], [x => Math.round(x.daily), 'مبيعات/يوم', 'n'], ['sup', 'المورد']], caA.slice(0, 15), { click: 1 }), { cls: 'خطر نفاد', abc: 'A' })}
@@ -203,7 +261,7 @@ function vItems() {
     <select id="ethc"><option value="">كل المجموعات العلاجية</option>${opt(thcs, EXPL.thc)}</select>
     <select id="esup"><option value="">كل الموردين</option>${opt(sups, EXPL.sup)}</select>
     <select id="esort">${SORTS.map(s => `<option value="${s[0]}"${EXPL.sort === s[0] ? ' selected' : ''}>${s[1]}</option>`).join('')}</select></div>
-    <div id="elist"></div></div>`;
+    <div id="elist"></div><p style="margin:10px 0 0"><button class="sm ghost" data-xl="ex">📥 تصدير القايمة دي Excel (كل النتائج مش الصفحة دي بس)</button></p></div>`;
   return { html, after() {
     const draw = () => { const r = filtered(), pg = 40, pages = Math.max(1, Math.ceil(r.length / pg)); EXPL.page = Math.min(EXPL.page, pages - 1);
       $('#elist', ROOT).innerHTML = `<p class="note" style="margin:0 0 8px">${N(r.length)} صنف · تكلفة مخزونهم ${M(sum(r, x => x.cost))} · مبيعات 90 يوم ${M(sum(r, x => x.n90))}</p>` +
@@ -245,7 +303,7 @@ function closeItem() { const m = $('#invMM'); if (m) { if (window.__itC) window.
 function vSuppliers() {
   const avg = B.kpi.discAvg, S = B.suppliers.filter(s => s.cost > 0);
   const html = `<div class="ivcard"><h3>حجم الشراء مقابل الخصم</h3><p class="why">كل فقاعة = مورد (الحجم = قيمة المرتجع). المطلوب: موردين <b>على اليمين</b> (حجم كبير) <b>ومرتفعين</b> (خصم عالي). اللي على اليمين ومنخفضين هما فرصة التفاوض — الخط = متوسط الخصم ${avg}%.</p><div class="ch tall"><canvas id="cSp"></canvas></div></div>
-  <div class="ivcard"><h3>كل الموردين</h3>${table([['sup', 'المورد', 'nm'], ['cost', 'مشتريات (تكلفة)', 'm'], ['retail', 'قيمة بيعية', 'm'], ['disc', 'الخصم المرجّح %', 'p'], [x => Math.round(x.retail * (avg - x.disc) / 100), 'فرق عن المتوسط (ج)', 'n'], ['items', 'أصناف', 'n'], ['ret', 'مرتجع', 'm'], ['retPct', 'مرتجع %', 'p']], S)}
+  <div class="ivcard"><h3>كل الموردين</h3><p style="margin:0 0 8px"><button class="sm ghost" data-xl="suppliers">📥 تصدير Excel</button></p>${table([['sup', 'المورد', 'nm'], ['cost', 'مشتريات (تكلفة)', 'm'], ['retail', 'قيمة بيعية', 'm'], ['disc', 'الخصم المرجّح %', 'p'], [x => Math.round(x.retail * (avg - x.disc) / 100), 'فرق عن المتوسط (ج)', 'n'], ['items', 'أصناف', 'n'], ['ret', 'مرتجع', 'm'], ['retPct', 'مرتجع %', 'p']], S)}
   <p class="note">الخصم المرجّح = 1 − (تكلفة الفواتير بعد المرتجع ÷ قيمتها البيعية). "فرق عن المتوسط" موجب = المورد أقل من المتوسط (فرصة توفير).</p></div>
   <div class="ivcard"><h3>الخصم حسب الشكل الدوائي</h3><div class="ch"><canvas id="cCt"></canvas></div><p class="note">اللبن والمستلزمات مسعّرة جبرياً — خصمها المنخفض طبيعي ومش مادة تفاوض.</p></div>`;
   return { html, after() {
@@ -275,7 +333,7 @@ function vExpiry() {
   B.expiry.forEach(e => { const k = e.exp; (by[k] = by[k] || { c: 0, r: 0 }); by[k].c += e.cost || 0; by[k].r += e.riskCost || 0; });
   const ks = Object.keys(by).sort();
   const html = `<div class="ivcard"><h3>النير (ينتهي خلال 6 شهور)</h3><p class="why">${B.kpi.expN} دفعة تكلفتها <b>${M(B.kpi.expCost)}</b>، وتقديرنا إن <b>${M(B.kpi.expRisk)}</b> منها مش هيتباع قبل الانتهاء (حسب معدل بيع آخر 90 يوم). كل ما الشهر أقرب كل ما القرار أسرع.</p><div class="ch"><canvas id="cEx"></canvas></div></div>
-  <div class="ivcard"><h3>الأعلى خطراً</h3>${table([['id', 'الكود'], ['name', 'الصنف', 'nm'], ['exp', 'الصلاحية'], ['days', 'أيام متبقية', 'n'], ['qty', 'عبوات', 'n'], ['p90', 'مباع 90 يوم', 'n'], ['risk', 'عبوات معرّضة', 'n'], ['riskCost', 'تكلفة معرّضة', 'm'], ['riskPct', '% معرّض', 'n'], ['sup', 'المورد']], E)}
+  <div class="ivcard"><h3>الأعلى خطراً</h3><p style="margin:0 0 8px"><button class="sm ghost" data-xl="expiry">📥 تصدير Excel</button></p>${table([['id', 'الكود'], ['name', 'الصنف', 'nm'], ['exp', 'الصلاحية'], ['days', 'أيام متبقية', 'n'], ['qty', 'عبوات', 'n'], ['p90', 'مباع 90 يوم', 'n'], ['risk', 'عبوات معرّضة', 'n'], ['riskCost', 'تكلفة معرّضة', 'm'], ['riskPct', '% معرّض', 'n'], ['sup', 'المورد']], E)}
   <p class="note">المعرّض = العبوات − (المباع يومياً × الأيام المتبقية). التصرف: معرّض عالي ← رجّعه للمورد قبل المهلة أو اعمل عليه عرض. مبيعات سريعة ← بيع الأقدم الأول (FEFO).</p></div>`;
   return { html, after() {
     mk('cEx', { type: 'bar', data: { labels: ks, datasets: [{ label: 'تكلفة الدفعات', data: ks.map(k => by[k].c), backgroundColor: '#0B8577', borderRadius: 5 }, { label: 'معرّض للانتهاء', data: ks.map(k => by[k].r), backgroundColor: '#C0392B', borderRadius: 5 }] }, options: { maintainAspectRatio: false, plugins: { tooltip: { callbacks: { label: c => `${c.dataset.label}: ${M(c.parsed.y)}` } } } } });
@@ -316,12 +374,13 @@ function setView(v, focus) {
 }
 function shell(adm) {
   ROOT.innerHTML = `<div class="ivcard" style="padding:14px 16px"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center"><div><h2 style="margin:0 0 2px">📦 المخزون — لوحة القرارات</h2><p class="sub" id="ivmeta"></p></div>
-    ${adm ? `<div><label class="sm ghost" style="cursor:pointer;display:inline-block;border:1px solid var(--line);border-radius:999px;padding:7px 14px;font-size:13px;color:var(--green)">رفع نتيجة تحليل جديدة<input type="file" id="ivup" accept=".json" style="display:none"></label><div class="note" id="ivmsg"></div></div>` : ''}</div></div>
+    <button id="ivall" data-xl="all" style="border-radius:999px">📥 تصدير كل قوايم المشتريات (Excel)</button>${adm ? `<div><label class="sm ghost" style="cursor:pointer;display:inline-block;border:1px solid var(--line);border-radius:999px;padding:7px 14px;font-size:13px;color:var(--green)">رفع نتيجة تحليل جديدة<input type="file" id="ivup" accept=".json" style="display:none"></label><div class="note" id="ivmsg"></div></div>` : ''}</div></div>
     <div class="ivbar" id="ivbar">${VIEWS.map(v => `<button data-v="${v[0]}">${v[1]}</button>`).join('')}</div><div id="ivbody"></div>`;
   $('#ivbar', ROOT).onclick = e => { const b = e.target.closest('button'); if (b) setView(b.dataset.v); };
   ROOT.addEventListener('click', e => {
     const row = e.target.closest('tr.cl'); if (row) { openItem(+row.dataset.id); return; }
     const a = e.target.closest('[data-go]'); if (a) { const [v, f] = a.dataset.go.split(':'); setView(v, f); return; }
+    const xb = e.target.closest('[data-xl]'); if (xb) { const t = xb.textContent; xb.disabled = true; exportXl(xb.dataset.xl).catch(err => alert('فشل التصدير: ' + err.message)).finally(() => { xb.disabled = false; xb.textContent = t; }); return; }
     const x = e.target.closest('[data-ex]'); if (x) { goExplorer(JSON.parse(x.dataset.ex)); return; }
     const cell = e.target.closest('[data-cell]'); if (cell) { const [c, ab] = cell.dataset.cell.split('|'); goExplorer({ cls: c, abc: ab }); }
   });
