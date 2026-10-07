@@ -263,8 +263,14 @@ function filtered() {
 function vItems() {
   const sups = [...new Set(IT.map(x => x.sup).filter(Boolean))].sort(), thcs = [...new Set(IT.map(x => x.thc))].sort();
   const opt = (a, v) => a.map(x => `<option${x === v ? ' selected' : ''}>${esc(x)}</option>`).join('');
-  const SORTS = [['n90', 'الأعلى مبيعاً 90 يوم'], ['cost', 'الأعلى تكلفة مخزون'], ['excess', 'الأعلى زيادة'], ['short', 'الأعلى نقص'], ['gp90', 'الأعلى ربحاً'], ['dsi', 'الأعلى تغطية'], ['idle', 'الأطول سكوناً'], ['disc', 'الأعلى خصم شراء']];
-  const html = `<div class="ivcard"><div class="ctl">
+  const SORTS = [['n90', 'الأعلى مبيعاً 90 يوم'], ['cost', 'الأعلى تكلفة مخزون'], ['excess', 'الأعلى زيادة'], ['short', 'الأعلى نقص'], ['gp90', 'الأعلى ربحاً'], ['dsi', 'يكفي أطول فترة'], ['idle', 'أطول فترة من غير بيع'], ['disc', 'الأعلى خصم شراء']];
+  const html = `<div class="ivcard"><h3>شاشة الأصناف — إزاي أستخدمها؟</h3>
+  <ol class="note" style="margin:0 18px 8px 0;line-height:2.1"><li>اكتب <b>اسم أو كود</b> صنف في البحث، أو اختار تصنيف / مورد / مجموعة علاجية.</li><li>اضغط على <b>أي صنف</b> تفتح بطاقته: سبب تصنيفه ورسم مبيعاته شهر بشهر مقابل 2025.</li><li>لما توصل للقايمة اللي عايزها دوس <b>📥 تصدير</b> وابعتها للمشتريات.</li></ol>
+  <p class="why"><b>معنى الأعمدة:</b> <b>رصيد</b> = العبوات الموجودة. <b>تكلفة</b> = قيمة الرصيد بسعر الشراء. <b>مبيعات 90</b> = مبيعات آخر 90 يوم. <b>يكفي (يوم)</b> = المخزون هيكفي كام يوم بسرعة البيع الحالية. <b>هامش</b> = نسبة الربح من سعر البيع. <b>خصم شراء</b> = الخصم اللي بناخده من المورد. <b>ABC:</b> A = الأصناف الأهم (80% من المبيعات)، B متوسطة، C الأقل.</p>
+  <p class="note" style="margin:6px 0 4px">اضغط على تصنيف تفلتر بيه:</p>
+  <div id="chips" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px"><button class="sm ghost" data-chip="">الكل</button>${CLASSES.map(c => `<button class="sm" data-chip="${esc(c)}" style="background:${CLS_COL[c]};color:#fff">${esc(c)}</button>`).join('')}</div>
+  <p class="note" id="chipHelp" style="margin:0"></p></div>
+  <div class="ivcard"><div class="ctl">
     <input id="eq" placeholder="ابحث بالاسم أو الكود…" value="${esc(EXPL.q)}">
     <select id="ecls"><option value="">كل التصنيفات</option>${opt(CLASSES, EXPL.cls)}</select>
     <select id="eabc"><option value="">ABC</option>${opt(['A', 'B', 'C', '—'], EXPL.abc)}</select>
@@ -275,9 +281,12 @@ function vItems() {
   return { html, after() {
     const draw = () => { const r = filtered(), pg = 40, pages = Math.max(1, Math.ceil(r.length / pg)); EXPL.page = Math.min(EXPL.page, pages - 1);
       $('#elist', ROOT).innerHTML = `<p class="note" style="margin:0 0 8px">${N(r.length)} صنف · تكلفة مخزونهم ${M(sum(r, x => x.cost))} · مبيعات 90 يوم ${M(sum(r, x => x.n90))}</p>` +
-        table([['id', 'الكود'], ['name', 'الصنف', 'nm'], [x => badge(x.cls), 'التصنيف', 'raw'], ['abc', 'ABC'], ['packs', 'رصيد', 'n'], ['cost', 'تكلفة', 'm'], ['n90', 'مبيعات 90', 'm'], ['dsi', 'تغطية', 'n'], ['margin', 'هامش %', 'p'], ['disc', 'خصم شراء %', 'p'], ['sup', 'المورد']], r.slice(EXPL.page * pg, EXPL.page * pg + pg), { click: 1 }) +
+        table([['id', 'الكود'], ['name', 'الصنف', 'nm'], [x => badge(x.cls), 'التصنيف', 'raw'], ['abc', 'ABC'], ['packs', 'رصيد', 'n'], ['cost', 'تكلفة', 'm'], ['n90', 'مبيعات 90', 'm'], ['dsi', 'يكفي (يوم)', 'n'], ['margin', 'هامش %', 'p'], ['disc', 'خصم شراء %', 'p'], ['sup', 'المورد']], r.slice(EXPL.page * pg, EXPL.page * pg + pg), { click: 1 }) +
         `<div class="pg"><button class="sm ghost" id="pp"${EXPL.page ? '' : ' disabled'}>السابق</button><span>${EXPL.page + 1} / ${pages}</span><button class="sm ghost" id="pn"${EXPL.page < pages - 1 ? '' : ' disabled'}>التالي</button></div>`;
       sortable($('#elist', ROOT)); const pp = $('#pp', ROOT), pn = $('#pn', ROOT); if (pp) pp.onclick = () => { EXPL.page--; draw(); }; if (pn) pn.onclick = () => { EXPL.page++; draw(); }; };
+    const helpTxt = () => { $('#chipHelp', ROOT).innerHTML = EXPL.cls ? `<b>${esc(EXPL.cls)}:</b> ${esc(CLS_HELP[EXPL.cls])}` : ''; ROOT.querySelectorAll('[data-chip]').forEach(b => { b.style.outline = b.dataset.chip === EXPL.cls ? '3px solid var(--navy)' : 'none'; }); };
+    ROOT.querySelectorAll('[data-chip]').forEach(b => b.onclick = () => { EXPL.cls = b.dataset.chip; EXPL.page = 0; $('#ecls', ROOT).value = EXPL.cls; helpTxt(); draw(); });
+    $('#ecls', ROOT).addEventListener('change', helpTxt); helpTxt();
     draw();
     [['eq', 'q'], ['ecls', 'cls'], ['eabc', 'abc'], ['ethc', 'thc'], ['esup', 'sup'], ['esort', 'sort']].forEach(([i, k]) => $('#' + i, ROOT).addEventListener(k === 'q' ? 'input' : 'change', e => { EXPL[k] = e.target.value; EXPL.page = 0; draw(); }));
   } };
@@ -441,10 +450,30 @@ function vExpiry() {
 
 /* ---------- شهري ---------- */
 function vMonthly() {
-  const m = B.monthly, html = `<div class="ivcard"><h3>مشتريات مقابل تكلفة المبيع</h3><p class="why">لو خط المشتريات فوق خط تكلفة المبيع شهر بعد شهر = بنكوّن مخزون. عشان كده الدوران بيتحسن لما الخطين يتقاربوا. <b>المشتريات الشهرية تقديرية</b> (القيمة البيعية من حركة الأصناف × (1 − متوسط الخصم)) لأن تقرير المشتريات مفيهوش تواريخ.</p><div class="ch tall"><canvas id="cBc"></canvas></div></div>
-  <div class="ivcard"><h3>جدول الشهور</h3>${table([[x => MN[x.m - 1] + (x.m === 10 ? ' (1–6)' : ''), 'الشهر', 'raw'], ['gross', 'مبيعات إجمالي', 'm'], ['net', 'صافي', 'm'], ['n25', 'نفس الشهر 2025 (صافي تقديري)', 'm'], [x => (x.net / x.n25 - 1) * 100, 'نمو %', 'p'], ['inv', 'فواتير', 'n'], ['buy', 'مشتريات (تقدير)', 'm'], ['cogs', 'تكلفة المبيع', 'm'], [x => x.buy - x.cogs, 'تراكم مخزون (تقدير)', 'n']], m)}
-  <p class="note">مرتجعات 2025 = ${M(-B.kpi.ret25)} موزعة بالتناسب على الشهور (الملف مفيهوش تواريخ)، فالنمو الشهري تقريبي.</p></div>`;
+  const m = B.monthly, full = m.filter(x => x.m < 10), last3 = full.slice(-3), first5 = full.slice(0, 5);
+  const gr = a => (sum(a, x => x.net) / sum(a, x => x.n25) - 1) * 100, sg = v => (v > 0 ? '+' : '') + v.toFixed(1) + '%';
+  const best = [...full].sort((a, b) => b.net - a.net)[0], top = [...full].sort((a, b) => b.net / b.n25 - a.net / a.n25)[0];
+  const build = sum(full, x => x.buy - x.cogs), g3 = gr(last3), g5 = gr(first5);
+  const html = `<div class="ivcard"><h3>الشهري — يعني إيه؟</h3>
+  <p class="why">بنقارن كل شهر في 2026 بـ <b>نفس الشهر في 2025</b> عشان نعرف المبيعات بتكبر ولا بتصغر. "الصافي" = المبيعات بعد خصم المرتجع.<br>
+  وفي الجزء التاني بنقارن <b>اللي اشتريناه</b> باللي <b>اتباع</b> (بتكلفته): <b>مثال:</b> لو اشترينا بضاعة بـ 1,000,000 ج وبعنا بضاعة تكلفتها 900,000 ج، يبقى المخزون كبر 100,000 ج (فلوس واقفة). لو عكس كده، المخزون بيصغر.</p>
+  <div class="ivgrid">
+    ${kpi('أحسن شهر مبيعاً', MN[best.m - 1], M(best.net) + ' صافي', 'b')}
+    ${kpi('آخر 3 شهور عن 2025', sg(g3), MN[last3[0].m - 1] + ' – ' + MN[last3[2].m - 1], g3 >= 0 ? '' : 'r')}
+    ${kpi('أول 5 شهور عن 2025', sg(g5), MN[0] + ' – ' + MN[4], g5 >= 0 ? '' : 'o')}
+    ${kpi('المخزون كبر/صغر (تقدير)', M(build), 'مشتريات − تكلفة مبيع، يناير–سبتمبر', 'p')}
+  </div></div>
+  <div class="ivcard"><h3>🎯 الخلاصة</h3><ul class="note" style="line-height:2.1;margin:0 18px 0 0">
+    <li>آخر 3 شهور المبيعات <b>${sg(g3)}</b> عن 2025، وأول 5 شهور <b>${sg(g5)}</b> — ${g3 > g5 ? 'يعني <b>الاتجاه بيتحسن</b>' : 'يعني الاتجاه بيضعف'}.</li>
+    <li>أحسن شهر: <b>${MN[best.m - 1]}</b> بـ ${M(best.net)}. أعلى نمو عن 2025: <b>${MN[top.m - 1]}</b> (${sg((top.net / top.n25 - 1) * 100)}).</li>
+    <li>المشتريات المقدّرة ${build >= 0 ? 'أعلى' : 'أقل'} من تكلفة المبيع بحوالي <b>${M(Math.abs(build))}</b> في 9 شهور (حوالي ${(Math.abs(build) / B.kpi.stockCost * 100).toFixed(0)}% من المخزون الحالي) — ${build >= 0 ? 'يعني المخزون بيكبر، فراقب الفائض' : 'يعني المخزون بيصغر'}.</li>
+  </ul><p class="note"><b>تنبيه:</b> المشتريات الشهرية <b>تقديرية</b> لأن تقرير المشتريات مفيهوش تاريخ. هتبقى دقيقة لما نرفع المشتريات شهر بشهر.</p></div>
+  <div class="ivcard"><h3>المبيعات شهر بشهر مقابل 2025</h3><ol class="note" style="margin:0 18px 10px 0;line-height:2"><li><b>العمود الأخضر</b> = صافي مبيعات الشهر في 2026.</li><li><b>الخط الأصفر</b> = نفس الشهر في 2025.</li><li>لو العمود أعلى من الخط = الشهر ده أحسن من السنة اللي فاتت.</li><li>أكتوبر = أول 6 أيام بس (مقارنة بنفس الـ 6 أيام).</li></ol><div class="ch tall"><canvas id="cSm"></canvas></div></div>
+  <div class="ivcard"><h3>اللي اشتريناه مقابل اللي اتباع</h3><ol class="note" style="margin:0 18px 10px 0;line-height:2"><li><b>الخط البرتقالي</b> = المشتريات (تقدير).</li><li><b>الخط الأخضر</b> = تكلفة البضاعة اللي اتباعت.</li><li>البرتقالي <b>فوق</b> الأخضر = بنشتري أكتر من اللي بنبيعه = المخزون بيكبر.</li></ol><div class="ch tall"><canvas id="cBc"></canvas></div></div>
+  <div class="ivcard"><h3>جدول الشهور</h3>${table([[x => MN[x.m - 1] + (x.m === 10 ? ' (1–6)' : ''), 'الشهر', 'raw'], ['gross', 'المبيعات', 'm'], ['net', 'الصافي (بعد المرتجع)', 'm'], ['n25', 'نفس الشهر 2025 (تقدير)', 'm'], [x => (x.net / x.n25 - 1) * 100, 'النمو %', 'p'], ['inv', 'عدد الفواتير', 'n'], ['buy', 'اشتريناه (تقدير)', 'm'], ['cogs', 'تكلفة اللي اتباع', 'm'], [x => x.buy - x.cogs, 'المخزون كبر بـ (تقدير)', 'n']], m)}
+  <p class="note">مرتجعات 2025 = ${M(-B.kpi.ret25)} موزعة على الشهور بالتناسب (الملف مفيهوش تواريخ)، فنمو كل شهر تقريبي.</p></div>`;
   return { html, after() {
+    mk('cSm', { data: { labels: m.map(x => MN[x.m - 1] + (x.m === 10 ? ' (1–6)' : '')), datasets: [{ type: 'bar', label: '2026 صافي', data: m.map(x => x.net), backgroundColor: '#0B8577', borderRadius: 6 }, { type: 'line', label: '2025 (تقدير)', data: m.map(x => x.n25), borderColor: '#E0A526', backgroundColor: '#E0A526', tension: .3, pointRadius: 4 }] }, options: { maintainAspectRatio: false, plugins: { tooltip: { callbacks: { label: c => `${c.dataset.label}: ${M(c.parsed.y)}` } } }, scales: { y: { ticks: { callback: v => K(v) } } } } });
     mk('cBc', { type: 'line', data: { labels: m.map(x => MN[x.m - 1]), datasets: [{ label: 'مشتريات (تقدير)', data: m.map(x => x.buy), borderColor: '#E67E22', backgroundColor: '#E67E22', tension: .3 }, { label: 'تكلفة المبيع', data: m.map(x => x.cogs), borderColor: '#0B8577', backgroundColor: '#0B8577', tension: .3 }] }, options: { maintainAspectRatio: false, scales: { y: { ticks: { callback: v => K(v) } } } } });
   } };
 }
