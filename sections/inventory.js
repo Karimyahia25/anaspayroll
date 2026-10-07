@@ -30,7 +30,12 @@ function css() {
   if ($('#invCss')) return;
   const s = document.createElement('style'); s.id = 'invCss';
   s.textContent = `
-#invRoot .ivbar{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 14px}
+#invRoot .ivbar{display:flex;gap:6px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:4px -4px 14px;padding:6px 4px;position:sticky;top:0;z-index:4;background:color-mix(in srgb,var(--paper) 90%,transparent);backdrop-filter:blur(8px)}
+#invRoot .ivbar::-webkit-scrollbar{display:none}
+@media(max-width:899px){#invRoot .ivbar{top:52px}}
+#invRoot .ivbar button{flex:0 0 auto}
+#ivtop{position:fixed;bottom:18px;inset-inline-start:16px;z-index:40;width:46px;height:46px;border-radius:50%;padding:0;font-size:20px;box-shadow:0 10px 20px -8px rgba(15,27,45,.6);display:none}
+#ivtop.show{display:block}
 #invRoot .ivbar button{background:var(--card);color:var(--muted);box-shadow:0 1px 2px rgba(15,27,45,.08);border-radius:999px;padding:8px 15px;font-size:13px;font-weight:600}
 #invRoot .ivbar button.on{background:var(--navy);color:#fff}
 #invRoot .ivgrid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}
@@ -368,15 +373,17 @@ function vMethod() {
 
 /* ---------- المحرك ---------- */
 const RENDER = { ov: vOverview, dc: vDecisions, it: vItems, sp: vSuppliers, pf: vProfit, ex: vExpiry, mo: vMonthly, me: vMethod };
-function setView(v, focus) {
+function setView(v, focus, scroll) {
   kill(); closeItem(); VIEW = v; const bar = $('#ivbar', ROOT); bar.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
   const r = RENDER[v](focus); const c = $('#ivbody', ROOT); c.innerHTML = r.html; sortable(c); r.after();
+  if (scroll && !focus) ROOT.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 function shell(adm) {
   ROOT.innerHTML = `<div class="ivcard" style="padding:14px 16px"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center"><div><h2 style="margin:0 0 2px">📦 المخزون — لوحة القرارات</h2><p class="sub" id="ivmeta"></p></div>
     <button id="ivall" data-xl="all" style="border-radius:999px">📥 تصدير كل قوايم المشتريات (Excel)</button>${adm ? `<div><label class="sm ghost" style="cursor:pointer;display:inline-block;border:1px solid var(--line);border-radius:999px;padding:7px 14px;font-size:13px;color:var(--green)">رفع نتيجة تحليل جديدة<input type="file" id="ivup" accept=".json" style="display:none"></label><div class="note" id="ivmsg"></div></div>` : ''}</div></div>
-    <div class="ivbar" id="ivbar">${VIEWS.map(v => `<button data-v="${v[0]}">${v[1]}</button>`).join('')}</div><div id="ivbody"></div>`;
-  $('#ivbar', ROOT).onclick = e => { const b = e.target.closest('button'); if (b) setView(b.dataset.v); };
+    <button id="ivtop" title="لأعلى" onclick="window.scrollTo({top:0,behavior:'smooth'})">⬆</button><div class="ivbar" id="ivbar">${VIEWS.map(v => `<button data-v="${v[0]}">${v[1]}</button>`).join('')}</div><div id="ivbody"></div>`;
+  $('#ivbar', ROOT).onclick = e => { const b = e.target.closest('button'); if (b) setView(b.dataset.v, null, true); };
+  if (!window.__ivScroll) { window.__ivScroll = 1; window.addEventListener('scroll', () => { const t = document.getElementById('ivtop'); if (t) t.classList.toggle('show', window.scrollY > 500 && ROOT && ROOT.offsetParent !== null); }, { passive: true }); }
   ROOT.addEventListener('click', e => {
     const row = e.target.closest('tr.cl'); if (row) { openItem(+row.dataset.id); return; }
     const a = e.target.closest('[data-go]'); if (a) { const [v, f] = a.dataset.go.split(':'); setView(v, f); return; }
