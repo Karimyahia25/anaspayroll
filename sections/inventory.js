@@ -1,6 +1,7 @@
 // قسم المخزون — داشبورد قرارات (بيتحمّل أول ما تفتح التبويب). البيانات بتتنشر من ملف inventory_bundle.json
 // على Firestore (inventory/bundle_meta + bundle_items_N) — الأدمن بس بيرفع، والأدمن وصاحب الصيدلية بيشوفوا.
-import { getApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getApp, getApps, initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, doc, getDoc, setDoc, collection, query, where, documentId, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -525,12 +526,12 @@ function parseBuys(rows, date) {
 }
 async function loadBuys() {
   if (!DB) { ORD.buys = ORD.buys || []; buildLedger(); return; }
-  const q = query(collection(DB, 'inventory'), where(documentId(), '>=', 'buys_'), where(documentId(), '<', 'buys_')), sn = await getDocs(q);
+  const q = query(collection(DB, 'purchasing'), where(documentId(), '>=', 'buys_'), where(documentId(), '<', 'buys_')), sn = await getDocs(q);
   ORD.buys = sn.docs.map(d => { try { return JSON.parse(d.data().d); } catch (e) { return null; } }).filter(Boolean).sort((a, b) => a.date < b.date ? -1 : 1); buildLedger();
 }
 async function saveBuys(date, rows) {
   if (!DB) throw new Error('الحفظ بيشتغل على الموقع الحقيقي بس');
-  const rec = { date, rows }; await setDoc(doc(DB, 'inventory', 'buys_' + date), { d: JSON.stringify(rec), at: date });
+  const rec = { date, rows }; await setDoc(doc(DB, 'purchasing', 'buys_' + date), { d: JSON.stringify(rec), at: date });
   ORD.buys = (ORD.buys || []).filter(b => b.date !== date); ORD.buys.push(rec); ORD.buys.sort((a, b) => a.date < b.date ? -1 : 1); buildLedger();
 }
 // خصومات الموردين المحدّثة: المشتريات اليومية اللي بعد نهاية تحليل البايثون (آخر 90 يوم) — متتحسبش مرتين لو التحليل الأسبوعي غطّاها
@@ -603,14 +604,14 @@ function orderXl(P, only) {
 }
 async function loadOrderLog() {
   if (!DB) { ORD.log = ORD.log || []; return; }
-  const q = query(collection(DB, 'inventory'), where(documentId(), '>=', 'order_'), where(documentId(), '<', 'order_')), sn = await getDocs(q);
+  const q = query(collection(DB, 'purchasing'), where(documentId(), '>=', 'order_'), where(documentId(), '<', 'order_')), sn = await getDocs(q);
   ORD.log = sn.docs.map(d => { try { return JSON.parse(d.data().d); } catch (e) { return null; } }).filter(Boolean).sort((a, b) => a.at < b.at ? -1 : 1);
 }
 async function saveOrder(P) {
   const K = orderKpis(P), at = new Date().toISOString().slice(0, 16).replace('T', '_').replace(':', ''), rec = { at, date: today(), n: K.n, val: Math.round(K.val), dNew: K.dNew, dOld: K.dOld, sw: K.sw, save: Math.round(K.save),
     lines: P.lines.map(l => [l.id, l.name, l.qty, l.price, l.sup, l.disc == null ? null : +l.disc.toFixed(1), l.last, l.ld == null ? null : +l.ld.toFixed(1), l.sw ? 1 : 0]) };
   if (!DB) throw new Error('التسجيل بيشتغل على الموقع الحقيقي بس');
-  await setDoc(doc(DB, 'inventory', 'order_' + at), { d: JSON.stringify(rec), at }); (ORD.log = ORD.log || []).push(rec);
+  await setDoc(doc(DB, 'purchasing', 'order_' + at), { d: JSON.stringify(rec), at }); (ORD.log = ORD.log || []).push(rec);
 }
 // قياس يوم: طلبيات اليوم ده مقابل مشتريات نفس اليوم
 function dayStats(b) {
@@ -648,8 +649,10 @@ function renderLog() {
 function vOrders() {
   const html = `<div class="ivcard"><h3>🛒 الشغل اليومي — ارفع ملفات الصبح</h3><p class="why">ارفع <b>الملفين مع بعض</b>: تقرير النواقص (بيطلّع طلبية النهارده) وتقرير مشتريات امبارح (بيقيس طلبية امبارح ويحدّث خصومات الموردين). الموقع بيعرف نوع كل ملف لوحده. القاعدة: كل صنف عند المورد اللي <b>أعلى خصم</b> ليه في آخر 3 شهور (من غير outting والصلاحية القصيرة)، <b>بس لو الفرق عن المورد الأخير أقل من ${MINSW} نقطة بيفضل عنده</b>. الأصناف اللي عليها "طلب من 0 يوم" بتتستبعد.</p>
     <p style="margin:6px 0;display:flex;gap:10px;flex-wrap:wrap;align-items:center"><label class="sm ghost" style="cursor:pointer;display:inline-block;border:1px solid var(--line);border-radius:999px;padding:9px 18px;font-size:14px;color:var(--green)">📤 ارفع ملفات الصبح (Excel)<input type="file" id="upAny" accept=".xlsx,.xls" multiple style="display:none"></label><label class="sm">تاريخ المشتريات <input type="date" id="buyDate" value="${yesterday()}"></label></p><div class="note" id="ordUpMsg"></div></div>
+    ${ROLE === 'admin' ? '<div class="ivcard" id="buyerAcct"></div><div class="note" id="buyerSync" style="margin:-6px 4px 10px"></div>' : ''}
     <div id="ordPlan">${renderPlan()}</div><div id="ordLogBox">${renderLog()}</div>`;
   return { html, after() {
+    if (ROLE === 'admin') { buyerAcct(); syncBuyerData(); }
     const c = $('#ivbody', ROOT), plan = () => { const e = $('#ordPlan', ROOT); e.innerHTML = renderPlan(); sortable(e); }, logBox = () => { const e = $('#ordLogBox', ROOT); e.innerHTML = renderLog(); sortable(e); };
     if (ORD.log == null || ORD.buys == null) Promise.all([ORD.log == null ? loadOrderLog() : 0, ORD.buys == null ? loadBuys() : 0]).then(() => VIEW === 'or' && logBox()).catch(() => { ORD.log = ORD.log || []; ORD.buys = ORD.buys || []; });
     c.onclick = async e => {
@@ -675,6 +678,49 @@ function vOrders() {
       m.innerHTML = out.map(esc).join('<br>'); t.value = ''; plan(); logBox();
     };
   } };
+}
+
+
+/* ---------- مسؤول المشتريات: حساب + بيانات الطلبيات بس ---------- */
+// بيانات خفيفة (أصناف + أحسن موردين) في purchasing/data_* — مسؤول المشتريات مبيقراش inventory خالص (تكلفة/ربح/مبيعات)
+async function syncBuyerData() {
+  const st = $('#buyerSync', ROOT); if (!DB || ROLE !== 'admin' || !st) return;
+  try {
+    const m = await getDoc(doc(DB, 'purchasing', 'data_meta'));
+    if (m.exists() && m.data().at === B.at) { st.textContent = 'بيانات مسؤول المشتريات محدّثة ✓'; return; }
+    st.textContent = 'بيحدّث بيانات مسؤول المشتريات…';
+    const rows = IT.filter(x => x.sd || x.sup3).map(x => [x.id, x.name, x.sup3 || null, x.grp, x.sd || null]), per = 900, n = Math.ceil(rows.length / per);
+    for (let i = 0; i < n; i++) await setDoc(doc(DB, 'purchasing', 'data_items_' + i), { d: JSON.stringify(rows.slice(i * per, (i + 1) * per)) });
+    const k = B.kpi; await setDoc(doc(DB, 'purchasing', 'data_meta'), { d: JSON.stringify({ kpi: { discAvg: k.discAvg, discMed: k.discMed, discCos: k.discCos, buyEnd: k.buyEnd }, sdx: B.sdx || {} }), chunks: n, at: B.at });
+    st.textContent = 'بيانات مسؤول المشتريات اتحدّثت ✓';
+  } catch (e) { st.textContent = 'تحديث بيانات مسؤول المشتريات فشل: ' + (e.code || e.message) + (e.code === 'permission-denied' ? ' — حط قواعد Firebase الجديدة الأول' : ''); }
+}
+async function buyerAcct() {
+  const b = $('#buyerAcct', ROOT); if (!b || ROLE !== 'admin' || !DB) return;
+  let list = []; try { list = (await getDocs(collection(DB, 'buyers'))).docs; } catch (e) { b.innerHTML = `<p class="sm">حساب مسؤول المشتريات: ${esc(e.code || e.message)}${e.code === 'permission-denied' ? ' — حط قواعد Firebase الجديدة الأول' : ''}</p>`; return; }
+  b.innerHTML = list.length ? `<p class="sm" style="margin:0"><b>حساب مسؤول المشتريات:</b> موجود ✔ — الدخول بـ <b>buyer</b> والرقم السري بتاعه، وبيشوف طلبية النواقص بس. لتغيير الرقم السري: Firebase Console ← Authentication ← buyer@anaspharmacy.com ← Reset password.</p>`
+    : `<p class="sm" style="margin:0 0 8px"><b>حساب مسؤول المشتريات</b> — بيدخل بـ <b>buyer</b> وبيشوف طلبية النواقص بس (مبيشوفش مرتبات ولا مبيعات ولا تكلفة).</p><input id="byPass" type="text" autocomplete="off" placeholder="رقم سري (6 على الأقل)"> <button class="sm" id="byMake">إنشاء الحساب</button> <span class="note" id="byMsg"></span>`;
+  const mk = $('#byMake', ROOT); if (!mk) return;
+  mk.onclick = async () => {
+    const pw = $('#byPass', ROOT).value, m = $('#byMsg', ROOT); if (!pw || pw.length < 6) { m.textContent = 'الرقم السري 6 حروف أو أرقام على الأقل'; return; }
+    try {
+      const app2 = getApps().find(a => a.name === 'buyerAcct') || initializeApp(getApp().options, 'buyerAcct'), a2 = getAuth(app2);
+      const cr = await createUserWithEmailAndPassword(a2, 'buyer@anaspharmacy.com', pw); await signOut(a2);
+      await setDoc(doc(DB, 'buyers', cr.user.uid), { username: 'buyer', at: Date.now() }); buyerAcct();
+    } catch (e) { m.textContent = e.code === 'auth/email-already-in-use' ? 'الحساب buyer@anaspharmacy.com متعمل قبل كده. امسحه من Firebase Console ← Authentication وجرّب تاني.' : 'مشكلة: ' + (e.code || e.message); }
+  };
+}
+export async function mountBuyer(root) {
+  ROOT = root; ROLE = 'buyer'; DB = getFirestore(getApp()); css(); root.id = 'invRoot';
+  root.innerHTML = '<div class="ivcard"><p class="sub">جاري التحميل…</p></div>';
+  try {
+    const m = await getDoc(doc(DB, 'purchasing', 'data_meta'));
+    if (!m.exists()) { root.innerHTML = '<div class="banner">البيانات لسه متجهزتش. اطلب من مدير الفرع يفتح تبويب طلبية النواقص مرة واحدة.</div>'; return; }
+    const meta = JSON.parse(m.data().d), parts = [];
+    for (let i = 0; i < m.data().chunks; i++) { const c = await getDoc(doc(DB, 'purchasing', 'data_items_' + i)); parts.push(...JSON.parse(c.data().d)); }
+    IT = parts.map(r => ({ id: r[0], name: r[1], sup3: r[2], grp: r[3], sd: r[4] })); B = { kpi: meta.kpi, sdx: meta.sdx, at: m.data().at };
+  } catch (e) { root.innerHTML = `<div class="banner bad">مقدرتش أحمّل البيانات: ${esc(e.code || e.message)}</div>`; return; }
+  root.innerHTML = '<div id="ivbody"></div>'; VIEW = 'or'; const r = vOrders(), c = $('#ivbody', root); c.innerHTML = r.html; sortable(c); r.after();
 }
 
 /* ---------- المحرك ---------- */

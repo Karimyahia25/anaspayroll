@@ -397,8 +397,9 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 
 <div id="emp" class="hide"></div>
 <div id="adm" class="hide"></div>
+<div id="buyer" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-08-F</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-08-G</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -808,7 +809,7 @@ window.doOut = () => signOut(auth);
 
 onAuthStateChanged(auth, async user => {
   $('boot').classList.add('hide');
-  ['login','emp','adm'].forEach(x => $(x).classList.add('hide'));
+  ['login','emp','adm','buyer'].forEach(x => $(x).classList.add('hide'));
   if (!user) {
     clearTimeout(idleTimer); $('p').value = '';
     let msg = '';
@@ -826,11 +827,23 @@ onAuthStateChanged(auth, async user => {
   if (ROLE === 'emp'){
     try { if ((await getDoc(doc(db, 'cashiers', user.uid))).exists()) ROLE = 'cashier'; } catch(e){}
   }
+  if (ROLE === 'emp'){
+    try { if ((await getDoc(doc(db, 'buyers', user.uid))).exists()) { ROLE = 'buyer'; clearTimeout(idleTimer); } } catch(e){}
+  }
   DASH = { periods: [], staff: [], rows: [], period: null };
   if (ROLE === 'admin' || ROLE === 'viewer') { $('adm').classList.remove('hide'); renderAdmin(); }
   else if (ROLE === 'cashier') { $('emp').classList.remove('hide'); await renderStation(); }
+  else if (ROLE === 'buyer') { renderBuyer(); }
   else { $('emp').classList.remove('hide'); await renderEmp(); }
 });
+
+/* ================= مسؤول المشتريات: طلبية النواقص بس ================= */
+async function renderBuyer(){
+  const b = $('buyer'); b.classList.remove('hide');
+  b.innerHTML = `<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div><h2 style="margin:0">🛒 طلبية النواقص</h2><p class="sub" style="margin:2px 0 0">مسؤول المشتريات</p></div><button class="ghost sm" onclick="doOut()">خروج</button></div><div id="buyerRoot"></div>`;
+  try { const m = await import('./sections/inventory.js?v=12'); await m.mountBuyer($('buyerRoot')); }
+  catch (e) { $('buyerRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل الشاشة: ${esc(e.code || e.message)}</div>`; }
+}
 
 /* ================= شاشة الموظف ================= */
 async function latestPeriod(){
@@ -2306,7 +2319,7 @@ function renderAdmin(){
 let INV_ON = false;
 async function openInventory(){
   if (INV_ON) return; INV_ON = true;
-  try { const m = await import('./sections/inventory.js?v=11'); await m.mountInventory($('stockRoot'), ROLE); }
+  try { const m = await import('./sections/inventory.js?v=12'); await m.mountInventory($('stockRoot'), ROLE); }
   catch (e) { INV_ON = false; $('stockRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل قسم المخزون: ${esc(e.code || e.message)}</div>`; }
 }
 
