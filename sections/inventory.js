@@ -499,19 +499,54 @@ function vMethod() {
 }
 
 /* ---------- عرض: طلبية النواقص ---------- */
-const ORD = { plan: null, log: null, cmp: null, saved: false, name: '' };
-const MINSW = 1.5;
+// اللوب اليومي: تقرير النواقص ← طلبية النهارده | تقرير مشتريات امبارح ← قياس طلبية امبارح + تحديث خصومات الموردين (سجل مشتريات بالتاريخ)
+const ORD = { plan: null, log: null, buys: null, led: null, saved: false, name: '' };
+const MINSW = 1.5, BUY_END = () => (B.kpi && B.kpi.buyEnd) || '2026-10-06';
 const pctv = v => { const n = parseFloat(v); return isNaN(n) ? null : (Math.abs(n) <= 1 ? n * 100 : n); };
-const today = () => { const d = new Date(), p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; };
+const iso = d => { const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; };
+const today = () => iso(new Date()), yesterday = () => { const d = new Date(); d.setDate(d.getDate() - 1); return iso(d); };
+const dmy = s => String(s).split('-').reverse().join('/');
 const copyTxt = async t => { try { await navigator.clipboard.writeText(t); } catch (e) { const a = document.createElement('textarea'); a.value = t; document.body.appendChild(a); a.select(); document.execCommand('copy'); a.remove(); } };
 async function readSheetRows(file, must) {
   await loadXlsx(); const wb = XLSX.read(await file.arrayBuffer(), { cellDates: true }), ws = wb.Sheets[wb.SheetNames[0]];
   const a = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
   const hi = a.findIndex(r => must.every(h => r.some(c => String(c == null ? '' : c).trim() === h)));
-  if (hi < 0) throw new Error('الأعمدة دي مش موجودة في الملف: ' + must.join('، '));
+  if (hi < 0) return null;
   const H = a[hi].map(c => String(c == null ? '' : c).trim());
   return a.slice(hi + 1).filter(r => r.some(c => c != null && c !== '')).map(r => { const o = {}; H.forEach((h, i) => { if (h && !(h in o)) o[h] = r[i]; }); return o; });
 }
+const SHORT_COLS = ['الكود', 'الاسم', 'المطلوب'], BUY_COLS = ['كود الصنف', 'المورد', 'اجمالى التكلفة', 'اجمالى القيمة البيعية'];
+
+/* --- سجل المشتريات اليومي (Firestore: inventory/buys_YYYY-MM-DD) --- */
+function parseBuys(rows, date) {
+  const d = new Date(date + 'T00:00:00'); d.setMonth(d.getMonth() + 8); const good = `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+  return rows.map(r => { const ex = r['تاريخ الصلاحية'] == null ? '' : String(r['تاريخ الصلاحية']).trim(), pk = r['العبوات'] == null ? 1 : +r['العبوات'];
+    return [+r['كود الصنف'], String(r['المورد'] || '').trim(), Math.round((+r['اجمالى التكلفة'] || 0) * 100) / 100, Math.round((+r['اجمالى القيمة البيعية'] || 0) * 100) / 100, pk, (!ex || ex >= good) ? 1 : 0]; }).filter(x => x[0]);
+}
+async function loadBuys() {
+  if (!DB) { ORD.buys = ORD.buys || []; buildLedger(); return; }
+  const q = query(collection(DB, 'inventory'), where(documentId(), '>=', 'buys_'), where(documentId(), '<', 'buys_')), sn = await getDocs(q);
+  ORD.buys = sn.docs.map(d => { try { return JSON.parse(d.data().d); } catch (e) { return null; } }).filter(Boolean).sort((a, b) => a.date < b.date ? -1 : 1); buildLedger();
+}
+async function saveBuys(date, rows) {
+  if (!DB) throw new Error('الحفظ بيشتغل على الموقع الحقيقي بس');
+  const rec = { date, rows }; await setDoc(doc(DB, 'inventory', 'buys_' + date), { d: JSON.stringify(rec), at: date });
+  ORD.buys = (ORD.buys || []).filter(b => b.date !== date); ORD.buys.push(rec); ORD.buys.sort((a, b) => a.date < b.date ? -1 : 1); buildLedger();
+}
+// خصومات الموردين المحدّثة: المشتريات اليومية اللي بعد نهاية تحليل البايثون (آخر 90 يوم) — متتحسبش مرتين لو التحليل الأسبوعي غطّاها
+function buildLedger() {
+  const from = new Date(); from.setDate(from.getDate() - 90); const f = iso(from), be = BUY_END(), grp = new Map(IT.map(x => [x.id, x.grp])), L = new Map();
+  (ORD.buys || []).forEach(b => { if (b.date <= be || b.date < f) return; b.rows.forEach(r => { const [id, sup, c, rt, pk, ok] = r; if (pk <= 0 || !ok || rt <= 0 || c <= 0 || /outting/i.test(sup) || grp.get(id) === 'milk') return;
+    const m = L.get(id) || new Map(), e = m.get(sup) || { c: 0, r: 0, n: new Set() }; e.c += c; e.r += rt; e.n.add(b.date); m.set(sup, e); L.set(id, m); }); });
+  ORD.led = L;
+}
+function candsOf(it) {
+  const base = (it && it.sd) || [], m = it && ORD.led && ORD.led.get(it.id); if (!m) return base;
+  const out = new Map(base.map(c => [c[0], { sup: c[0], c: c[3] * (1 - c[1] / 100), r: c[3], nl: c[2] }]));
+  m.forEach((e, sup) => { const o = out.get(sup) || { sup, c: 0, r: 0, nl: 0 }; o.c += e.c; o.r += e.r; o.nl += e.n.size; out.set(sup, o); });
+  return [...out.values()].map(o => [o.sup, Math.round((1 - o.c / o.r) * 1000) / 10, o.nl, Math.round(o.r)]).sort((a, b) => b[1] - a[1]);
+}
+
 function planOrder(rows) {
   const byId = new Map(IT.map(x => [x.id, x])), votes = {}, map = {}, rev = {};
   Object.entries(B.sdx || {}).forEach(([k, v]) => { if (!byId.has(+k)) byId.set(+k, { id: +k, sup3: v[0], sd: v[1], name: v[2] }); });
@@ -526,7 +561,7 @@ function planOrder(rows) {
     const req = +r['المطلوب'] || 1, qty = Math.max(1, Math.ceil(req - 1e-9)), price = +r['السعر'] || 0, ld = last ? pctv(r['نسبة خصم اخر شراء']) : null;
     const base = { id, name: String(r['الاسم'] || (it && it.name) || ''), qty, price, val: qty * price, last, ld, stock: r['الموجود'], note: String(r['ملاحظات'] || '').trim() };
     if (/طلب من/.test(base.note)) { ordered.push(base); return; }
-    const cand = (it && it.sd) || [], best = cand.find(c => c[3] >= 500) || cand[0];
+    const cand = candsOf(it), best = cand.find(c => c[3] >= 500) || cand[0];
     let sup = null, disc = null, why = 'محتاج تحديد مورد', sw = false, save = 0, small = false;
     if (!best) { if (last) { sup = last; disc = ld; why = 'المورد الأخير (مفيش بديل مقارن)'; } }
     else {
@@ -577,20 +612,17 @@ async function saveOrder(P) {
   if (!DB) throw new Error('التسجيل بيشتغل على الموقع الحقيقي بس');
   await setDoc(doc(DB, 'inventory', 'order_' + at), { d: JSON.stringify(rec), at }); (ORD.log = ORD.log || []).push(rec);
 }
-async function compareBuys(file, from) {
-  const rows = await readSheetRows(file, ['كود الصنف', 'المورد', 'اجمالى التكلفة', 'اجمالى القيمة البيعية']);
-  const ords = (ORD.log || []).filter(o => o.date >= from), want = new Map(); ords.forEach(o => o.lines.forEach(l => want.set(l[0], l)));
+// قياس يوم: طلبيات اليوم ده مقابل مشتريات نفس اليوم
+function dayStats(b) {
+  const want = new Map(); (ORD.log || []).filter(o => o.date === b.date).forEach(o => o.lines.forEach(l => want.set(l[0], l)));
   const grp = new Map(IT.map(x => [x.id, x.grp])), tot = { med: [0, 0], cos: [0, 0], milk: [0, 0] }, got = new Map();
-  rows.forEach(r => {
-    const id = +r['كود الصنف'], c = +r['اجمالى التكلفة'] || 0, rt = +r['اجمالى القيمة البيعية'] || 0, pk = r['العبوات'] == null ? 1 : +r['العبوات']; if (!id) return;
-    const g = tot[grp.get(id)] || tot.med; g[0] += c; g[1] += rt;
-    if (want.has(id) && pk > 0 && rt > 0) { const e = got.get(id) || { c: 0, r: 0, by: {} }; e.c += c; e.r += rt; const s = String(r['المورد'] || '').trim(); e.by[s] = (e.by[s] || 0) + c; got.set(id, e); }
-  });
-  let rc = 0, cc = 0, wr = 0, expN = 0, expD = 0, oldN = 0, oldD = 0;
-  got.forEach((e, id) => { const l = want.get(id); cc += e.c; wr += e.r; rc += (e.by[l[4]] || 0); if (l[5] != null) { expN += e.r; expD += e.r * l[5]; } if (l[7] != null) { oldN += e.r; oldD += e.r * l[7]; } });
+  b.rows.forEach(r => { const [id, sup, c, rt, pk] = r; const g = tot[grp.get(id)] || tot.med; if (pk > 0) { g[0] += c; g[1] += rt; }
+    if (want.has(id) && pk > 0 && rt > 0) { const e = got.get(id) || { c: 0, r: 0, by: {} }; e.c += c; e.r += rt; e.by[sup] = (e.by[sup] || 0) + c; got.set(id, e); } });
+  let rc = 0, cc = 0, wr = 0, eN = 0, eD = 0, oN = 0, oD = 0;
+  got.forEach((e, id) => { const l = want.get(id); cc += e.c; wr += e.r; rc += (e.by[l[4]] || 0); if (l[5] != null) { eN += e.r; eD += e.r * l[5]; } if (l[7] != null) { oN += e.r; oD += e.r * l[7]; } });
   const dd = a => a[1] ? (1 - a[0] / a[1]) * 100 : null;
-  ORD.cmp = { from, orders: ords.length, ordered: want.size, bought: got.size, comply: cc ? rc / cc * 100 : null, act: wr ? (1 - cc / wr) * 100 : null, exp: expN ? expD / expN : null, old: oldN ? oldD / oldN : null,
-    all: dd([tot.med[0] + tot.cos[0] + tot.milk[0], tot.med[1] + tot.cos[1] + tot.milk[1]]), med: dd(tot.med), cos: dd(tot.cos) };
+  return { date: b.date, ordered: want.size, bought: got.size, cc, rc, wr, act: wr ? (1 - cc / wr) * 100 : null, exp: eN ? eD / eN : null, old: oN ? oD / oN : null, eN, eD, oN, oD,
+    comply: cc ? rc / cc * 100 : null, all: dd([tot.med[0] + tot.cos[0] + tot.milk[0], tot.med[1] + tot.cos[1] + tot.milk[1]]), med: dd(tot.med), cos: dd(tot.cos), cost: tot.med[0] + tot.cos[0] + tot.milk[0] };
 }
 function renderPlan() {
   const P = ORD.plan; if (!P) return '';
@@ -599,24 +631,27 @@ function renderPlan() {
     ${table([['id', 'الكود'], ['name', 'الصنف', 'nm'], ['qty', 'اطلب', 'n'], ['price', 'السعر', 'n'], [l => l.disc == null ? '—' : P1(l.disc), 'الخصم المتوقع', 'raw'], [l => l.last ? esc(supLab(P, l.last)) + (l.ld != null ? ' · ' + P1(l.ld) : '') : '—', 'المورد الأخير', 'raw'], [l => esc(l.why) + (l.small ? ' <b style="color:#C0392B">⚠ عينة صغيرة</b>' : ''), 'السبب', 'raw']], g.ls)}</div>`).join('');
   const od = P.ordered.length ? `<div class="ivcard"><h3>⏱ اتطلبت النهارده قبل كده (${P.ordered.length}) — مش داخلة في الطلبية</h3><p class="why">الملف نفسه عليه ملاحظة "طلب من 0 يوم" للأصناف دي، فاستبعدتها علشان متتطلبش مرتين.</p>${table([['id', 'الكود'], ['name', 'الصنف', 'nm'], ['qty', 'مطلوب', 'n'], ['note', 'الملاحظة']], P.ordered)}</div>` : '';
   const un = P.unmapped.length ? `<p class="sm">أكواد موردين مقدرتش أربطها باسم مورد (بتظهر زي ما هي): <b>${esc(P.unmapped.join('، '))}</b></p>` : '';
-  return `<div class="ivgrid">${kpi('أصناف الطلبية', N(K.n), `${N(P.groups.filter(g => g.sup !== '—').length)} مورد`)}${kpi('قيمة الطلبية (بيعي)', M(K.val), 'الكمية بعد التقريب لأعلى')}${kpi('متوسط الخصم المتوقع', P1(K.dNew), K.dOld != null ? 'المورد الأخير كان ' + P1(K.dOld) : '', '')}${kpi('وفر متوقع', M(K.save), `${N(K.sw)} صنف اتحولوا لمورد أعلى خصم`, '')}${kpi('محتاجة مورد', N(K.unk), 'مفيش سجل شراء ليها', K.unk ? 'r' : '')}</div>
+  return `<div class="ivgrid">${kpi('أصناف الطلبية', N(K.n), `${N(P.groups.filter(g => g.sup !== '—').length)} مورد`)}${kpi('قيمة الطلبية (بيعي)', M(K.val), 'الكمية بعد التقريب لأعلى')}${kpi('متوسط الخصم المتوقع', P1(K.dNew), K.dOld != null ? 'المورد الأخير كان ' + P1(K.dOld) : '')}${kpi('وفر متوقع', M(K.save), `${N(K.sw)} صنف اتحولوا لمورد أعلى خصم`)}${kpi('محتاجة مورد', N(K.unk), 'مفيش سجل شراء ليها', K.unk ? 'r' : '')}</div>
   <p style="margin:10px 0"><button data-ord="xl:all">📥 كل الطلبية (Excel — شيت لكل مورد)</button> <button class="${ORD.saved ? 'ghost' : ''}" data-ord="save" ${ORD.saved ? 'disabled' : ''}>${ORD.saved ? '✅ اتسجلت' : '✅ اعتمد وسجّل الطلبية للقياس'}</button> <span class="note" id="ordMsg"></span></p>${un}${cards}${od}`;
 }
 function renderLog() {
-  const L = ORD.log || [], c = ORD.cmp;
-  const rows = L.slice().reverse().map(o => ({ date: o.date, n: o.n, val: o.val, dNew: o.dNew, dOld: o.dOld, save: o.save }));
-  const cmp = c ? `<div class="ivgrid">${kpi('الأصناف المطلوبة', N(c.ordered), `من ${N(c.orders)} طلبية`)}${kpi('اتشرى منها فعلاً', N(c.bought), c.ordered ? Math.round(c.bought / c.ordered * 100) + '% من المطلوب' : '')}${kpi('الالتزام بالمورد المقترح', P1(c.comply), 'من قيمة الشراء', c.comply >= 70 ? 'g' : 'r')}${kpi('الخصم الفعلي للأصناف دي', P1(c.act), `المتوقع ${P1(c.exp)} · المورد القديم ${P1(c.old)}`, c.act != null && c.old != null && c.act > c.old ? 'g' : '')}${kpi('خصم الشراء الكلي في الملف', P1(c.all), `دواء ${P1(c.med)} (قبل: ${B.kpi.discMed}%) · كوزمو ${P1(c.cos)} (قبل: ${B.kpi.discCos}%)`)}</div>` : '';
-  return `<div class="ivcard" id="ordLog"><h3>📈 القياس — قبل وبعد</h3><p class="why">كل طلبية بتتسجل بالخصم المتوقع. وبعد كده ترفع تقرير المشتريات (نفس التصدير المعتاد) من أول يوم بدأنا فيه، فنعرف: اشترينا فعلاً من المورد المقترح ولا لأ، والخصم الفعلي بقى كام مقارنة بالمورد القديم وبمتوسط آخر 3 شهور (دواء ${B.kpi.discMed}% — كوزمو ومستلزمات ${B.kpi.discCos}%).</p>
-    ${rows.length ? table([['date', 'التاريخ'], ['n', 'أصناف', 'n'], ['val', 'القيمة', 'm'], ['dNew', 'خصم متوقع %', 'p'], ['dOld', 'خصم المورد الأخير %', 'p'], ['save', 'وفر متوقع', 'm']], rows) : '<p class="sm">لسه مفيش طلبيات متسجلة.</p>'}
-    <p style="margin:12px 0 4px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><label class="sm">من تاريخ <input type="date" id="cmpFrom" value="${esc(c ? c.from : (L[0] ? L[0].date : today()))}"></label><label class="sm ghost" style="cursor:pointer;border:1px solid var(--line);border-radius:999px;padding:7px 14px">📤 ارفع تقرير المشتريات للمقارنة<input type="file" id="cmpFile" accept=".xlsx,.xls" style="display:none"></label><span class="note" id="cmpMsg"></span></p>${cmp}</div>`;
+  const bs = ORD.buys || [], L = ORD.log || [], days = bs.map(dayStats), orderDays = [...new Set(L.map(o => o.date))].sort();
+  const missing = orderDays.filter(d => !bs.some(b => b.date === d));
+  const T = days.reduce((a, d) => ({ ordered: a.ordered + d.ordered, bought: a.bought + d.bought, cc: a.cc + d.cc, rc: a.rc + d.rc, wr: a.wr + d.wr, cost: a.cost + d.cost, eN: a.eN + d.eN, eD: a.eD + d.eD, oN: a.oN + d.oN, oD: a.oD + d.oD, cd: a.cd + d.cc * 0 }), { ordered: 0, bought: 0, cc: 0, rc: 0, wr: 0, cost: 0, eN: 0, eD: 0, oN: 0, oD: 0, cd: 0 });
+  const tAct = T.wr ? (1 - T.cc / T.wr) * 100 : null, tExp = T.eN ? T.eD / T.eN : null, tOld = T.oN ? T.oD / T.oN : null, tComp = T.cc ? T.rc / T.cc * 100 : null;
+  const kp = days.length ? `<div class="ivgrid">${kpi('أيام اتقاست', N(days.length), `آخر يوم ${dmy(days[days.length - 1].date)}`)}${kpi('الالتزام بالمورد المقترح', P1(tComp), 'من قيمة شراء الأصناف المطلوبة', tComp != null && tComp >= 70 ? '' : 'r')}${kpi('الخصم الفعلي للأصناف المطلوبة', P1(tAct), `المتوقع ${P1(tExp)} · المورد القديم ${P1(tOld)}`)}${kpi('الفرق عن المورد القديم', tAct != null && tOld != null ? (tAct - tOld > 0 ? '+' : '') + (tAct - tOld).toFixed(1) + ' نقطة' : '—', 'موجب = الطلبية الجديدة أحسن')}</div>` : '';
+  const rows = days.slice().reverse().map(d => ({ date: dmy(d.date), ordered: d.ordered, bought: d.bought, comply: d.comply, act: d.act, exp: d.exp, old: d.old, all: d.all, med: d.med, cos: d.cos }));
+  return `<div class="ivcard" id="ordLog"><h3>📈 القياس اليومي — قبل وبعد</h3><p class="why">كل صبح ارفع تقرير مشتريات امبارح. بيتقارن بطلبية امبارح: اشترينا من المورد المقترح ولا لأ، والخصم الفعلي مقابل المتوقع ومقابل المورد القديم. وبيتقارن كمان بمتوسط آخر 3 شهور قبل البداية (الكل ${B.kpi.discAvg}% · دواء ${B.kpi.discMed}% · كوزمو ومستلزمات ${B.kpi.discCos}%).</p>
+    ${kp}${rows.length ? table([['date', 'اليوم'], ['ordered', 'أصناف مطلوبة', 'n'], ['bought', 'اتشرى منها', 'n'], ['comply', 'التزام %', 'p'], ['act', 'خصم فعلي %', 'p'], ['exp', 'متوقع %', 'p'], ['old', 'مورد قديم %', 'p'], ['all', 'خصم الشراء الكلي %', 'p'], ['med', 'دواء %', 'p'], ['cos', 'كوزمو %', 'p']], rows) : '<p class="sm">لسه مفيش أيام متقاسة. سجّل طلبية النهارده، وبكره الصبح ارفع مشتريات النهارده.</p>'}
+    ${missing.length ? `<p class="sm" style="color:#C0392B">طلبيات في أيام مفيش ليها مشتريات مرفوعة: ${esc(missing.map(dmy).join('، '))}</p>` : ''}</div>`;
 }
 function vOrders() {
-  const html = `<div class="ivcard"><h3>🛒 طلبية النواقص — كل صنف عند أعلى مورد خصماً</h3><p class="why">ارفع ملف النواقص (اللي مسؤول المشتريات بيبعته) وهقولك يطلب كل صنف من مين. القاعدة: كل صنف عند المورد اللي <b>أعلى خصم</b> ليه في آخر 3 شهور (من غير outting والصلاحية القصيرة)، <b>بس لو الفرق عن المورد الأخير أقل من ${MINSW} نقطة بيفضل عنده</b> علشان منشتتش الطلبية على موردين كتير. الأصناف اللي عليها "طلب من 0 يوم" بتتستبعد. كل الموردين بيوصلوا في نفس اليوم فالسرعة مش عامل.</p>
-    <p style="margin:6px 0"><label class="sm ghost" style="cursor:pointer;display:inline-block;border:1px solid var(--line);border-radius:999px;padding:9px 18px;font-size:14px;color:var(--green)">📤 ارفع ملف النواقص (Excel)<input type="file" id="ordFile" accept=".xlsx,.xls" style="display:none"></label> <span class="note" id="ordUpMsg"></span></p></div>
+  const html = `<div class="ivcard"><h3>🛒 الشغل اليومي — ارفع ملفات الصبح</h3><p class="why">ارفع <b>الملفين مع بعض</b>: تقرير النواقص (بيطلّع طلبية النهارده) وتقرير مشتريات امبارح (بيقيس طلبية امبارح ويحدّث خصومات الموردين). الموقع بيعرف نوع كل ملف لوحده. القاعدة: كل صنف عند المورد اللي <b>أعلى خصم</b> ليه في آخر 3 شهور (من غير outting والصلاحية القصيرة)، <b>بس لو الفرق عن المورد الأخير أقل من ${MINSW} نقطة بيفضل عنده</b>. الأصناف اللي عليها "طلب من 0 يوم" بتتستبعد.</p>
+    <p style="margin:6px 0;display:flex;gap:10px;flex-wrap:wrap;align-items:center"><label class="sm ghost" style="cursor:pointer;display:inline-block;border:1px solid var(--line);border-radius:999px;padding:9px 18px;font-size:14px;color:var(--green)">📤 ارفع ملفات الصبح (Excel)<input type="file" id="upAny" accept=".xlsx,.xls" multiple style="display:none"></label><label class="sm">تاريخ المشتريات <input type="date" id="buyDate" value="${yesterday()}"></label></p><div class="note" id="ordUpMsg"></div></div>
     <div id="ordPlan">${renderPlan()}</div><div id="ordLogBox">${renderLog()}</div>`;
   return { html, after() {
     const c = $('#ivbody', ROOT), plan = () => { const e = $('#ordPlan', ROOT); e.innerHTML = renderPlan(); sortable(e); }, logBox = () => { const e = $('#ordLogBox', ROOT); e.innerHTML = renderLog(); sortable(e); };
-    if (ORD.log == null) loadOrderLog().then(() => VIEW === 'or' && logBox()).catch(() => { ORD.log = []; });
+    if (ORD.log == null || ORD.buys == null) Promise.all([ORD.log == null ? loadOrderLog() : 0, ORD.buys == null ? loadBuys() : 0]).then(() => VIEW === 'or' && logBox()).catch(() => { ORD.log = ORD.log || []; ORD.buys = ORD.buys || []; });
     c.onclick = async e => {
       const b = e.target.closest('[data-ord]'); if (!b) return; const [k, v] = b.dataset.ord.split(':'), P = ORD.plan, msg = $('#ordMsg', ROOT);
       try {
@@ -626,9 +661,18 @@ function vOrders() {
       } catch (err) { b.disabled = false; if (msg) msg.textContent = 'فشل: ' + (err.code || err.message); else alert('فشل: ' + (err.code || err.message)); }
     };
     c.onchange = async e => {
-      const t = e.target;
-      if (t.id === 'ordFile' && t.files[0]) { const m = $('#ordUpMsg', ROOT); try { m.textContent = 'بيقرا الملف…'; const rows = await readSheetRows(t.files[0], ['الكود', 'الاسم', 'المطلوب']); ORD.name = today().split('-').reverse().join('/'); ORD.plan = planOrder(rows); ORD.saved = false; m.textContent = `اتقرى ${N(rows.length)} صنف ✓`; plan(); } catch (err) { m.textContent = 'فشل: ' + err.message; } t.value = ''; }
-      else if (t.id === 'cmpFile' && t.files[0]) { const m = $('#cmpMsg', ROOT), f = t.files[0]; try { m.textContent = 'بيحسب…'; await compareBuys(f, $('#cmpFrom', ROOT).value || '0000'); logBox(); } catch (err) { m.textContent = 'فشل: ' + err.message; } }
+      const t = e.target; if (t.id !== 'upAny' || !t.files.length) return; const m = $('#ordUpMsg', ROOT), out = [], files = [...t.files]; m.textContent = 'بيقرا الملفات…';
+      if (ORD.buys == null) { try { await loadBuys(); } catch (err) { ORD.buys = []; } }
+      for (const f of files) {
+        try {
+          const sh = await readSheetRows(f, SHORT_COLS);
+          if (sh) { ORD.name = dmy(today()); ORD.plan = planOrder(sh); ORD.saved = false; out.push(`✅ ${f.name}: نواقص — ${N(sh.length)} صنف`); continue; }
+          const by = await readSheetRows(f, BUY_COLS);
+          if (by) { const date = $('#buyDate', ROOT).value || yesterday(), rows = parseBuys(by, date); await saveBuys(date, rows); out.push(`✅ ${f.name}: مشتريات ${dmy(date)} — ${N(rows.length)} سطر اتحفظوا`); continue; }
+          out.push(`⚠ ${f.name}: مش نواقص ولا مشتريات (الأعمدة مش مطابقة)`);
+        } catch (err) { out.push(`❌ ${f.name}: ${err.code || err.message}`); }
+      }
+      m.innerHTML = out.map(esc).join('<br>'); t.value = ''; plan(); logBox();
     };
   } };
 }
