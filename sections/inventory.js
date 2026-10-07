@@ -203,6 +203,9 @@ const LISTS = {
   expiry: () => ({ name: 'نير 6 شهور', why: 'دفعات صلاحيتها خلال 6 شهور والمعرّض منها للانتهاء قبل البيع (تقدير من معدل بيع 90 يوم).',
     head: ['الكود', 'الصنف', 'الصلاحية', 'أيام متبقية', 'عبوات', 'مباع 90 يوم', 'عبوات معرّضة', 'تكلفة معرّضة (ج)', '% معرّض', 'المورد', NOTE],
     rows: [...B.expiry].sort((a, b) => (b.riskCost || 0) - (a.riskCost || 0)).map(e => [e.id, e.name, e.exp, e.days, e.qty, e.p90, e.risk, e.riskCost, e.riskPct, e.sup, '']) }),
+  alts: () => ({ name: 'بدائل أرخص - ' + (ALT_CUR || ''), why: 'نفس الأصناف اتشرت من مورد تاني بخصم أعلى (فرصة توفير). الوفر = القيمة البيعية × فرق الخصم. اتأكد من توفر الصنف وموثوقية المورد البديل.',
+    head: ['الكود', 'الصنف', 'اشتريناه من', 'قيمة بيعية (ج)', 'خصمه %', 'المورد البديل', 'خصم البديل %', 'الفرق (نقطة)', 'كنا هنوفر (ج)', 'أقرب صلاحية عند البديل', NOTE],
+    rows: altRows().filter(a => a.frm === ALT_CUR).sort((a, b) => b.save - a.save).map(a => [a.id, a.name, a.frm, a.fretail, a.fdisc, a.to, a.tdisc, a.gap, a.save, a.texp, '']) }),
   ex: () => ({ name: 'الأصناف (حسب الفلتر)', why: 'نتيجة البحث والفلاتر الحالية في شاشة الأصناف.',
     head: ['الكود', 'الصنف', 'المجموعة العلاجية', 'التصنيف', 'ABC', 'الرصيد (عبوات)', 'التكلفة (ج)', 'مبيعات 90 يوم (ج)', 'التغطية (يوم)', 'عبوات زيادة', 'اطلب (عبوات)', 'هامش %', 'خصم الشراء %', 'آخر بيع', 'آخر شراء', 'المورد', NOTE],
     rows: filtered().map(x => [x.id, x.name, x.thc, x.cls, x.abc, x.packs, x.cost, x.n90, x.dsi, x.xPacks, x.nPacks, x.margin, x.disc, x.lastSale, x.lastBuy, x.sup, '']) })
@@ -338,10 +341,12 @@ function vSuppliers() {
   ${table([['sup', 'المورد', 'nm'], ['cost', 'بنشتري منه (تكلفة)', 'm'], ['disc', 'خصمه الحالي %', 'p'], [x => avg, 'المتوسط %', 'p'], [x => x.gap.toFixed(1), 'الفرق (نقطة)', 'raw'], ['save3', 'وفر لو زاد 3 نقاط (واقعي)', 'm'], ['save', 'وفر لو وصل للمتوسط (طموح)', 'm']], sv)}
   <p class="note"><b>إزاي نقرا الأرقام:</b> "الفرق" = المتوسط − خصم المورد. "الوفر" = القيمة البيعية لمشترياتنا منه × الفرق. <b>تنبيه مهم:</b> موردين المستورد واللبن خصمهم قليل بطبيعته (أسعارهم شبه مسعّرة)، فالواقعي نطلب <b>زيادة 2 لـ 3 نقاط</b> مش الوصول للمتوسط كله. ابدأ بأكبر مورد حجماً لأن كل نقطة معاه بتفرق أكتر.</p>
   <p style="margin:8px 0 0"><button class="sm ghost" data-xl="neg">📥 تصدير القايمة دي Excel للمشتريات</button></p></div>
+  <div id="altBox"></div>
   <div class="ivcard"><h3>كل الموردين</h3><p style="margin:0 0 8px"><button class="sm ghost" data-xl="suppliers">📥 تصدير Excel</button></p>${table([['sup', 'المورد', 'nm'], ['cost', 'مشتريات (تكلفة)', 'm'], ['retail', 'قيمة بيعية', 'm'], ['disc', 'الخصم المرجّح %', 'p'], [x => Math.round(x.retail * (avg - x.disc) / 100), 'فرق عن المتوسط (ج)', 'n'], ['items', 'أصناف', 'n'], ['ret', 'مرتجع', 'm'], ['retPct', 'مرتجع %', 'p']], S)}
   <p class="note">الخصم المرجّح = 1 − (تكلفة الفواتير بعد المرتجع ÷ قيمتها البيعية). "فرق عن المتوسط" موجب = المورد أقل من المتوسط (فرصة توفير).</p></div>
   <div class="ivcard"><h3>الخصم حسب الشكل الدوائي</h3><div class="ch"><canvas id="cCt"></canvas></div><p class="note">اللبن والمستلزمات مسعّرة جبرياً — خصمها المنخفض طبيعي ومش مادة تفاوض.</p></div>`;
   return { html, after() {
+    drawAlt();
     mk('cSp', { type: 'bubble', data: { datasets: [{ label: 'مورد', data: S.map(s => ({ x: s.cost, y: s.disc, r: 4 + Math.sqrt(Math.max(s.ret, 0)) / 12, n: s.sup })), backgroundColor: S.map(s => s.disc < avg - 2 && s.cost > 150000 ? 'rgba(192,57,43,.65)' : 'rgba(11,133,119,.55)') }] },
       options: { maintainAspectRatio: false, scales: { x: { title: { display: true, text: 'مشتريات 2026 (تكلفة)' }, ticks: { callback: v => K(v) } }, y: { title: { display: true, text: 'الخصم المرجّح %' }, suggestedMin: 10 } }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.raw.n}: ${M(c.raw.x)} · خصم ${c.raw.y}%` } } } },
       plugins: [LABELS, { id: 'avgLine', afterDraw(ch) { const y = ch.scales.y.getPixelForValue(avg), c = ch.ctx; c.save(); c.strokeStyle = '#999'; c.setLineDash([5, 4]); c.beginPath(); c.moveTo(ch.chartArea.left, y); c.lineTo(ch.chartArea.right, y); c.stroke(); c.restore(); } }] });
@@ -349,13 +354,56 @@ function vSuppliers() {
   } };
 }
 
+/* ---------- لو اشترينا من مورد تاني ---------- */
+let ALT_CUR = null;
+const altRows = () => (B.alts || []).map(r => ({ id: r[0], name: r[1], frm: r[2], fretail: r[3], fdisc: r[4], to: r[5], tdisc: r[6], tnl: r[7], gap: r[8], save: r[9], texp: r[10] }));
+function drawAlt() {
+  const box = $('#altBox', ROOT); if (!box) return; const A = altRows();
+  if (!A.length) { box.innerHTML = '<div class="ivcard"><p class="sub">الميزة دي محتاجة تحديث ملف التحليل (inventory_bundle.json).</p></div>'; return; }
+  const froms = [...new Set(A.map(a => a.frm))].map(f => ({ f, v: sum(A.filter(a => a.frm === f), a => a.save) })).sort((a, b) => b.v - a.v);
+  const cur = ALT_CUR && froms.find(x => x.f === ALT_CUR) ? ALT_CUR : (froms.find(x => x.f === 'Pharmaoverseas') ? 'Pharmaoverseas' : froms[0].f); ALT_CUR = cur;
+  const R = A.filter(a => a.frm === cur).sort((a, b) => b.save - a.save), tot = sum(R, a => a.save), base = sum(R, a => a.fretail), top = R[0];
+  const to = {}; R.forEach(a => { const t = (to[a.to] = to[a.to] || { to: a.to, n: 0, save: 0, retail: 0 }); t.n++; t.save += a.save; t.retail += a.fretail; });
+  const tr = Object.values(to).sort((a, b) => b.save - a.save);
+  box.innerHTML = `<div class="ivcard"><h3>💡 لو كنا اشترينا نفس الأصناف من مورد تاني بخصم أعلى</h3>
+  <p class="why">اختار المورد اللي عايز تقارنه: <select id="altSel" style="width:auto;display:inline-block;padding:6px 10px">${froms.map(x => `<option value="${esc(x.f)}"${x.f === cur ? ' selected' : ''}>${esc(x.f)} — وفر ${M(x.v)}</option>`).join('')}</select><br>
+  بنقارن <b>نفس الصنف</b> اللي اشتريناه من <b>${esc(cur)}</b> بنفس الصنف اللي اشتريناه من موردين تانيين في 2026. لقينا <b>${R.length} صنف</b> اتشرى من مورد تاني بخصم أعلى (على الأقل نقطتين، ومن فاتورتين أو أكتر). لو كنا اشتريناهم من الأرخص كنا هنوفر حوالي <b>${M(tot)}</b> من أصل <b>${M(base)}</b> (قيمة بيعية) اشتريناها من ${esc(cur)} في الأصناف دي.</p>
+  ${top ? `<p class="why"><b>مثال:</b> ${esc(top.name)} — اشتريناه من ${esc(cur)} بخصم <b>${top.fdisc}%</b> (قيمة بيعية ${M(top.fretail)})، واتشرى من <b>${esc(top.to)}</b> بخصم <b>${top.tdisc}%</b>. الفرق ${top.gap} نقطة × ${M(top.fretail)} = <b>${M(top.save)}</b> كنا هنوفرهم.</p>` : ''}
+  <h4 style="margin:10px 0 4px">كنا نشتري كام صنف من مين؟</h4>${table([['to', 'المورد البديل', 'nm'], ['n', 'عدد الأصناف', 'n'], ['retail', 'قيمة بيعية اشتريناها من ' + cur, 'm'], ['save', 'كنا هنوفر', 'm']], tr)}
+  <h4 style="margin:14px 0 4px">أكبر الأصناف توفيراً</h4>${table([['name', 'الصنف', 'nm'], ['fretail', 'اشتريناه من ' + cur + ' (بيعي)', 'm'], ['fdisc', 'خصمه %', 'p'], ['to', 'البديل', 'nm'], ['tdisc', 'خصم البديل %', 'p'], ['gap', 'الفرق (نقطة)', 'n'], ['save', 'كنا هنوفر', 'm']], R.slice(0, 25))}
+  <p class="note"><b>إزاي اتحسب:</b> الوفر = القيمة البيعية اللي اشتريناها من ${esc(cur)} × (خصم البديل − خصمه). استبعدنا الدفعات قصيرة الصلاحية (أقل من تقريباً 9 شهور) عشان الخصم الكبير ساعتها بيبقى بسبب الصلاحية مش بسبب المورد.<br>
+  <b>قبل ما تقرر:</b> لازم تتأكد إن المورد البديل <b>بيوفّر الصنف دايماً وبنفس الكمية</b> وإن مصدره موثوق (خصوصاً لو الخصم كبير جداً زي 50%)، ولازم نراجع شروط الدفع والتوصيل. الأرقام دي بتوري الفرصة مش ضمان.</p>
+  <p style="margin:8px 0 0"><button class="sm ghost" data-xl="alts">📥 تصدير قايمة ${esc(cur)} Excel للمشتريات</button></p></div>`;
+  $('#altSel', box).onchange = e => { ALT_CUR = e.target.value; drawAlt(); };
+  sortable(box);
+}
+
 /* ---------- الربحية والتصنيف العلاجي ---------- */
 function vProfit() {
   const T = [...B.thc].sort((a, b) => b.sales - a.sales), top = IT.filter(x => x.n90 > 0).sort((a, b) => b.gp90 - a.gp90).slice(0, 20);
-  const html = `<div class="ivcard"><h3>المبيعات والربح لكل مجموعة علاجية</h3><p class="why">آخر 90 يوم. الفرق بين العمود الأخضر (مبيعات) والأصفر (ربح) = هامش المجموعة. <b>⚠ التصنيف مبدئي بالكلمات ومحتاج مراجعتك</b> — ${esc(T.find(t => String(t.thc).startsWith('غير مصنف')) ? 'في مجموعات "غير مصنف" لسه' : '')}.</p><div class="ch tall"><canvas id="cTh"></canvas></div></div>
-  <div class="ivcard"><h3>تفاصيل المجموعات</h3>${table([['thc', 'المجموعة', 'nm'], ['items', 'أصناف', 'n'], ['sales', 'مبيعات 90', 'm'], ['gp', 'ربح 90', 'm'], ['margin', 'هامش %', 'p'], ['stock', 'تكلفة المخزون', 'm'], ['cover', 'تغطية (يوم)', 'n'], ['disc', 'خصم الشراء %', 'p']], T)}
-  <p class="note">تغطية عالية + هامش ضعيف = مجموعة بتجمّد فلوس وبتكسب قليل. تغطية قليلة + هامش عالي = ركّز عليها وماتسيبهاش تخلص.</p></div>
-  <div class="ivcard"><h3>أعلى 20 صنف ربحاً</h3><p class="why">دي الأصناف اللي لازم ما تخلصش أبداً، وتشتريها بأحسن خصم.</p>${table([['id', 'الكود'], ['name', 'الصنف', 'nm'], ['n90', 'مبيعات 90', 'm'], ['margin', 'هامش %', 'p'], ['gp90', 'ربح 90', 'm'], [x => badge(x.cls), 'الحالة', 'raw'], ['dsi', 'تغطية', 'n']], top, { click: 1 })}</div>`;
+  const un = t => String(t.thc).startsWith('غير مصنف'), totS = sum(T, t => t.sales), totG = sum(T, t => t.gp), mg = totG / totS * 100;
+  const byG = T.filter(t => !un(t)).sort((a, b) => b.gp - a.gp), t1 = byG[0], share3 = sum(byG.slice(0, 3), t => t.gp) / totG * 100;
+  const lowM = T.filter(t => !un(t) && t.sales > totS * 0.03 && t.margin < mg - 5), heavy = T.filter(t => !un(t) && t.cover > 45 && t.margin < mg);
+  const li = a => a.length ? a.map(t => `<b>${esc(t.thc)}</b> (هامش ${t.margin}%)`).join('، ') : 'مفيش';
+  const html = `<div class="ivcard"><h3>الربحية — يعني إيه؟</h3>
+  <p class="why">ربح أي صنف = <b>مبيعاته × هامشه</b>. الهامش = الفرق بين سعر البيع وسعر الشراء كنسبة من سعر البيع. <b>مثال:</b> صنف باع 10,000 ج وهامشه 25% = ربح 2,500 ج. كل الأرقام دي لآخر 90 يوم، والأصناف متقسمة لمجموعات علاجية (تصنيف مبدئي بالكلمات — لسه محتاج مراجعتك).</p>
+  <div class="ivgrid">
+    ${kpi('الربح الإجمالي (90 يوم)', M(totG), 'من مبيعات ' + M(totS))}
+    ${kpi('متوسط الهامش', mg.toFixed(1) + '%', 'مقياس المقارنة تحت', 'b')}
+    ${kpi('أكبر مجموعة ربحاً', esc(t1.thc), M(t1.gp) + ' = ' + (t1.gp / totG * 100).toFixed(0) + '% من الربح', 'p')}
+    ${kpi('أكبر 3 مجموعات', share3.toFixed(0) + '% من الربح', 'التركيز في قليل من المجموعات', 'o')}
+  </div></div>
+  <div class="ivcard"><h3>المبيعات والربح لكل مجموعة</h3>
+  <ol class="note" style="margin:0 18px 10px 0;line-height:2"><li>العمود <b>الأخضر</b> = مبيعات المجموعة.</li><li>العمود <b>الأصفر</b> = الربح اللي بتجيبه.</li><li>كل ما الأصفر <b>قريب من الأخضر</b> = هامش أعلى (أحسن).</li><li>الأخضر الطويل والأصفر القصير = بتبيع كتير وبتكسب قليل.</li></ol>
+  <div class="ch tall"><canvas id="cTh"></canvas></div></div>
+  <div class="ivcard"><h3>🎯 الخلاصة والقرار</h3><ul class="note" style="line-height:2.1;margin:0 18px 0 0">
+    <li>أكبر مجموعة في الربح <b>${esc(t1.thc)}</b> (${(t1.gp / totG * 100).toFixed(0)}% من الربح كله) — دي مجموعة ما تسيبهاش تخلص.</li>
+    <li>مجموعات مبيعاتها كبيرة لكن <b>هامشها أقل من المتوسط (${mg.toFixed(0)}%) بخمس نقاط أو أكتر:</b> ${li(lowM)} ← فاوض الموردين أو راجع السعر لو مش مسعّر جبرياً.</li>
+    <li>مجموعات <b>مخزونها يكفي أكتر من 45 يوم وهامشها تحت المتوسط:</b> ${li(heavy)} ← فلوس واقفة بتكسب قليل، قلّل الشراء فيها.</li>
+  </ul></div>
+  <div class="ivcard"><h3>تفاصيل المجموعات</h3>${table([['thc', 'المجموعة', 'nm'], ['items', 'عدد الأصناف', 'n'], ['sales', 'المبيعات (90 يوم)', 'm'], ['gp', 'الربح (90 يوم)', 'm'], ['margin', 'الهامش %', 'p'], ['stock', 'تكلفة المخزون', 'm'], ['cover', 'المخزون يكفي (يوم)', 'n'], ['disc', 'خصم الشراء %', 'p']], T)}
+  <p class="note"><b>إزاي نقرا الجدول:</b> "المخزون يكفي" = كام يوم هنبيع من اللي موجود. رقم عالي + هامش ضعيف = فلوس واقفة وربحها قليل. رقم صغير + هامش عالي = ركّز عليها وماتسيبهاش تخلص.</p></div>
+  <div class="ivcard"><h3>أعلى 20 صنف ربحاً</h3><p class="why">الأصناف دي <b>ممنوع تخلص</b> ولازم نشتريها بأحسن خصم — اضغط على أي صنف تشوف تفاصيله.</p>${table([['id', 'الكود'], ['name', 'الصنف', 'nm'], ['n90', 'مبيعات 90', 'm'], ['margin', 'هامش %', 'p'], ['gp90', 'ربح 90', 'm'], [x => badge(x.cls), 'الحالة', 'raw'], ['dsi', 'يكفي (يوم)', 'n']], top, { click: 1 })}</div>`;
   return { html, after() {
     mk('cTh', { type: 'bar', data: { labels: T.map(t => t.thc), datasets: [{ label: 'مبيعات', data: T.map(t => t.sales), backgroundColor: '#0B8577', borderRadius: 4 }, { label: 'ربح', data: T.map(t => t.gp), backgroundColor: '#E0A526', borderRadius: 4 }] },
       options: { indexAxis: 'y', maintainAspectRatio: false, plugins: { tooltip: { callbacks: { label: c => `${c.dataset.label}: ${M(c.parsed.x)}` } } }, scales: { x: { ticks: { callback: v => K(v) } } } } });
@@ -364,12 +412,28 @@ function vProfit() {
 
 /* ---------- الصلاحية ---------- */
 function vExpiry() {
-  const E = [...B.expiry].sort((a, b) => (b.riskCost || 0) - (a.riskCost || 0)), by = {};
-  B.expiry.forEach(e => { const k = e.exp; (by[k] = by[k] || { c: 0, r: 0 }); by[k].c += e.cost || 0; by[k].r += e.riskCost || 0; });
-  const ks = Object.keys(by).sort();
-  const html = `<div class="ivcard"><h3>النير (ينتهي خلال 6 شهور)</h3><p class="why">${B.kpi.expN} دفعة تكلفتها <b>${M(B.kpi.expCost)}</b>، وتقديرنا إن <b>${M(B.kpi.expRisk)}</b> منها مش هيتباع قبل الانتهاء (حسب معدل بيع آخر 90 يوم). كل ما الشهر أقرب كل ما القرار أسرع.</p><div class="ch"><canvas id="cEx"></canvas></div></div>
-  <div class="ivcard"><h3>الأعلى خطراً</h3><p style="margin:0 0 8px"><button class="sm ghost" data-xl="expiry">📥 تصدير Excel</button></p>${table([['id', 'الكود'], ['name', 'الصنف', 'nm'], ['exp', 'الصلاحية'], ['days', 'أيام متبقية', 'n'], ['qty', 'عبوات', 'n'], ['p90', 'مباع 90 يوم', 'n'], ['risk', 'عبوات معرّضة', 'n'], ['riskCost', 'تكلفة معرّضة', 'm'], ['riskPct', '% معرّض', 'n'], ['sup', 'المورد']], E)}
-  <p class="note">المعرّض = العبوات − (المباع يومياً × الأيام المتبقية). التصرف: معرّض عالي ← رجّعه للمورد قبل المهلة أو اعمل عليه عرض. مبيعات سريعة ← بيع الأقدم الأول (FEFO).</p></div>`;
+  const E = [...B.expiry].sort((a, b) => (b.riskCost || 0) - (a.riskCost || 0)), by = {}, bs = {};
+  B.expiry.forEach(e => { const k = e.exp; (by[k] = by[k] || { c: 0, r: 0 }); by[k].c += e.cost || 0; by[k].r += e.riskCost || 0;
+    if (e.riskCost > 0) { const q = (e.sup || '—').trim(); (bs[q] = bs[q] || { sup: q, n: 0, c: 0 }).n++; bs[q].c += e.riskCost; } });
+  const ks = Object.keys(by).sort(), sr = Object.values(bs).sort((a, b) => b.c - a.c), ex = E[0], near = Math.min(...B.expiry.map(e => e.days)), riskN = B.expiry.filter(e => e.riskCost > 0.5).length;
+  const sellable = ex ? (ex.p90 / 90) * ex.days : 0;
+  const html = `<div class="ivcard"><h3>النير — يعني إيه؟</h3>
+  <p class="why"><b>النير</b> = أصناف صلاحيتها هتخلص خلال 6 شهور. المشكلة مش إنها قربت تخلص، المشكلة إننا <b>مش هنلحق نبيعها كلها</b> قبل ما تنتهي. بنحسب كده: <b>بنضرب سرعة بيعنا اليومي للصنف × الأيام اللي فاضلة</b>، وأي كمية زيادة عن كده بنعتبرها <b>معرّضة للانتهاء</b> (يعني خسارة).${ex ? `<br><b>مثال حقيقي:</b> ${esc(ex.name)} — صلاحيته ${esc(ex.exp)} (فاضل ${N(ex.days)} يوم)، بنبيع منه حوالي ${(ex.p90 / 90).toFixed(2)} عبوة في اليوم يعني هنبيع تقريباً ${sellable.toFixed(1)} عبوة بس قبل الانتهاء، ومعانا ${N(ex.qty)} عبوة → <b>${N(ex.risk)} عبوة معرّضة (حوالي ${M(ex.riskCost)})</b>.` : ''}</p>
+  <div class="ivgrid">
+    ${kpi('دفعات صلاحيتها خلال 6 شهور', N(B.kpi.expN) + ' دفعة', 'تكلفتها ' + M(B.kpi.expCost), 'o')}
+    ${kpi('معرّض للانتهاء (تقدير)', M(B.kpi.expRisk), (B.kpi.expRisk / B.kpi.expCost * 100).toFixed(0) + '% من تكلفة النير', 'r')}
+    ${kpi('أصناف فيها كمية معرّضة', N(riskN) + ' صنف', 'من ' + N(B.kpi.expN) + ' دفعة')}
+    ${kpi('أقرب دفعة بتنتهي', N(near) + ' يوم', 'ابدأ بيها', 'p')}
+  </div></div>
+  <div class="ivcard"><h3>إيه اللي المفروض نعمله؟</h3><ol class="note" style="margin:0 18px 0 0;line-height:2.1">
+    <li><b>رجّعه للمورد</b> لو الكمية المعرّضة كبيرة — قبل ما تخلص مهلة المرتجع (مهلة كل مورد غير التانية، اسأل المشتريات).</li>
+    <li>لو الكمية المعرّضة صغيرة: <b>اعمل عليه عرض أو خصم</b> أو حطه قدام الكاشير وفهّم البياعين يرشحوه.</li>
+    <li>الأصناف اللي بتتباع بسرعة: <b>بيع الأقدم الأول</b> (FEFO) وماتعملش حاجة تانية.</li>
+  </ol></div>
+  <div class="ivcard"><h3>النير شهر بشهر</h3><ol class="note" style="margin:0 18px 10px 0;line-height:2"><li>كل عمود = شهر انتهاء الصلاحية.</li><li><b>الأخضر</b> = تكلفة كل الدفعات اللي بتنتهي في الشهر ده.</li><li><b>الأحمر</b> = الجزء اللي مش هنلحق نبيعه (الخسارة المتوقعة).</li></ol><div class="ch"><canvas id="cEx"></canvas></div></div>
+  <div class="ivcard"><h3>نرجّع لمين؟ (مجمّعة بالمورد)</h3><p class="why">قايمة واحدة لكل مورد بالمعرّض للانتهاء عندنا — ابعتها للمشتريات.</p>${table([['sup', 'المورد', 'nm'], ['n', 'عدد الدفعات المعرّضة', 'n'], ['c', 'تكلفتها المعرّضة', 'm']], sr)}</div>
+  <div class="ivcard"><h3>الأعلى خطراً (دفعة بدفعة)</h3><p style="margin:0 0 8px"><button class="sm ghost" data-xl="expiry">📥 تصدير Excel</button></p>${table([['id', 'الكود'], ['name', 'الصنف', 'nm'], ['exp', 'تنتهي'], ['days', 'فاضل (يوم)', 'n'], ['qty', 'العبوات', 'n'], [x => (x.p90 / 90).toFixed(2), 'بنبيع/يوم', 'raw'], ['risk', 'عبوات معرّضة', 'n'], ['riskCost', 'تكلفتها', 'm'], ['riskPct', '% معرّض', 'n'], ['sup', 'المورد']], E)}
+  <p class="note">المعرّض = العبوات − (البيع اليومي × الأيام الفاضلة). الدفعات الأقرب للانتهاء بتتباع الأول. التقدير بيعتمد على سرعة بيع آخر 90 يوم، فلو الصنف موسمي ممكن يتغير.</p></div>`;
   return { html, after() {
     mk('cEx', { type: 'bar', data: { labels: ks, datasets: [{ label: 'تكلفة الدفعات', data: ks.map(k => by[k].c), backgroundColor: '#0B8577', borderRadius: 5 }, { label: 'معرّض للانتهاء', data: ks.map(k => by[k].r), backgroundColor: '#C0392B', borderRadius: 5 }] }, options: { maintainAspectRatio: false, plugins: { tooltip: { callbacks: { label: c => `${c.dataset.label}: ${M(c.parsed.y)}` } } } } });
   } };
