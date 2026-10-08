@@ -501,7 +501,7 @@ function vMethod() {
 
 /* ---------- عرض: طلبية النواقص ---------- */
 // اللوب اليومي: تقرير النواقص ← طلبية النهارده | تقرير مشتريات امبارح ← قياس طلبية امبارح + تحديث خصومات الموردين (سجل مشتريات بالتاريخ)
-const ORD = { plan: null, log: null, buys: null, led: null, saved: false, name: '' };
+const ORD = { plan: null, log: null, buys: null, led: null, saved: false, name: '', qm: 'sys' };
 const MINSW = 1.5, BUY_END = () => (B.kpi && B.kpi.buyEnd) || '2026-10-06';
 const pctv = v => { const n = parseFloat(v); return isNaN(n) ? null : (Math.abs(n) <= 1 ? n * 100 : n); };
 const iso = d => { const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; };
@@ -550,11 +550,21 @@ function candsOf(it) {
 
 // بنحتفظ بآخر ملف نواقص النهارده على الجهاز نفسه، علشان الريفريش ميضيّعوش (بيتمسح تلقائي تاني يوم)
 const STASH = 'ordStash';
-function stashPlan(rows) { try { const keep = ['الكود', 'الاسم', 'المطلوب', 'السعر', 'الموجود', 'المورد', 'ملاحظات', 'اخر شراء', 'نسبة خصم اخر شراء'];
+function stashPlan(rows) { try { const keep = ['الكود', 'الاسم', 'المطلوب', 'السعر', 'الموجود', 'المتوسط', 'المورد', 'ملاحظات', 'اخر شراء', 'نسبة خصم اخر شراء'];
   localStorage.setItem(STASH, JSON.stringify({ date: today(), rows: rows.map(r => { const o = {}; keep.forEach(k => { if (r[k] != null) o[k] = r[k]; }); return o; }), ticks: [] })); } catch (e) {} }
 function stashTicks() { try { const st = JSON.parse(localStorage.getItem(STASH) || 'null'); if (!st || !ORD.plan) return; st.ticks = ORD.plan.lines.filter(l => l.done).map(l => l.id); localStorage.setItem(STASH, JSON.stringify(st)); } catch (e) {} }
 function restorePlan() { try { const st = JSON.parse(localStorage.getItem(STASH) || 'null'); if (!st || st.date !== today()) { localStorage.removeItem(STASH); return false; }
   ORD.name = dmy(today()); ORD.plan = planOrder(st.rows); const tk = new Set(st.ticks || []); ORD.plan.lines.forEach(l => { if (tk.has(l.id)) l.done = true; }); return true; } catch (e) { return false; } }
+// كمية "بطريقتنا": لو تغطية الرصيد أقل من الحد الأدنى للفئة (A 7 / B 10 / C 14 يوم) نطلب لحد الحد الأقصى (A 21 / B,C 45 / صفقات 35) من معدل البيع.
+// المعدل: بيع آخر 90 يوم من تحليل المخزون لو الصنف فيه، وإلا المتوسط الشهري من تقرير النواقص (÷30). صنف مش في التحليل بيتحسب كفئة B وبيتعلّم تقدير.
+function ourQty(it, avgMonthly, stock) {
+  const known = it && it.p90 != null && it.min != null, st = Math.max(0, +stock || 0);
+  const daily = known ? (it.p90 || 0) / 90 : (+avgMonthly || 0) / 30, mn = known ? it.min : 10, mx = known ? it.max : 45;
+  if (!(daily > 0)) return { q: 0, note: 'مفيش حركة بيع', est: !known };
+  const cover = st / daily; if (st > 0 && cover >= mn) return { q: 0, note: `الرصيد كافي (${Math.round(cover)} يوم)`, est: !known };
+  return { q: Math.max(1, Math.ceil(daily * mx - st)), note: `لحد ${mx} يوم`, est: !known };
+}
+const qtyOf = l => ORD.qm === 'ours' ? (l.qo || 0) : l.qty;
 function groupLines(lines) {
   const groups = {}; lines.forEach(l => (groups[l.sup || '—'] = groups[l.sup || '—'] || []).push(l));
   return Object.entries(groups).map(([sup, ls]) => { const a = ls.filter(l => l.disc != null), dv = sum(a, l => l.val);
@@ -573,7 +583,7 @@ function planOrder(rows) {
     const id = +r['الكود']; if (!id) return;
     const it = byId.get(id), ab = abOf(r), lastKnown = !!(ab && map[ab]), last = ab ? (map[ab] || ab) : null; if (ab && !map[ab]) unmapped.add(ab);
     const req = +r['المطلوب'] || 1, qty = Math.max(1, Math.ceil(req - 1e-9)), price = +r['السعر'] || 0, ld = last ? pctv(r['نسبة خصم اخر شراء']) : null;
-    const base = { id, name: String(r['الاسم'] || (it && it.name) || ''), qty, price, val: qty * price, last, ld, stock: r['الموجود'], note: String(r['ملاحظات'] || '').trim() };
+    const oq = ourQty(it, r['المتوسط'], r['الموجود']), base = { id, name: String(r['الاسم'] || (it && it.name) || ''), qty, req, price, val: qty * price, last, ld, stock: r['الموجود'], qo: oq.q, qoNote: oq.note, qoEst: oq.est, note: String(r['ملاحظات'] || '').trim() };
     if (doneToday.has(id)) { ordered.push({ ...base, note: 'اتسجل في طلبية النهارده — ' + (doneToday.get(id) || '') }); return; }
     if (/طلب من/.test(base.note)) { ordered.push(base); return; }
     const cand = candsOf(it), best = cand.find(c => c[3] >= 500) || cand[0];
@@ -592,7 +602,7 @@ function planOrder(rows) {
   return { lines, ordered, groups: gl, rev, unmapped: [...unmapped] };
 }
 const supLab = (P, s) => s === '—' ? 'محتاج تحديد مورد' : (P.rev[s] ? `${s} (${P.rev[s][0]})` : s);
-const waText = (P, g) => `طلبية من ${supLab(P, g.sup)} — ${ORD.name}\n` + g.ls.map(l => `• ${l.name} × ${l.qty}`).join('\n');
+const waText = (P, g) => `طلبية من ${supLab(P, g.sup)} — ${ORD.name}\n` + g.ls.filter(l => qtyOf(l) > 0).map(l => `• ${l.name} × ${qtyOf(l)}`).join('\n');
 function orderKpis(P) {
   const ls = P.lines, w = f => { const a = ls.filter(l => l[f] != null), v = sum(a, l => l.val); return v ? sum(a, l => l.val * l[f]) / v : null; };
   return { n: ls.length, val: sum(ls, l => l.val), dNew: w('disc'), dOld: w('ld'), sw: ls.filter(l => l.sw).length, save: sum(ls, l => l.save), unk: ls.filter(l => !l.sup).length };
@@ -600,14 +610,14 @@ function orderKpis(P) {
 function orderXl(P, only) {
   return loadXlsx().then(() => {
     const wb = XLSX.utils.book_new(); wb.Workbook = { Views: [{ RTL: true }] };
-    const head = ['الكود', 'الصنف', 'الكمية', 'السعر', 'الخصم المتوقع %', 'المورد الأخير', 'السبب'];
+    const head = ['الكود', 'الصنف', 'الكمية (' + (ORD.qm === 'ours' ? 'بطريقتنا' : 'السيستم') + ')', 'السعر', 'الخصم المتوقع %', 'المورد الأخير', 'السبب'];
     const gs = only == null ? P.groups.filter(g => g.sup !== '—') : [P.groups[only]];
     if (only == null) {
       const K = orderKpis(P), s0 = XLSX.utils.aoa_to_sheet([['ملخص طلبية النواقص — ' + ORD.name], [], ['المورد', 'عدد الأصناف', 'قيمة بيعية', 'متوسط الخصم المتوقع %'], ...P.groups.map(g => [supLab(P, g.sup), g.ls.length, Math.round(g.val), g.disc == null ? '' : +g.disc.toFixed(1)]), [], ['الإجمالي', K.n, Math.round(K.val), K.dNew == null ? '' : +K.dNew.toFixed(1)], ['وفر متوقع مقابل المورد الأخير (ج)', Math.round(K.save)]]);
       s0['!cols'] = [{ wch: 36 }, { wch: 12 }, { wch: 14 }, { wch: 22 }]; XLSX.utils.book_append_sheet(wb, s0, 'ملخص');
     }
     gs.forEach((g, i) => {
-      const aoa = [['طلبية من ' + supLab(P, g.sup) + ' — ' + ORD.name], [], head, ...g.ls.map(l => [l.id, l.name, l.qty, l.price, l.disc == null ? '' : +l.disc.toFixed(1), l.last || '', l.why + (l.small ? ' — ⚠ عينة صغيرة' : '')])];
+      const aoa = [['طلبية من ' + supLab(P, g.sup) + ' — ' + ORD.name], [], head, ...g.ls.filter(l => qtyOf(l) > 0).map(l => [l.id, l.name, qtyOf(l), l.price, l.disc == null ? '' : +l.disc.toFixed(1), l.last || '', l.why + (l.small ? ' — ⚠ عينة صغيرة' : '')])];
       const ws = XLSX.utils.aoa_to_sheet(aoa); ws['!cols'] = [{ wch: 9 }, { wch: 40 }, { wch: 8 }, { wch: 9 }, { wch: 14 }, { wch: 16 }, { wch: 34 }];
       XLSX.utils.book_append_sheet(wb, ws, supLab(P, g.sup).slice(0, 28).replace(/[\/\\?*\[\]:]/g, '-') || 'مورد' + i);
     });
@@ -621,7 +631,7 @@ async function loadOrderLog() {
 }
 async function saveOrder(P, ls) {
   const K = orderKpis({ lines: ls }), at = new Date().toISOString().slice(0, 16).replace('T', '_').replace(':', ''), rec = { at, date: today(), n: K.n, val: Math.round(K.val), dNew: K.dNew, dOld: K.dOld, sw: K.sw, save: Math.round(K.save),
-    lines: ls.map(l => [l.id, l.name, l.qty, l.price, l.sup, l.disc == null ? null : +l.disc.toFixed(1), l.last, l.ld == null ? null : +l.ld.toFixed(1), l.sw ? 1 : 0]) };
+    lines: ls.map(l => [l.id, l.name, qtyOf(l), l.price, l.sup, l.disc == null ? null : +l.disc.toFixed(1), l.last, l.ld == null ? null : +l.ld.toFixed(1), l.sw ? 1 : 0, l.qty, l.qo || 0]) };
   if (!DB) throw new Error('التسجيل بيشتغل على الموقع الحقيقي بس');
   await setDoc(doc(DB, 'purchasing', 'order_' + at), { d: JSON.stringify(rec), at }); (ORD.log = ORD.log || []).push(rec);
 }
@@ -641,10 +651,11 @@ function renderPlan() {
   const P = ORD.plan; if (!P) return '';
   const K = orderKpis(P);
   const cards = P.groups.map((g, i) => `<div class="ivcard" style="border-inline-start:5px solid ${g.sup === '—' ? '#C0392B' : '#1F9B76'}"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center"><h3 style="margin:0">${esc(supLab(P, g.sup))} <span class="sm" style="font-weight:400">· ${g.ls.length} صنف · ${M(g.val)}${g.disc != null ? ' · خصم متوقع ' + P1(g.disc) : ''}</span></h3>${g.sup === '—' ? '' : `<span style="display:flex;gap:6px;flex-wrap:wrap"><button class="sm" data-ord="wa:${i}">📋 انسخ رسالة واتساب</button><button class="sm ghost" data-ord="xl:${i}">📥 Excel</button></span>`}</div>
-    ${table([[l => `<input type="checkbox" class="ck" data-ck="${l.id}" ${l.done ? 'checked' : ''}>`, 'اتطلب ✓', 'raw'], ['id', 'الكود'], ['name', 'الصنف', 'nm'], ['qty', 'اطلب', 'n'], ['price', 'السعر', 'n'], [l => l.disc == null ? '—' : P1(l.disc), 'الخصم المتوقع', 'raw'], [l => l.last ? esc(supLab(P, l.last)) + (l.ld != null ? ' · ' + P1(l.ld) : '') : '—', 'المورد الأخير', 'raw'], [l => esc(l.why) + (l.small ? ' <b style="color:#C0392B">⚠ عينة صغيرة</b>' : ''), 'السبب', 'raw']], g.ls)}</div>`).join('');
+    ${table([[l => `<input type="checkbox" class="ck" data-ck="${l.id}" ${l.done ? 'checked' : ''}>`, 'اتطلب ✓', 'raw'], ['id', 'الكود'], ['name', 'الصنف', 'nm'], ['stock', 'رصيد', 'n'], ['qty', 'مطلوب (السيستم)', 'n'], [l => `<b>${l.qo ? N(l.qo) : '0'}</b> <span class="sm">${esc(l.qoNote)}${l.qoEst ? ' ~' : ''}</span>`, 'بطريقتنا', 'raw'], ['price', 'السعر', 'n'], [l => l.disc == null ? '—' : P1(l.disc), 'الخصم المتوقع', 'raw'], [l => l.last ? esc(supLab(P, l.last)) + (l.ld != null ? ' · ' + P1(l.ld) : '') : '—', 'المورد الأخير', 'raw'], [l => esc(l.why) + (l.small ? ' <b style="color:#C0392B">⚠ عينة صغيرة</b>' : ''), 'السبب', 'raw']], g.ls)}</div>`).join('');
   const od = P.ordered.length ? `<div class="ivcard"><h3>⏱ اتطلبت النهارده قبل كده (${P.ordered.length}) — مش داخلة في الطلبية</h3><p class="why">الأصناف دي إما اتحفظت في طلبية النهارده، أو الملف نفسه عليه ملاحظة "طلب من 0 يوم". استبعدتها علشان متتطلبش مرتين.</p>${table([['id', 'الكود'], ['name', 'الصنف', 'nm'], ['qty', 'مطلوب', 'n'], ['note', 'الملاحظة']], P.ordered)}</div>` : '';
   const un = P.unmapped.length ? `<p class="sm">أكواد موردين مقدرتش أربطها باسم مورد (بتظهر زي ما هي): <b>${esc(P.unmapped.join('، '))}</b></p>` : '';
   return `<div class="ivgrid">${kpi('أصناف الطلبية', N(K.n), `${N(P.groups.filter(g => g.sup !== '—').length)} مورد`)}${kpi('قيمة الطلبية (بيعي)', M(K.val), 'الكمية بعد التقريب لأعلى')}${kpi('متوسط الخصم المتوقع', P1(K.dNew), K.dOld != null ? 'المورد الأخير كان ' + P1(K.dOld) : '')}${kpi('وفر متوقع', M(K.save), `${N(K.sw)} صنف اتحولوا لمورد أعلى خصم`)}${kpi('محتاجة مورد', N(K.unk), 'مفيش سجل شراء ليها', K.unk ? 'r' : '')}</div>
+  <p class="sm" style="margin:10px 0 4px"><b>الكمية في رسائل الواتساب والإكسل:</b> <label style="margin-inline:8px"><input type="radio" name="qm" value="sys" ${ORD.qm === 'sys' ? 'checked' : ''}> مطلوب السيستم</label><label><input type="radio" name="qm" value="ours" ${ORD.qm === 'ours' ? 'checked' : ''}> بطريقتنا (الأصناف اللي رصيدها كافي بتتشال)</label> <span class="sm">· علامة ~ = الصنف مش في تحليل المخزون فاتحسب بتقدير (فئة B ومتوسط التقرير)</span></p>
   <p style="margin:10px 0"><button data-ord="xl:all">📥 كل الطلبية (Excel — شيت لكل مورد)</button> <button id="ordSaveBtn" data-ord="save" ${P.lines.some(l => l.done) ? '' : 'disabled'}>💾 حفظ الأصناف اللي اتطلبت (${P.lines.filter(l => l.done).length}) وشيلها من الطلبية</button> <span class="note" id="ordMsg"></span></p><p class="sm" style="margin:0 0 8px">علّم ✓ قدام كل صنف بعد ما تطلبه من المورد، وفي الآخر اضغط "حفظ" — الأصناف المعلّمة بتتشال، ويفضل قدامك اللي لسه متطلبش. لو رفعت ملف نواقص تاني النهارده، اللي اتحفظ مش هيرجع.</p>${un}${cards}${od}`;
 }
 function renderLog() {
@@ -679,6 +690,7 @@ function vOrders() {
     };
     c.onchange = async e => {
       const t = e.target;
+      if (t.name === 'qm') { ORD.qm = t.value; return; }
       if (t.dataset && t.dataset.ck) { const l = ORD.plan && ORD.plan.lines.find(x => x.id === +t.dataset.ck); if (l) l.done = t.checked; const bt = $('#ordSaveBtn', ROOT), n = ORD.plan.lines.filter(x => x.done).length; stashTicks(); if (bt) { bt.disabled = !n; bt.textContent = `💾 حفظ الأصناف اللي اتطلبت (${n}) وشيلها من الطلبية`; } return; }
       if (t.id !== 'upAny' || !t.files.length) return; const m = $('#ordUpMsg', ROOT), out = [], files = [...t.files]; m.textContent = 'بيقرا الملفات…';
       if (ORD.buys == null) { try { await loadBuys(); } catch (err) { ORD.buys = []; } }
