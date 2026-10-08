@@ -564,11 +564,19 @@ function ourQty(it, avgMonthly, stock) {
   const cover = st / daily; if (st > 0 && cover >= mn) return { q: 0, note: `الرصيد كافي (${Math.round(cover)} يوم)`, est: !known };
   return { q: Math.max(1, Math.ceil(daily * mx - st)), note: `لحد ${mx} يوم`, est: !known };
 }
-const qtyOf = l => ORD.qm === 'ours' ? (l.qo || 0) : l.qty;
+const qtyOf = l => ORD.qm === 'ours' ? (l.qo || 0) : l.qty, valOf = l => qtyOf(l) * l.price;
+// فرق كبير بين الكميتين: واحدة ضعف التانية أو أكتر والفرق 3 عبوات على الأقل (طريقتنا 0 بتتحسب كأنها 1)
+const gapOf = l => { const s = l.qty, q = l.qo || 0; return Math.abs(s - q) >= 3 && Math.max(s, q) >= 2 * Math.max(1, Math.min(s, q)); };
+// القيمة والخصم والوفر بيتحسبوا بالكمية المختارة (السيستم / طريقتنا)، والأصناف اللي كميتها 0 مش داخلة
+function lineKpis(lines) {
+  const ls = lines.filter(l => qtyOf(l) > 0), w = f => { const a = ls.filter(l => l[f] != null), v = sum(a, valOf); return v ? sum(a, l => valOf(l) * l[f]) / v : null; };
+  return { n: ls.length, val: sum(ls, valOf), dNew: w('disc'), dOld: w('ld'), sw: ls.filter(l => l.sw).length, save: sum(ls, l => l.sw && l.dl != null ? valOf(l) * l.dl / 100 : 0), unk: ls.filter(l => !l.sup).length };
+}
 function groupLines(lines) {
   const groups = {}; lines.forEach(l => (groups[l.sup || '—'] = groups[l.sup || '—'] || []).push(l));
-  return Object.entries(groups).map(([sup, ls]) => { const a = ls.filter(l => l.disc != null), dv = sum(a, l => l.val);
-    return { sup, ls, val: sum(ls, l => l.val), disc: dv ? sum(a, l => l.val * l.disc) / dv : null }; }).sort((a, b) => ((a.sup === '—') - (b.sup === '—')) || b.val - a.val);
+  // جوه كل مورد: الأصناف اللي محتاجة مراجعة (فرق كبير أو تقدير ~) الأول
+  return Object.entries(groups).map(([sup, ls]) => ({ sup, ls: ls.sort((a, b) => (b.gap || b.qoEst) - (a.gap || a.qoEst)), sv: sum(ls, l => l.val) }))
+    .sort((a, b) => ((a.sup === '—') - (b.sup === '—')) || b.sv - a.sv);
 }
 function planOrder(rows) {
   const byId = new Map(IT.map(x => [x.id, x])), votes = {}, map = {}, rev = {};
@@ -587,33 +595,30 @@ function planOrder(rows) {
     if (doneToday.has(id)) { ordered.push({ ...base, note: 'اتسجل في طلبية النهارده — ' + (doneToday.get(id) || '') }); return; }
     if (/طلب من/.test(base.note)) { ordered.push(base); return; }
     const cand = candsOf(it), best = cand.find(c => c[3] >= 500) || cand[0];
-    let sup = null, disc = null, why = 'محتاج تحديد مورد', sw = false, save = 0, small = false;
+    let sup = null, disc = null, why = 'محتاج تحديد مورد', sw = false, dl = null, small = false;
     if (!best) { if (last) { sup = last; disc = ld; why = 'المورد الأخير (مفيش بديل مقارن)'; } }
     else {
       small = best[2] === 1 || best[3] < 500;
       if (!last) { sup = best[0]; disc = best[1]; why = 'أعلى خصم (مفيش مورد سابق)'; }
       else if (lastKnown && last === best[0]) { sup = last; disc = ld != null ? ld : best[1]; why = 'هو أعلى خصم'; small = false; }
       else if (ld != null && best[1] - ld < MINSW) { sup = last; disc = ld; why = 'المورد الأخير (الفرق أقل من ' + MINSW + ' نقطة)'; small = false; }
-      else { sup = best[0]; disc = best[1]; sw = true; why = 'أعلى خصم' + (ld != null ? ` (+${(best[1] - ld).toFixed(1)} نقطة)` : ''); save = ld != null ? base.val * (best[1] - ld) / 100 : 0; }
+      else { sup = best[0]; disc = best[1]; sw = true; why = 'أعلى خصم' + (ld != null ? ` (+${(best[1] - ld).toFixed(1)} نقطة)` : ''); dl = ld != null ? best[1] - ld : null; }
     }
-    lines.push({ ...base, sup, disc, why, sw, save, small });
+    lines.push({ ...base, sup, disc, why, sw, dl, small, gap: gapOf(base) });
   });
   const gl = groupLines(lines);
   return { lines, ordered, groups: gl, rev, unmapped: [...unmapped] };
 }
 const supLab = (P, s) => s === '—' ? 'محتاج تحديد مورد' : (P.rev[s] ? `${s} (${P.rev[s][0]})` : s);
 const waText = (P, g) => `طلبية من ${supLab(P, g.sup)} — ${ORD.name}\n` + g.ls.filter(l => qtyOf(l) > 0).map(l => `• ${l.name} × ${qtyOf(l)}`).join('\n');
-function orderKpis(P) {
-  const ls = P.lines, w = f => { const a = ls.filter(l => l[f] != null), v = sum(a, l => l.val); return v ? sum(a, l => l.val * l[f]) / v : null; };
-  return { n: ls.length, val: sum(ls, l => l.val), dNew: w('disc'), dOld: w('ld'), sw: ls.filter(l => l.sw).length, save: sum(ls, l => l.save), unk: ls.filter(l => !l.sup).length };
-}
+const orderKpis = P => lineKpis(P.lines);
 function orderXl(P, only) {
   return loadXlsx().then(() => {
     const wb = XLSX.utils.book_new(); wb.Workbook = { Views: [{ RTL: true }] };
     const head = ['الكود', 'الصنف', 'الكمية (' + (ORD.qm === 'ours' ? 'بطريقتنا' : 'السيستم') + ')', 'السعر', 'الخصم المتوقع %', 'المورد الأخير', 'السبب'];
     const gs = only == null ? P.groups.filter(g => g.sup !== '—') : [P.groups[only]];
     if (only == null) {
-      const K = orderKpis(P), s0 = XLSX.utils.aoa_to_sheet([['ملخص طلبية النواقص — ' + ORD.name], [], ['المورد', 'عدد الأصناف', 'قيمة بيعية', 'متوسط الخصم المتوقع %'], ...P.groups.map(g => [supLab(P, g.sup), g.ls.length, Math.round(g.val), g.disc == null ? '' : +g.disc.toFixed(1)]), [], ['الإجمالي', K.n, Math.round(K.val), K.dNew == null ? '' : +K.dNew.toFixed(1)], ['وفر متوقع مقابل المورد الأخير (ج)', Math.round(K.save)]]);
+      const K = orderKpis(P), s0 = XLSX.utils.aoa_to_sheet([['ملخص طلبية النواقص — ' + ORD.name], [], ['المورد', 'عدد الأصناف', 'قيمة بيعية', 'متوسط الخصم المتوقع %'], ...P.groups.map(g => { const G = lineKpis(g.ls); return [supLab(P, g.sup), G.n, Math.round(G.val), G.dNew == null ? '' : +G.dNew.toFixed(1)]; }), [], ['الإجمالي', K.n, Math.round(K.val), K.dNew == null ? '' : +K.dNew.toFixed(1)], ['وفر متوقع مقابل المورد الأخير (ج)', Math.round(K.save)]]);
       s0['!cols'] = [{ wch: 36 }, { wch: 12 }, { wch: 14 }, { wch: 22 }]; XLSX.utils.book_append_sheet(wb, s0, 'ملخص');
     }
     gs.forEach((g, i) => {
@@ -650,12 +655,13 @@ function dayStats(b) {
 function renderPlan() {
   const P = ORD.plan; if (!P) return '';
   const K = orderKpis(P);
-  const cards = P.groups.map((g, i) => `<div class="ivcard" style="border-inline-start:5px solid ${g.sup === '—' ? '#C0392B' : '#1F9B76'}"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center"><h3 style="margin:0">${esc(supLab(P, g.sup))} <span class="sm" style="font-weight:400">· ${g.ls.length} صنف · ${M(g.val)}${g.disc != null ? ' · خصم متوقع ' + P1(g.disc) : ''}</span></h3>${g.sup === '—' ? '' : `<span style="display:flex;gap:6px;flex-wrap:wrap"><button class="sm" data-ord="wa:${i}">📋 انسخ رسالة واتساب</button><button class="sm ghost" data-ord="xl:${i}">📥 Excel</button></span>`}</div>
-    ${table([[l => `<input type="checkbox" class="ck" data-ck="${l.id}" ${l.done ? 'checked' : ''}>`, 'اتطلب ✓', 'raw'], ['id', 'الكود'], ['name', 'الصنف', 'nm'], ['stock', 'رصيد', 'n'], ['qty', 'مطلوب (السيستم)', 'n'], [l => `<b>${l.qo ? N(l.qo) : '0'}</b> <span class="sm">${esc(l.qoNote)}${l.qoEst ? ' ~' : ''}</span>`, 'بطريقتنا', 'raw'], ['price', 'السعر', 'n'], [l => l.disc == null ? '—' : P1(l.disc), 'الخصم المتوقع', 'raw'], [l => l.last ? esc(supLab(P, l.last)) + (l.ld != null ? ' · ' + P1(l.ld) : '') : '—', 'المورد الأخير', 'raw'], [l => esc(l.why) + (l.small ? ' <b style="color:#C0392B">⚠ عينة صغيرة</b>' : ''), 'السبب', 'raw']], g.ls)}</div>`).join('');
+  const cards = P.groups.map((g, i) => { const G = lineKpis(g.ls); return `<div class="ivcard" style="border-inline-start:5px solid ${g.sup === '—' ? '#C0392B' : '#1F9B76'}"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center"><h3 style="margin:0">${esc(supLab(P, g.sup))} <span class="sm" style="font-weight:400">· ${G.n} صنف · ${M(G.val)}${G.dNew != null ? ' · خصم متوقع ' + P1(G.dNew) : ''}</span></h3>${g.sup === '—' ? '' : `<span style="display:flex;gap:6px;flex-wrap:wrap"><button class="sm" data-ord="wa:${i}">📋 انسخ رسالة واتساب</button><button class="sm ghost" data-ord="xl:${i}">📥 Excel</button></span>`}</div>
+    ${table([[l => `<input type="checkbox" class="ck" data-ck="${l.id}" ${l.done ? 'checked' : ''}>`, 'اتطلب ✓', 'raw'], ['id', 'الكود'], ['name', 'الصنف', 'nm'], ['stock', 'رصيد', 'n'], ['qty', 'مطلوب (السيستم)', 'n'], [l => `<b${l.gap ? ` style="background:#FFD8A8;color:#8A3B00;padding:1px 6px;border-radius:4px" title="فرق كبير عن السيستم"` : ''}>${l.gap ? (l.qo > l.qty ? '▲ ' : '▼ ') : ''}${l.qo ? N(l.qo) : '0'}</b> <span class="sm">${esc(l.qoNote)}${l.qoEst ? ' ~' : ''}</span>`, 'بطريقتنا', 'raw'], ['price', 'السعر', 'n'], [l => l.disc == null ? '—' : P1(l.disc), 'الخصم المتوقع', 'raw'], [l => l.last ? esc(supLab(P, l.last)) + (l.ld != null ? ' · ' + P1(l.ld) : '') : '—', 'المورد الأخير', 'raw'], [l => esc(l.why) + (l.small ? ' <b style="color:#C0392B">⚠ عينة صغيرة</b>' : ''), 'السبب', 'raw']], g.ls)}</div>`; }).join('');
   const od = P.ordered.length ? `<div class="ivcard"><h3>⏱ اتطلبت النهارده قبل كده (${P.ordered.length}) — مش داخلة في الطلبية</h3><p class="why">الأصناف دي إما اتحفظت في طلبية النهارده، أو الملف نفسه عليه ملاحظة "طلب من 0 يوم". استبعدتها علشان متتطلبش مرتين.</p>${table([['id', 'الكود'], ['name', 'الصنف', 'nm'], ['qty', 'مطلوب', 'n'], ['note', 'الملاحظة']], P.ordered)}</div>` : '';
   const un = P.unmapped.length ? `<p class="sm">أكواد موردين مقدرتش أربطها باسم مورد (بتظهر زي ما هي): <b>${esc(P.unmapped.join('، '))}</b></p>` : '';
-  return `<div class="ivgrid">${kpi('أصناف الطلبية', N(K.n), `${N(P.groups.filter(g => g.sup !== '—').length)} مورد`)}${kpi('قيمة الطلبية (بيعي)', M(K.val), 'الكمية بعد التقريب لأعلى')}${kpi('متوسط الخصم المتوقع', P1(K.dNew), K.dOld != null ? 'المورد الأخير كان ' + P1(K.dOld) : '')}${kpi('وفر متوقع', M(K.save), `${N(K.sw)} صنف اتحولوا لمورد أعلى خصم`)}${kpi('محتاجة مورد', N(K.unk), 'مفيش سجل شراء ليها', K.unk ? 'r' : '')}</div>
+  return `<div class="ivgrid">${kpi('أصناف الطلبية', N(K.n), `${N(P.groups.filter(g => g.sup !== '—').length)} مورد`)}${kpi('قيمة الطلبية (بيعي)', M(K.val), 'بكمية ' + (ORD.qm === 'ours' ? 'طريقتنا' : 'السيستم'))}${kpi('متوسط الخصم المتوقع', P1(K.dNew), K.dOld != null ? 'المورد الأخير كان ' + P1(K.dOld) : '')}${kpi('وفر متوقع', M(K.save), `${N(K.sw)} صنف اتحولوا لمورد أعلى خصم`)}${kpi('محتاجة مورد', N(K.unk), 'مفيش سجل شراء ليها', K.unk ? 'r' : '')}</div>
   <p class="sm" style="margin:10px 0 4px"><b>الكمية في رسائل الواتساب والإكسل:</b> <label style="margin-inline:8px"><input type="radio" name="qm" value="sys" ${ORD.qm === 'sys' ? 'checked' : ''}> مطلوب السيستم</label><label><input type="radio" name="qm" value="ours" ${ORD.qm === 'ours' ? 'checked' : ''}> بطريقتنا (الأصناف اللي رصيدها كافي بتتشال)</label> <span class="sm">· علامة ~ = الصنف مش في تحليل المخزون فاتحسب بتقدير (فئة B ومتوسط التقرير)</span></p>
+  <p class="sm" style="margin:0 0 4px">القيمة والخصم والوفر فوق بيتحسبوا بالكمية المختارة. <b style="background:#FFD8A8;color:#8A3B00;padding:1px 6px;border-radius:4px">▲/▼ برتقالي</b> = فرق كبير بين طريقتنا والسيستم (ضعف أو أكتر وفرق 3 عبوات على الأقل؛ ▲ طريقتنا أكتر، ▼ أقل) — <b>${N(P.lines.filter(l => l.gap).length)}</b> صنف، و<b>${N(P.lines.filter(l => l.qoEst).length)}</b> صنف بتقدير ~. الأصناف دي في أول كل مورد علشان تراجعها بالعين.</p>
   <p style="margin:10px 0"><button data-ord="xl:all">📥 كل الطلبية (Excel — شيت لكل مورد)</button> <button id="ordSaveBtn" data-ord="save" ${P.lines.some(l => l.done) ? '' : 'disabled'}>💾 حفظ الأصناف اللي اتطلبت (${P.lines.filter(l => l.done).length}) وشيلها من الطلبية</button> <span class="note" id="ordMsg"></span></p><p class="sm" style="margin:0 0 8px">علّم ✓ قدام كل صنف بعد ما تطلبه من المورد، وفي الآخر اضغط "حفظ" — الأصناف المعلّمة بتتشال، ويفضل قدامك اللي لسه متطلبش. لو رفعت ملف نواقص تاني النهارده، اللي اتحفظ مش هيرجع.</p>${un}${cards}${od}`;
 }
 function renderLog() {
@@ -690,7 +696,7 @@ function vOrders() {
     };
     c.onchange = async e => {
       const t = e.target;
-      if (t.name === 'qm') { ORD.qm = t.value; return; }
+      if (t.name === 'qm') { ORD.qm = t.value; plan(); return; }
       if (t.dataset && t.dataset.ck) { const l = ORD.plan && ORD.plan.lines.find(x => x.id === +t.dataset.ck); if (l) l.done = t.checked; const bt = $('#ordSaveBtn', ROOT), n = ORD.plan.lines.filter(x => x.done).length; stashTicks(); if (bt) { bt.disabled = !n; bt.textContent = `💾 حفظ الأصناف اللي اتطلبت (${n}) وشيلها من الطلبية`; } return; }
       if (t.id !== 'upAny' || !t.files.length) return; const m = $('#ordUpMsg', ROOT), out = [], files = [...t.files]; m.textContent = 'بيقرا الملفات…';
       if (ORD.buys == null) { try { await loadBuys(); } catch (err) { ORD.buys = []; } }
