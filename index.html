@@ -399,7 +399,7 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="adm" class="hide"></div>
 <div id="buyer" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-08-K</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-08-L</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -841,7 +841,7 @@ onAuthStateChanged(auth, async user => {
 async function renderBuyer(){
   const b = $('buyer'); b.classList.remove('hide');
   b.innerHTML = `<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div><h2 style="margin:0">🛒 طلبية النواقص</h2><p class="sub" style="margin:2px 0 0">مسؤول المشتريات</p></div><button class="ghost sm" onclick="doOut()">خروج</button></div><div id="buyerRoot"></div>`;
-  try { const m = await import('./sections/inventory.js?v=16'); await m.mountBuyer($('buyerRoot')); }
+  try { const m = await import('./sections/inventory.js?v=17'); await m.mountBuyer($('buyerRoot')); }
   catch (e) { $('buyerRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل الشاشة: ${esc(e.code || e.message)}</div>`; }
 }
 
@@ -2319,7 +2319,7 @@ function renderAdmin(){
 let INV_ON = false;
 async function openInventory(){
   if (INV_ON) return; INV_ON = true;
-  try { const m = await import('./sections/inventory.js?v=16'); await m.mountInventory($('stockRoot'), ROLE); }
+  try { const m = await import('./sections/inventory.js?v=17'); await m.mountInventory($('stockRoot'), ROLE); }
   catch (e) { INV_ON = false; $('stockRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل قسم المخزون: ${esc(e.code || e.message)}</div>`; }
 }
 
