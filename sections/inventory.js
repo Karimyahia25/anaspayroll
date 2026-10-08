@@ -555,11 +555,13 @@ function stashPlan(rows) { try { const keep = ['الكود', 'الاسم', 'ال
 function stashTicks() { try { const st = JSON.parse(localStorage.getItem(STASH) || 'null'); if (!st || !ORD.plan) return; st.ticks = ORD.plan.lines.filter(l => l.done).map(l => l.id); localStorage.setItem(STASH, JSON.stringify(st)); } catch (e) {} }
 function restorePlan() { try { const st = JSON.parse(localStorage.getItem(STASH) || 'null'); if (!st || st.date !== today()) { localStorage.removeItem(STASH); return false; }
   ORD.name = dmy(today()); ORD.plan = planOrder(st.rows); const tk = new Set(st.ticks || []); ORD.plan.lines.forEach(l => { if (tk.has(l.id)) l.done = true; }); return true; } catch (e) { return false; } }
-// كمية "بطريقتنا": لو تغطية الرصيد أقل من الحد الأدنى للفئة (A 7 / B 10 / C 14 يوم) نطلب لحد الحد الأقصى (A 21 / B,C 45 / صفقات 35) من معدل البيع.
-// المعدل: بيع آخر 90 يوم من تحليل المخزون لو الصنف فيه، وإلا المتوسط الشهري من تقرير النواقص (÷30). صنف مش في التحليل بيتحسب كفئة B وبيتعلّم تقدير.
+// كمية "بطريقتنا": لو تغطية الرصيد أقل من الحد الأدنى للفئة (A 7 / B 10 / C 14 يوم) نطلب لحد تغطية الطلبية (A 10 / B 21 / C 30 يوم) من معدل البيع، وأقل حاجة علبة.
+// تغطية الطلبية أقل من "حد الفائض" بتاع التحليل (21/45) لأن الموردين بيوصلوا يومياً. صنف C بطيء من غير رصيد بيطلع علبة واحدة.
+// المعدل: بيع آخر 90 يوم من تحليل المخزون لو متاح، وإلا المتوسط الشهري من تقرير النواقص (÷30). صنف مش في التحليل بيتحسب كفئة B وبيتعلّم تقدير.
+const ORD_MIN = { A: 7, B: 10, C: 14 }, ORD_DAYS = { A: 10, B: 21, C: 30 };
 function ourQty(it, avgMonthly, stock) {
-  const known = it && it.p90 != null && it.min != null, st = Math.max(0, +stock || 0);
-  const daily = known ? (it.p90 || 0) / 90 : (+avgMonthly || 0) / 30, mn = known ? it.min : 10, mx = known ? it.max : 45;
+  const cls = it && ORD_DAYS[it.abc] ? it.abc : null, st = Math.max(0, +stock || 0), rate = it && it.p90 != null;
+  const daily = rate ? (it.p90 || 0) / 90 : (+avgMonthly || 0) / 30, mn = ORD_MIN[cls || 'B'], mx = ORD_DAYS[cls || 'B'], known = !!cls;
   if (!(daily > 0)) return { q: 0, note: 'مفيش حركة بيع', est: !known };
   const cover = st / daily; if (st > 0 && cover >= mn) return { q: 0, note: `الرصيد كافي (${Math.round(cover)} يوم)`, est: !known };
   return { q: Math.max(1, Math.ceil(daily * mx - st)), note: `لحد ${mx} يوم`, est: !known };
@@ -660,7 +662,7 @@ function renderPlan() {
   const od = P.ordered.length ? `<div class="ivcard"><h3>⏱ اتطلبت النهارده قبل كده (${P.ordered.length}) — مش داخلة في الطلبية</h3><p class="why">الأصناف دي إما اتحفظت في طلبية النهارده، أو الملف نفسه عليه ملاحظة "طلب من 0 يوم". استبعدتها علشان متتطلبش مرتين.</p>${table([['id', 'الكود'], ['name', 'الصنف', 'nm'], ['qty', 'مطلوب', 'n'], ['note', 'الملاحظة']], P.ordered)}</div>` : '';
   const un = P.unmapped.length ? `<p class="sm">أكواد موردين مقدرتش أربطها باسم مورد (بتظهر زي ما هي): <b>${esc(P.unmapped.join('، '))}</b></p>` : '';
   return `<div class="ivgrid">${kpi('أصناف الطلبية', N(K.n), `${N(P.groups.filter(g => g.sup !== '—').length)} مورد`)}${kpi('قيمة الطلبية (بيعي)', M(K.val), 'بكمية ' + (ORD.qm === 'ours' ? 'طريقتنا' : 'السيستم'))}${kpi('متوسط الخصم المتوقع', P1(K.dNew), K.dOld != null ? 'المورد الأخير كان ' + P1(K.dOld) : '')}${kpi('وفر متوقع', M(K.save), `${N(K.sw)} صنف اتحولوا لمورد أعلى خصم`)}${kpi('محتاجة مورد', N(K.unk), 'مفيش سجل شراء ليها', K.unk ? 'r' : '')}</div>
-  <p class="sm" style="margin:10px 0 4px"><b>الكمية في رسائل الواتساب والإكسل:</b> <label style="margin-inline:8px"><input type="radio" name="qm" value="sys" ${ORD.qm === 'sys' ? 'checked' : ''}> مطلوب السيستم</label><label><input type="radio" name="qm" value="ours" ${ORD.qm === 'ours' ? 'checked' : ''}> بطريقتنا (الأصناف اللي رصيدها كافي بتتشال)</label> <span class="sm">· علامة ~ = الصنف مش في تحليل المخزون فاتحسب بتقدير (فئة B ومتوسط التقرير)</span></p>
+  <p class="sm" style="margin:10px 0 4px"><b>الكمية في رسائل الواتساب والإكسل:</b> <label style="margin-inline:8px"><input type="radio" name="qm" value="sys" ${ORD.qm === 'sys' ? 'checked' : ''}> مطلوب السيستم</label><label><input type="radio" name="qm" value="ours" ${ORD.qm === 'ours' ? 'checked' : ''}> بطريقتنا (الأصناف اللي رصيدها كافي بتتشال)</label> <span class="sm">· بطريقتنا = لو الرصيد أقل من ${ORD_MIN.A}/${ORD_MIN.B}/${ORD_MIN.C} يوم نطلب لحد ${ORD_DAYS.A}/${ORD_DAYS.B}/${ORD_DAYS.C} يوم (فئة A/B/C) · علامة ~ = الصنف مش في تحليل المخزون فاتحسب كفئة B بمتوسط التقرير</span></p>
   <p class="sm" style="margin:0 0 4px">القيمة والخصم والوفر فوق بيتحسبوا بالكمية المختارة. <b style="background:#FFD8A8;color:#8A3B00;padding:1px 6px;border-radius:4px">▲/▼ برتقالي</b> = فرق كبير بين طريقتنا والسيستم (ضعف أو أكتر وفرق 3 عبوات على الأقل؛ ▲ طريقتنا أكتر، ▼ أقل) — <b>${N(P.lines.filter(l => l.gap).length)}</b> صنف، و<b>${N(P.lines.filter(l => l.qoEst).length)}</b> صنف بتقدير ~. الأصناف دي في أول كل مورد علشان تراجعها بالعين.</p>
   <p style="margin:10px 0"><button data-ord="xl:all">📥 كل الطلبية (Excel — شيت لكل مورد)</button> <button id="ordSaveBtn" data-ord="save" ${P.lines.some(l => l.done) ? '' : 'disabled'}>💾 حفظ الأصناف اللي اتطلبت (${P.lines.filter(l => l.done).length}) وشيلها من الطلبية</button> <span class="note" id="ordMsg"></span></p><p class="sm" style="margin:0 0 8px">علّم ✓ قدام كل صنف بعد ما تطلبه من المورد، وفي الآخر اضغط "حفظ" — الأصناف المعلّمة بتتشال، ويفضل قدامك اللي لسه متطلبش. لو رفعت ملف نواقص تاني النهارده، اللي اتحفظ مش هيرجع.</p>${un}${cards}${od}`;
 }
@@ -722,11 +724,11 @@ async function syncBuyerData() {
   const st = $('#buyerSync', ROOT); if (!DB || ROLE !== 'admin' || !st) return;
   try {
     const m = await getDoc(doc(DB, 'purchasing', 'data_meta'));
-    if (m.exists() && m.data().at === B.at) { st.textContent = 'بيانات مسؤول المشتريات محدّثة ✓'; return; }
+    if (m.exists() && m.data().at === B.at && m.data().v === 2) { st.textContent = 'بيانات مسؤول المشتريات محدّثة ✓'; return; }
     st.textContent = 'بيحدّث بيانات مسؤول المشتريات…';
-    const rows = IT.filter(x => x.sd || x.sup3).map(x => [x.id, x.name, x.sup3 || null, x.grp, x.sd || null]), per = 900, n = Math.ceil(rows.length / per);
+    const rows = IT.filter(x => x.sd || x.sup3).map(x => [x.id, x.name, x.sup3 || null, x.grp, x.sd || null, x.abc || null]), per = 900, n = Math.ceil(rows.length / per);
     for (let i = 0; i < n; i++) await setDoc(doc(DB, 'purchasing', 'data_items_' + i), { d: JSON.stringify(rows.slice(i * per, (i + 1) * per)) });
-    const k = B.kpi; await setDoc(doc(DB, 'purchasing', 'data_meta'), { d: JSON.stringify({ kpi: { discAvg: k.discAvg, discMed: k.discMed, discCos: k.discCos, buyEnd: k.buyEnd }, sdx: B.sdx || {} }), chunks: n, at: B.at });
+    const k = B.kpi; await setDoc(doc(DB, 'purchasing', 'data_meta'), { d: JSON.stringify({ kpi: { discAvg: k.discAvg, discMed: k.discMed, discCos: k.discCos, buyEnd: k.buyEnd }, sdx: B.sdx || {} }), chunks: n, at: B.at, v: 2 });
     st.textContent = 'بيانات مسؤول المشتريات اتحدّثت ✓';
   } catch (e) { st.textContent = 'تحديث بيانات مسؤول المشتريات فشل: ' + (e.code || e.message) + (e.code === 'permission-denied' ? ' — حط قواعد Firebase الجديدة الأول' : ''); }
 }
@@ -753,7 +755,7 @@ export async function mountBuyer(root) {
     if (!m.exists()) { root.innerHTML = '<div class="banner">البيانات لسه متجهزتش. اطلب من مدير الفرع يفتح تبويب طلبية النواقص مرة واحدة.</div>'; return; }
     const meta = JSON.parse(m.data().d), parts = [];
     for (let i = 0; i < m.data().chunks; i++) { const c = await getDoc(doc(DB, 'purchasing', 'data_items_' + i)); parts.push(...JSON.parse(c.data().d)); }
-    IT = parts.map(r => ({ id: r[0], name: r[1], sup3: r[2], grp: r[3], sd: r[4] })); B = { kpi: meta.kpi, sdx: meta.sdx, at: m.data().at };
+    IT = parts.map(r => ({ id: r[0], name: r[1], sup3: r[2], grp: r[3], sd: r[4], abc: r[5] })); B = { kpi: meta.kpi, sdx: meta.sdx, at: m.data().at };
   } catch (e) { root.innerHTML = `<div class="banner bad">مقدرتش أحمّل البيانات: ${esc(e.code || e.message)}</div>`; return; }
   root.innerHTML = '<div id="ivbody"></div>'; VIEW = 'or'; const r = vOrders(), c = $('#ivbody', root); c.innerHTML = r.html; sortable(c); r.after();
 }
