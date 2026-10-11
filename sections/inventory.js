@@ -791,6 +791,25 @@ export async function mountBuyer(root) {
   root.innerHTML = '<div id="ivbody"></div>'; VIEW = 'or'; const r = vOrders(), c = $('#ivbody', root); c.innerHTML = r.html; sortable(c); r.after();
 }
 
+/* ---------- تحديث التحليل: امتى آخر مرة + الملفات المطلوبة ---------- */
+const FILES = [
+  ['📦 تقرير المخزون (رصيد الأصناف)', 'النهارده — لقطة الرصيد الحالي'],
+  ['🔄 حركة الأصناف 2026', 'من 1 يناير لحد النهارده (ملف واحد)'],
+  ['🧾 مبيعات 2026 (فيه "كود البيع")', 'من 1 يناير لحد النهارده (ملف واحد)'],
+  ['🛒 المشتريات — شهر بشهر', 'آخر 3 شهور كل شهر في ملف بتاريخ من/إلى، والشهر الحالي من 1 لحد النهارده (التقرير نفسه مفيهوش تواريخ)'],
+  ['⏳ تقرير الصلاحية (اكسبير)', 'لحد 6 شهور قدام على الأقل'],
+  ['🕸 أصناف لم تبع منذ 210 يوم', 'النهارده']
+];
+const FILES_OK = 'مش لازم تتعاد: مبيعات 2025 · مرتجعات 2025 · تقرير مشتريات السنة. وتقرير النواقص ومشتريات امبارح بيترفعوا في تبويب طلبية النواقص مش هنا.';
+function fillFresh() {
+  const e = $('#ivfresh', ROOT); if (!e || !B) return;
+  const ref = B.kpi.refDate, d = Math.floor((new Date(today() + 'T00:00:00') - new Date(ref + 'T00:00:00')) / 864e5), late = d > 7, c = late ? '#C0392B' : d > 4 ? '#E67E22' : '#1F9B76';
+  e.innerHTML = `<div class="ivcard" style="border-inline-start:5px solid ${c}"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center"><div><b>آخر تحديث للتحليل:</b> ${esc(B.at)} · البيانات لحد <b>${dmy(ref)}</b> — <b style="color:${c}">من ${d} يوم${late ? ' · محتاج تحديث' : ''}</b></div>
+    <button class="sm ghost" onclick="var x=document.getElementById('ivfiles');x.style.display=x.style.display==='none'?'block':'none'">📋 الملفات المطلوبة للتحديث</button></div>
+    <div id="ivfiles" style="display:none;margin-top:10px"><p class="why">لتحديث التحليل (مرة في الأسبوع) صدّر الملفات دي من السيستم وحطها في فولدر <b>stock/ملفات المخزون الكبيره</b>، وقولي أشغّل التحليل وأرفع النتيجة:</p>
+    <ol style="margin:6px 0;padding-inline-start:22px">${FILES.map(f => `<li style="margin:5px 0"><b>${f[0]}</b> — <span class="sm">${f[1]}</span></li>`).join('')}</ol><p class="sm">${FILES_OK}</p></div></div>`;
+}
+
 /* ---------- المحرك ---------- */
 const RENDER = { ov: vOverview, dc: vDecisions, it: vItems, sp: vSuppliers, or: vOrders, pf: vProfit, ex: vExpiry, mo: vMonthly, me: vMethod };
 function setView(v, focus, scroll) {
@@ -801,7 +820,7 @@ function setView(v, focus, scroll) {
 function shell(adm) {
   ROOT.innerHTML = `<div class="ivcard" style="padding:14px 16px"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center"><div><h2 style="margin:0 0 2px">📦 المخزون — لوحة القرارات</h2><p class="sub" id="ivmeta"></p></div>
     <button id="ivall" data-xl="all" style="border-radius:999px">📥 تصدير كل قوايم المشتريات (Excel)</button>${adm ? `<div><label class="sm ghost" style="cursor:pointer;display:inline-block;border:1px solid var(--line);border-radius:999px;padding:7px 14px;font-size:13px;color:var(--green)">رفع نتيجة تحليل جديدة<input type="file" id="ivup" accept=".json" style="display:none"></label><div class="note" id="ivmsg"></div></div>` : ''}</div></div>
-    <button id="ivtop" title="لأعلى" onclick="window.scrollTo({top:0,behavior:'smooth'})">⬆</button><div class="ivbar" id="ivbar">${VIEWS.map(v => `<button data-v="${v[0]}" style="--c:${v[2]}">${v[1]}</button>`).join('')}</div><div id="ivbody"></div>`;
+    ${adm ? '<div id="ivfresh"></div>' : ''}<button id="ivtop" title="لأعلى" onclick="window.scrollTo({top:0,behavior:'smooth'})">⬆</button><div class="ivbar" id="ivbar">${VIEWS.map(v => `<button data-v="${v[0]}" style="--c:${v[2]}">${v[1]}</button>`).join('')}</div><div id="ivbody"></div>`;
   $('#ivbar', ROOT).onclick = e => { const b = e.target.closest('button'); if (b) setView(b.dataset.v, null, true); };
   if (!window.__ivScroll) { window.__ivScroll = 1; window.addEventListener('scroll', () => { const t = document.getElementById('ivtop'); if (t) t.classList.toggle('show', window.scrollY > 500 && ROOT && ROOT.offsetParent !== null); }, { passive: true }); }
   ROOT.addEventListener('click', e => {
@@ -812,7 +831,7 @@ function shell(adm) {
     const cell = e.target.closest('[data-cell]'); if (cell) { const [c, ab] = cell.dataset.cell.split('|'); goExplorer({ cls: c, abc: ab }); }
   });
   if (adm) $('#ivup', ROOT).onchange = async e => { const f = e.target.files[0]; if (!f) return; const msg = $('#ivmsg', ROOT);
-    try { const b = await uploadBundle(f, t => msg.textContent = t); hydrate(b); msg.textContent = 'اتنشر ✓'; $('#ivmeta', ROOT).textContent = metaTxt(); setView(VIEW); } catch (err) { msg.textContent = 'فشل: ' + (err.code || err.message); } };
+    try { const b = await uploadBundle(f, t => msg.textContent = t); hydrate(b); msg.textContent = 'اتنشر ✓'; $('#ivmeta', ROOT).textContent = metaTxt(); fillFresh(); setView(VIEW); } catch (err) { msg.textContent = 'فشل: ' + (err.code || err.message); } };
 }
 const metaTxt = () => `آخر تحليل: ${B.at} · لقطة المخزون ${B.kpi.refDate} · ${N(B.kpi.items)} صنف`;
 
@@ -823,7 +842,7 @@ export async function mountInventory(root, role) {
   let b = null; try { b = await fetchBundle(); } catch (e) { root.innerHTML = `<div class="banner bad">مقدرتش أقرا التحليل: ${esc(e.code || e.message)}</div>`; return; }
   shell(role === 'admin');
   if (!b) { $('#ivbody', root).innerHTML = `<div class="banner">لسه مفيش تحليل منشور.${role === 'admin' ? ' ارفع ملف inventory_bundle.json من الزرار فوق.' : ' هيظهر أول ما مدير الفرع ينشره.'}</div>`; return; }
-  hydrate(b); $('#ivmeta', root).textContent = metaTxt(); setView('ov');
+  hydrate(b); $('#ivmeta', root).textContent = metaTxt(); fillFresh(); setView('ov');
 }
 // للتجربة المحلية بدون Firestore
 export function mountLocal(root, bundle, role = 'admin') { window.__ORD = ORD; ROOT = root; ROLE = role; css(); root.id = 'invRoot'; return loadChart().then(() => { shell(false); hydrate(bundle); $('#ivmeta', root).textContent = metaTxt(); setView('ov'); }); }
