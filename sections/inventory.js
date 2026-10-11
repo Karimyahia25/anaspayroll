@@ -235,7 +235,7 @@ async function exportXl(key) {
 }
 
 /* ---------- عرض: قرارات ---------- */
-const COLS_IT = [['id', 'الكود'], ['name', 'الصنف', 'nm'], ['abc', 'ABC'], ['packs', 'رصيد', 'n']];
+const COLS_IT = [['id', 'الكود'], ['name', 'الصنف', 'nm'], ['abc', 'ABC'], [x => N(x.packs) + (x.units ? ` <span class="sm">+${x.units} وحدة</span>` : ''), 'رصيد', 'raw']];
 function vDecisions(focus) {
   const ca = byCls('خطر نفاد').sort((a, b) => b.n90 - a.n90), caA = ca.filter(x => x.abc === 'A'), over = byCls('فائض').filter(x => x.sinceBuy != null && x.sinceBuy <= 30).sort((a, b) => b.excess - a.excess);
   const dead = byCls('ميت'), watch = byCls('تحت المراقبة').sort((a, b) => b.cost - a.cost);
@@ -316,7 +316,7 @@ function openItem(id) {
   m.innerHTML = `<div class="bx"><div class="hdr" style="display:flex;justify-content:space-between;gap:10px"><div><h3 style="margin:0">${esc(x.name)}</h3><div class="note" style="margin:2px 0">كود ${x.id} · ${esc(x.thc)} · ${esc(x.cat || '')}</div></div><button class="sm ghost" id="invX">إغلاق</button></div>
     <p style="margin:8px 0">${badge(x.cls)} <span class="pill">ABC: ${x.abc}</span>${x.deal ? '<span class="pill">صنف عرض</span>' : ''}${x.winter ? '<span class="pill">موسمي</span>' : ''}</p>
     <p class="why" style="font-size:13.5px;line-height:1.8">${why(x)}</p>
-    <div class="ivgrid" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr))">${kpi('الرصيد', N(x.packs) + ' عبوة', M(x.cost) + ' تكلفة')}${kpi('مبيعات 90 يوم', M(x.n90), N(x.p90) + ' عبوة')}${kpi('هامش / ربح 90', P1(x.margin), M(x.gp90))}${kpi('خصم الشراء (آخر 3 شهور)', x.disc == null ? '—' : P1(x.disc), x.sup3 || 'مفيش شراء حديث')}${kpi('آخر بيع', x.lastSale || '—', x.idle == null ? '' : 'من ' + N(x.idle) + ' يوم')}${kpi('آخر شراء', x.lastBuy || '—', x.sinceBuy == null ? '' : 'من ' + N(x.sinceBuy) + ' يوم')}</div>
+    <div class="ivgrid" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr))">${kpi('الرصيد', N(x.packs) + ' عبوة' + (x.units ? ' + ' + x.units + ' وحدة' : ''), M(x.cost) + ' تكلفة')}${kpi('مبيعات 90 يوم', M(x.n90), N(x.p90) + ' عبوة')}${kpi('هامش / ربح 90', P1(x.margin), M(x.gp90))}${kpi('خصم الشراء (آخر 3 شهور)', x.disc == null ? '—' : P1(x.disc), x.sup3 || 'مفيش شراء حديث')}${kpi('آخر بيع', x.lastSale || '—', x.idle == null ? '' : 'من ' + N(x.idle) + ' يوم')}${kpi('آخر شراء', x.lastBuy || '—', x.sinceBuy == null ? '' : 'من ' + N(x.sinceBuy) + ' يوم')}</div>
     <div class="ch" style="margin-top:12px;height:230px"><canvas id="cIt"></canvas></div><p class="note">أعمدة = مبيعات 2026 الشهرية، خط = نفس الشهر 2025 (قبل المرتجع).</p></div>`;
   ROOT.appendChild(m); m.addEventListener('click', e => { if (e.target === m) closeItem(); }); $('#invX', m).onclick = closeItem;
   window.__itC = new Chart($('#cIt', m), { data: { labels: MN, datasets: [{ type: 'bar', label: '2026', data: x.m26.concat([null, null]), backgroundColor: '#0B8577', borderRadius: 5 }, { type: 'line', label: '2025', data: x.m25, borderColor: '#E0A526', tension: .3, pointRadius: 3 }] }, options: { maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } }, scales: { y: { ticks: { callback: v => K(v) } } } } });
