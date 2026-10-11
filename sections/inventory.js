@@ -501,7 +501,7 @@ function vMethod() {
 
 /* ---------- عرض: طلبية النواقص ---------- */
 // اللوب اليومي: تقرير النواقص ← طلبية النهارده | تقرير مشتريات امبارح ← قياس طلبية امبارح + تحديث خصومات الموردين (سجل مشتريات بالتاريخ)
-const ORD = { plan: null, log: null, buys: null, led: null, saved: false, name: '', qm: 'sys', abc: '', view: null };
+const ORD = { plan: null, log: null, buys: null, led: null, saved: false, name: '', qm: 'sys', abc: '', est: '', view: null };
 const MINSW = 1.5, BUY_END = () => (B.kpi && B.kpi.buyEnd) || '2026-10-06';
 const pctv = v => { const n = parseFloat(v); return isNaN(n) ? null : (Math.abs(n) <= 1 ? n * 100 : n); };
 const iso = d => { const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; };
@@ -676,7 +676,9 @@ function dayStats(b) {
   return { date: b.date, ordered: want.size, bought: got.size, cc, rc, wr, act: wr ? (1 - cc / wr) * 100 : null, exp: eN ? eD / eN : null, old: oN ? oD / oN : null, eN, eD, oN, oD,
     comply: cc ? rc / cc * 100 : null, all: dd([tot.med[0] + tot.cos[0] + tot.milk[0], tot.med[1] + tot.cos[1] + tot.milk[1]]), med: dd(tot.med), cos: dd(tot.cos), cost: tot.med[0] + tot.cos[0] + tot.milk[0] };
 }
-function viewPlan(P0) { const ls = ORD.abc ? P0.lines.filter(l => abcOf(l) === ORD.abc) : P0.lines; return { ...P0, lines: ls, groups: groupLines(ls) }; }
+// صنف "متقدّر" = مش في تحليل المخزون (مفيش فئة حقيقية ليه)
+const isEst = l => !l.abc;
+function viewPlan(P0) { const ls = P0.lines.filter(l => (!ORD.abc || abcOf(l) === ORD.abc) && (!ORD.est || (ORD.est === 'est') === isEst(l))); return { ...P0, lines: ls, groups: groupLines(ls) }; }
 function renderPlan() {
   const P0 = ORD.plan; if (!P0) return '';
   const P = viewPlan(P0); ORD.view = P;
@@ -685,8 +687,8 @@ function renderPlan() {
     ${table([[l => `<input type="checkbox" class="ck" data-ck="${l.id}" ${l.done ? 'checked' : ''}>`, 'اتطلب ✓', 'raw'], ['id', 'الكود'], ['name', 'الصنف', 'nm'], [l => abcTag(l), 'ABC', 'raw'], ['stock', 'رصيد', 'n'], ['qty', 'مطلوب (السيستم)', 'n'], [l => `<b${l.gap ? ` style="background:#FFD8A8;color:#8A3B00;padding:1px 6px;border-radius:4px" title="فرق كبير عن السيستم"` : ''}>${l.gap ? (l.qo > l.qty ? '▲ ' : '▼ ') : ''}${l.qo ? N(l.qo) : '0'}</b> <span class="sm">${esc(l.qoNote)}${l.qoEst ? ' ~' : ''}</span>`, 'بطريقتنا', 'raw'], ['price', 'السعر', 'n'], [l => l.disc == null ? '—' : P1(l.disc), 'الخصم المتوقع', 'raw'], [l => l.last ? esc(supLab(P, l.last)) + (l.ld != null ? ' · ' + P1(l.ld) : '') : '—', 'المورد الأخير', 'raw'], [l => esc(l.why) + (l.small ? ' <b style="color:#C0392B">⚠ عينة صغيرة</b>' : ''), 'السبب', 'raw']], g.ls)}</div>`; }).join('');
   const od = P.ordered.length ? `<div class="ivcard"><h3>⏱ اتطلبت النهارده قبل كده (${P.ordered.length}) — مش داخلة في الطلبية</h3><p class="why">الأصناف دي إما اتحفظت في طلبية النهارده، أو الملف نفسه عليه ملاحظة "طلب من 0 يوم". استبعدتها علشان متتطلبش مرتين.</p>${table([['id', 'الكود'], ['name', 'الصنف', 'nm'], ['qty', 'مطلوب', 'n'], ['note', 'الملاحظة']], P.ordered)}</div>` : '';
   const un = P.unmapped.length ? `<p class="sm">أكواد موردين مقدرتش أربطها باسم مورد (بتظهر زي ما هي): <b>${esc(P.unmapped.join('، '))}</b></p>` : '';
-  const cnt = k => P0.lines.filter(l => abcOf(l) === k).length, chip = (k, t) => `<button class="sm ${ORD.abc === k ? '' : 'ghost'}" data-ord="abc:${k}" style="margin-inline-end:6px">${t}</button>`;
-  const chips = `<p style="margin:0 0 10px"><b class="sm">الفئة:</b> ${chip('', 'الكل (' + P0.lines.length + ')')}${chip('A', 'A (' + cnt('A') + ')')}${chip('B', 'B (' + cnt('B') + ')')}${chip('C', 'C (' + cnt('C') + ')')}<span class="sm"> · ~ = الفئة متقدّرة (الصنف مش في تحليل المخزون)</span></p>`;
+  const cnt = k => P0.lines.filter(l => abcOf(l) === k && (!ORD.est || (ORD.est === 'est') === isEst(l))).length, chip = (k, t) => `<button class="sm ${ORD.abc === k ? '' : 'ghost'}" data-ord="abc:${k}" style="margin-inline-end:6px">${t}</button>`, echip = (k, t) => `<button class="sm ${ORD.est === k ? '' : 'ghost'}" data-ord="est:${k}" style="margin-inline-end:6px">${t}</button>`;
+  const chips = `<p style="margin:0 0 10px"><b class="sm">الفئة:</b> ${chip('', 'الكل (' + P0.lines.length + ')')}${chip('A', 'A (' + cnt('A') + ')')}${chip('B', 'B (' + cnt('B') + ')')}${chip('C', 'C (' + cnt('C') + ')')}<span class="sm"> · ~ = الفئة متقدّرة (الصنف مش في تحليل المخزون)</span></p><p style="margin:0 0 10px"><b class="sm">النوع:</b> ${echip('', 'الكل')}${echip('known', 'في تحليل المخزون (' + P0.lines.filter(l => !isEst(l)).length + ')')}${echip('est', 'متقدّرة ~ (' + P0.lines.filter(isEst).length + ')')}</p>`;
   return `${chips}<div class="ivgrid">${kpi('أصناف الطلبية', N(K.n), `${N(P.groups.filter(g => g.sup !== '—').length)} مورد`)}${kpi('قيمة الطلبية (بيعي)', M(K.val), 'بكمية ' + (ORD.qm === 'ours' ? 'طريقتنا' : 'السيستم'))}${kpi('متوسط الخصم المتوقع', P1(K.dNew), K.dOld != null ? 'المورد الأخير كان ' + P1(K.dOld) : '')}${kpi('وفر متوقع', M(K.save), `${N(K.sw)} صنف اتحولوا لمورد أعلى خصم`)}${kpi('محتاجة مورد', N(K.unk), 'مفيش سجل شراء ليها', K.unk ? 'r' : '')}</div>
   <p class="sm" style="margin:10px 0 4px"><b>الكمية في رسائل الواتساب والإكسل:</b> <label style="margin-inline:8px"><input type="radio" name="qm" value="sys" ${ORD.qm === 'sys' ? 'checked' : ''}> مطلوب السيستم</label><label><input type="radio" name="qm" value="ours" ${ORD.qm === 'ours' ? 'checked' : ''}> بطريقتنا (الأصناف اللي رصيدها كافي بتتشال)</label> <span class="sm">· بطريقتنا = لو الرصيد أقل من ${ORD_MIN.A}/${ORD_MIN.B}/${ORD_MIN.C} يوم نطلب لحد ${ORD_DAYS.A}/${ORD_DAYS.B}/${ORD_DAYS.C} يوم (فئة A/B/C) · ABC: <b style="color:#C0392B">A</b> أهم الأصناف (أعلى مبيعات) · <b style="color:#D68910">B</b> متوسط · <b style="color:#7F8C8D">C</b> أقل أهمية · علامة ~ = الصنف مش في تحليل المخزون فاتحسب كفئة B بمتوسط التقرير، ومش بيزيد عن مطلوب السيستم</span></p>
   <p class="sm" style="margin:0 0 4px">القيمة والخصم والوفر فوق بيتحسبوا بالكمية المختارة. <b style="background:#FFD8A8;color:#8A3B00;padding:1px 6px;border-radius:4px">▲/▼ برتقالي</b> = فرق كبير بين طريقتنا والسيستم (ضعف أو أكتر وفرق 3 عبوات على الأقل؛ ▲ طريقتنا أكتر، ▼ أقل) — <b>${N(P.lines.filter(l => l.gap).length)}</b> صنف، و<b>${N(P.lines.filter(l => l.qoEst).length)}</b> صنف بتقدير ~. الأصناف دي في أول كل مورد علشان تراجعها بالعين.</p>
@@ -720,6 +722,7 @@ function vOrders() {
         if (k === 'wa') { await copyTxt(waText(P, P.groups[+v])); const t = b.textContent; b.textContent = '✓ اتنسخت'; setTimeout(() => b.textContent = t, 1500); }
         else if (k === 'xl') await orderXl(P, v === 'all' ? null : +v);
         else if (k === 'abc') { ORD.abc = v; plan(); }
+        else if (k === 'est') { ORD.est = v; plan(); }
         else if (k === 'refresh') { b.disabled = true; await refreshAll(); b.disabled = false; plan(); logBox(); }
         else if (k === 'save') { const ls = P0.lines.filter(l => l.done); if (!ls.length) return; b.disabled = true; await saveOrder(P0, ls); P0.ordered.push(...ls.map(l => ({ ...l, note: 'اتسجل في طلبية النهارده — ' + (l.sup || '') }))); P0.lines = P0.lines.filter(l => !l.done); P0.groups = groupLines(P0.lines); stashTicks(); plan(); logBox(); const m2 = $('#ordMsg', ROOT); if (m2) m2.textContent = `✅ اتحفظ ${ls.length} صنف واتشالوا من الطلبية`; }
       } catch (err) { b.disabled = false; if (msg) msg.textContent = 'فشل: ' + (err.code || err.message); else alert('فشل: ' + (err.code || err.message)); }
