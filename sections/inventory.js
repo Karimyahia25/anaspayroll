@@ -792,20 +792,19 @@ export async function mountBuyer(root) {
 }
 
 /* ---------- تحديث التحليل: امتى آخر مرة + الملفات المطلوبة ---------- */
-const FILES = [
-  ['📦 تقرير المخزون (رصيد الأصناف)', 'جديد — لقطة النهارده'],
-  ['🔄 حركة الأصناف', 'ملف للأيام الجديدة بس: من اليوم بعد آخر تحليل لحد النهارده'],
-  ['🧾 المبيعات', 'ملف للأيام الجديدة بس: من اليوم بعد آخر تحليل لحد النهارده'],
-  ['🛒 المشتريات', 'ملف للأيام الجديدة بس: من اليوم بعد آخر تحليل لحد النهارده']
-];
+const addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00'); d.setDate(d.getDate() + n); return iso_(d); };
+const iso_ = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+// التواريخ بتتحسب من آخر تحليل: من اليوم اللي بعد آخر بيانات لحد النهارده
+const filesNeeded = ref => { const f = dmy(addDays(ref, 1)), t = dmy(today()), rng = `من <b>${f}</b> إلى <b>${t}</b>`;
+  return [['📦 تقرير المخزون (رصيد الأصناف)', `لقطة النهارده <b>${t}</b>`], ['🔄 حركة الأصناف', rng], ['🧾 المبيعات', rng], ['🛒 المشتريات', rng]]; };
 const FILES_OK = '';
 function fillFresh() {
   const e = $('#ivfresh', ROOT); if (!e || !B) return;
   const ref = B.kpi.refDate, d = Math.floor((new Date(today() + 'T00:00:00') - new Date(ref + 'T00:00:00')) / 864e5), late = d > 7, c = late ? '#C0392B' : d > 4 ? '#E67E22' : '#1F9B76';
   e.innerHTML = `<div class="ivcard" style="border-inline-start:5px solid ${c}"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center"><div><b>آخر تحديث للتحليل:</b> ${esc(B.at)} · البيانات لحد <b>${dmy(ref)}</b> — <b style="color:${c}">من ${d} يوم${late ? ' · محتاج تحديث' : ''}</b></div>
     <button class="sm ghost" onclick="var x=document.getElementById('ivfiles');x.style.display=x.style.display==='none'?'block':'none'">📋 الملفات المطلوبة للتحديث</button></div>
-    <div id="ivfiles" style="display:none;margin-top:10px"><p class="why">لتحديث التحليل (مرة في الأسبوع) صدّر الملفات دي من السيستم (الأيام الجديدة بس) وحطها في فولدر <b>stock/ملفات المخزون الكبيره</b>، وقولي أشغّل التحليل وأرفع النتيجة:</p>
-    <ol style="margin:6px 0;padding-inline-start:22px">${FILES.map(f => `<li style="margin:5px 0"><b>${f[0]}</b> — <span class="sm">${f[1]}</span></li>`).join('')}</ol></div></div>`;
+    <div id="ivfiles" style="display:none;margin-top:10px"><p class="why">لتحديث التحليل (مرة في الأسبوع) صدّر الملفات دي من السيستم وحطها في فولدر <b>stock/ملفات المخزون الكبيره</b>، وقولي أشغّل التحليل وأرفع النتيجة:</p>
+    <ol style="margin:6px 0;padding-inline-start:22px">${filesNeeded(ref).map(f => `<li style="margin:6px 0"><b>${f[0]}</b> — ${f[1]}</li>`).join('')}</ol></div></div>`;
 }
 
 /* ---------- المحرك ---------- */
