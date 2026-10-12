@@ -495,7 +495,7 @@ function parseBook(wb){
     if (norm(c).includes(norm('تاريخ نهاية الدورة'))) pe = r[j+1];
   }));
   const W = { h:0.35, i:0.25, p:0.20, c:0.20 };
-  const RATES = { gen:0.075, xic:0.15, neb:0.10 };
+  const RATES = { gen:0.10, xic:0.10, neb:0.10 };
   const pick = [['وزن المبيعات لكل ساعة عمل', v => W.h = v], ['وزن وسيط قيمة الفاتورة', v => W.i = v],
     ['وزن نسبة قيمة البوشينج', v => W.p = v], ['وزن نسبة تسجيل اسم العميل', v => W.c = v],
     ['عمولة البوشينج العامة', v => RATES.gen = v], ['عمولة XICLAVE', v => RATES.xic = v],
