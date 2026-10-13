@@ -577,13 +577,22 @@ function abcCuts() {
   const f = k => { const v = IT.filter(x => x.abc === k && x.n90 != null).map(x => x.n90); return v.length ? Math.min(...v) : 0; }; return [f('A'), f('B')];
 }
 const ORD_MIN = { A: 7, B: 10, C: 14 }, ORD_DAYS = { A: 10, B: 21, C: 30 };
-function ourQty(it, avgMonthly, stock) {
+// الموسمي الشتوي (سبتمبر–ديسمبر): معدل آخر 90 يوم (صيف) أقل من الموسم، فناخد الأعلى منه ومن بيع نفس الشهر السنة اللي فاتت (قيمة ÷ سعر العلبة)
+const w25Of = it => it && (it.w25 || (it.winter && it.m25 ? it.m25.slice(8, 12) : null));
+function ourQty(it, avgMonthly, stock, price) {
   const cls = it && ORD_DAYS[it.abc] ? it.abc : null, st = Math.max(0, +stock || 0), rate = it && it.p90 != null;
-  const daily = rate ? (it.p90 || 0) / 90 : (+avgMonthly || 0) / 30, mn = ORD_MIN[cls || 'B'], mx = ORD_DAYS[cls || 'B'], known = !!cls;
+  let daily = rate ? (it.p90 || 0) / 90 : (+avgMonthly || 0) / 30, sea = false;
+  const mo = new Date().getMonth(), w = w25Of(it);
+  if (w && mo >= 8 && price > 0) { const d25 = (+w[mo - 8] || 0) / price / 30; if (d25 > daily) { daily = d25; sea = true; } }
+  const mn = ORD_MIN[cls || 'B'], mx = ORD_DAYS[cls || 'B'], known = !!cls, tag = sea ? ' · موسم شتوي' : '';
   if (!(daily > 0)) return { q: 0, note: 'مفيش حركة بيع', est: !known };
-  const cover = st / daily; if (st > 0 && cover >= mn) return { q: 0, note: `الرصيد كافي (${Math.round(cover)} يوم)`, est: !known };
-  return { q: Math.max(1, Math.ceil(daily * mx - st)), note: `لحد ${mx} يوم`, est: !known };
+  const cover = st / daily; if (st > 0 && cover >= mn) return { q: 0, note: `الرصيد كافي (${Math.round(cover)} يوم)${tag}`, est: !known };
+  return { q: Math.max(1, Math.ceil(daily * mx - st)), note: `لحد ${mx} يوم${tag}`, est: !known };
 }
+// خدمات بتطلع في تقرير النواقص بس مش بتتطلب من مورد
+const SVC = /^\s*(توصيل|قياس ضغط|قياس سكر|ضرب حقن|زيار|IN ?BODY|اصناف متنوع|ميزان عادي|كشف)/i;
+// أكواد الموردين في تقرير النواقص ← اسم المورد في المشتريات (ثابتة). الأكواد اللي مش هنا بتتربط بالتصويت، ومينفعش تاخد اسم محجوز لكود تاني
+const SUP_CODES = { PHARM: 'Pharmaoverseas', 'داي': 'دايركت', GS: 'جي اس فارم', ANDA: 'alandalos cosmetics', KAR: 'karam center', HE: 'HELAL', TARG: 'TARGET', OUT: 'outting', ALS: 'السلام', RAM: 'RAMCO PHARM', EBN: 'ibnsena', DOCTR: 'doctor anas', SOF: 'SOFICO PHARM', RA: 'رامي مستورد', ELSH: 'elshosh manshia', SO: 'SO STORES', ELR: 'الرواء', NEB: 'نبيولا', ALM: 'العالميه', MI: 'ميرا مستحضرات', ALEX: 'alex way', AHR: 'ايه اتش ار فارما', CHEMI: 'chemi pharma', ROW: 'الروان كوزمو' };
 // شارة ABC: A أهم الأصناف (أعلى مبيعات)، C أقلها
 const ABC_C = { A: '#C0392B', B: '#D68910', C: '#7F8C8D' }, abcOf = l => l.abc || l.abcE || '', abcTag = l => { const a = abcOf(l); return a ? `<b style="background:${ABC_C[a]};color:#fff;padding:1px 7px;border-radius:4px">${a}${l.abc ? '' : '~'}</b>` : '<span class="sm">—</span>'; };
 const qtyOf = l => ORD.qm === 'ours' ? (l.qo || 0) : l.qty, valOf = l => qtyOf(l) * l.price;
@@ -596,42 +605,52 @@ function lineKpis(lines) {
 }
 function groupLines(lines) {
   const groups = {}; lines.forEach(l => (groups[l.sup || '—'] = groups[l.sup || '—'] || []).push(l));
-  // جوه كل مورد: الأصناف اللي محتاجة مراجعة (فرق كبير أو تقدير ~) الأول
-  return Object.entries(groups).map(([sup, ls]) => ({ sup, ls: ls.sort((a, b) => (b.gap || b.qoEst) - (a.gap || a.qoEst)), sv: sum(ls, l => l.val) }))
+  // جوه كل مورد: اللي اتطلب ومجاش الأول، بعده اللي محتاج مراجعة (فرق كبير أو تقدير ~)
+  return Object.entries(groups).map(([sup, ls]) => ({ sup, ls: ls.sort((a, b) => (!!b.late - !!a.late) || ((b.gap || b.qoEst) - (a.gap || a.qoEst))), sv: sum(ls, l => l.val) }))
     .sort((a, b) => ((a.sup === '—') - (b.sup === '—')) || b.sv - a.sv);
 }
 function planOrder(rows) {
-  const byId = new Map(IT.map(x => [x.id, x])), votes = {}, map = {}, rev = {};
+  const byId = new Map(IT.map(x => [x.id, x])), votes = {}, map = { ...SUP_CODES }, rev = {}, CUTS = abcCuts();
   Object.entries(B.sdx || {}).forEach(([k, v]) => { if (!byId.has(+k)) byId.set(+k, { id: +k, sup3: v[0], sd: v[1], name: v[2] }); });
+  // أصناف رصيدها صفر بس بتتباع (مش في التحليل): معدل بيعها الحقيقي وفئتها من مبيعات 90 يوم
+  Object.entries(B.oos || {}).forEach(([k, v]) => { const o = byId.get(+k) || { id: +k, name: v[2] }; if (o.p90 != null) return;
+    byId.set(+k, { ...o, p90: v[0], n90: v[1], winter: v[3], w25: v[4], abc: v[1] >= CUTS[0] ? 'A' : v[1] >= CUTS[1] ? 'B' : 'C' }); });
   const abOf = r => { const a = String(r['اخر شراء'] == null ? '' : r['اخر شراء']).trim(); return a === '-' ? '' : a; };
-  rows.forEach(r => { const ab = abOf(r), it = byId.get(+r['الكود']); if (!ab || !it || !it.sup3) return; const v = votes[ab] = votes[ab] || {}; v[it.sup3] = (v[it.sup3] || 0) + 1; });
-  Object.entries(votes).forEach(([ab, v]) => { const e = Object.entries(v).sort((a, b) => b[1] - a[1]), tot = e.reduce((s, x) => s + x[1], 0);
-    if (e[0][1] >= 2 && e[0][1] / tot >= .5) { map[ab] = e[0][0]; if (!rev[e[0][0]] || rev[e[0][0]][1] < e[0][1]) rev[e[0][0]] = [ab, e[0][1]]; } });
-  const CUTS = abcCuts(), lines = [], ordered = [], unmapped = new Set(), doneToday = new Map();
+  Object.entries(SUP_CODES).forEach(([ab, s]) => rev[s] = [ab, 1e9]);
+  rows.forEach(r => { const ab = abOf(r), it = byId.get(+r['الكود']); if (!ab || SUP_CODES[ab] || !it || !it.sup3) return; const v = votes[ab] = votes[ab] || {}; v[it.sup3] = (v[it.sup3] || 0) + 1; });
+  Object.entries(votes).forEach(([ab, v]) => { const tot = Object.values(v).reduce((s, x) => s + x, 0), e = Object.entries(v).filter(x => !rev[x[0]] || rev[x[0]][1] < 1e9).sort((a, b) => b[1] - a[1]);
+    if (e.length && e[0][1] >= 2 && e[0][1] / tot >= .5) { map[ab] = e[0][0]; if (!rev[e[0][0]] || rev[e[0][0]][1] < e[0][1]) rev[e[0][0]] = [ab, e[0][1]]; } });
+  const lines = [], ordered = [], svc = [], unmapped = new Set(), doneToday = new Map();
   (ORD.log || []).filter(o => o.date === today()).forEach(o => o.lines.forEach(l => doneToday.set(l[0], l[4])));
   rows.forEach(r => {
     const id = +r['الكود']; if (!id) return;
+    if (SVC.test(String(r['الاسم'] || ''))) { svc.push(String(r['الاسم']).trim()); return; }
     const it = byId.get(id), ab = abOf(r), lastKnown = !!(ab && map[ab]), last = ab ? (map[ab] || ab) : null; if (ab && !map[ab]) unmapped.add(ab);
     const req = +r['المطلوب'] || 1, qty = Math.max(1, Math.ceil(req - 1e-9)), price = +r['السعر'] || 0, ld = last ? pctv(r['نسبة خصم اخر شراء']) : null;
     // صنف مش في التحليل (~): مفيش بيانات كفاية، فمنطلبش أكتر من السيستم
-    const oq = ourQty(it, r['المتوسط'], r['الموجود']); if (oq.est && oq.q > qty) { oq.q = qty; oq.note = 'زي السيستم'; }
+    const oq = ourQty(it, r['المتوسط'], r['الموجود'], price); if (oq.est && oq.q > qty) { oq.q = qty; oq.note = 'زي السيستم'; }
     const base = { id, name: String(r['الاسم'] || (it && it.name) || ''), qty, req, price, val: qty * price, last, ld, stock: r['الموجود'], qo: oq.q, qoNote: oq.note, qoEst: oq.est, abc: it && ORD_DAYS[it.abc] ? it.abc : '', abcE: it && ORD_DAYS[it.abc] ? '' : ((v) => v >= CUTS[0] ? 'A' : v >= CUTS[1] ? 'B' : 'C')((+r['المتوسط'] || 0) * 3 * price), note: String(r['ملاحظات'] || '').trim() };
     if (doneToday.has(id)) { ordered.push({ ...base, note: 'اتسجل في طلبية النهارده — ' + (doneToday.get(id) || '') }); return; }
-    if (/طلب من/.test(base.note)) { ordered.push(base); return; }
-    const cand = candsOf(it), best = cand.find(c => c[3] >= 500) || cand[0];
+    // "طلب من 0 يوم" = اتطلب النهارده فبيتشال. "طلب من 1 يوم" أو أكتر = اتطلب ومجاش، فبيفضل في الطلبية بعلامة علشان ميتنسيش
+    const om = base.note.match(/طلب من\s*(\d+)/), late = om ? +om[1] : 0;
+    if (om && late === 0) { ordered.push(base); return; }
+    // أحسن مورد: أعلى خصم بشرط فاتورتين على الأقل وقيمة 500 ج — غير كده ممكن يكون عرض لمرة واحدة
+    const cand = candsOf(it), best = cand.find(c => c[3] >= 500 && c[2] >= 2) || cand[0];
     let sup = null, disc = null, why = 'محتاج تحديد مورد', sw = false, dl = null, small = false;
     if (!best) { if (last) { sup = last; disc = ld; why = 'المورد الأخير (مفيش بديل مقارن)'; } }
     else {
-      small = best[2] === 1 || best[3] < 500;
+      small = best[2] < 2 || best[3] < 500;
       if (!last) { sup = best[0]; disc = best[1]; why = 'أعلى خصم (مفيش مورد سابق)'; }
       else if (lastKnown && last === best[0]) { sup = last; disc = ld != null ? ld : best[1]; why = 'هو أعلى خصم'; small = false; }
       else if (ld != null && best[1] - ld < MINSW) { sup = last; disc = ld; why = 'المورد الأخير (الفرق أقل من ' + MINSW + ' نقطة)'; small = false; }
+      else if (small) { sup = last; disc = ld; why = `المورد الأخير — ممكن أرخص عند ${best[0]} (${best[1].toFixed(1)}%) بس من فاتورة واحدة، جرّبه`; small = false; }
       else { sup = best[0]; disc = best[1]; sw = true; why = 'أعلى خصم' + (ld != null ? ` (+${(best[1] - ld).toFixed(1)} نقطة)` : ''); dl = ld != null ? best[1] - ld : null; }
     }
-    lines.push({ ...base, sup, disc, why, sw, dl, small, gap: gapOf(base) });
+    if (late) why = `⚠ اتطلب من ${late} يوم ومجاش — اتأكد من المورد · ` + why;
+    lines.push({ ...base, sup, disc, why, sw, dl, small, late, gap: gapOf(base) });
   });
   const gl = groupLines(lines);
-  return { lines, ordered, groups: gl, rev, unmapped: [...unmapped] };
+  return { lines, ordered, svc, groups: gl, rev, unmapped: [...unmapped] };
 }
 const supLab = (P, s) => s === '—' ? 'محتاج تحديد مورد' : (P.rev[s] ? `${s} (${P.rev[s][0]})` : s);
 const waText = (P, g) => `طلبية من ${supLab(P, g.sup)} — ${ORD.name}\n` + g.ls.filter(l => qtyOf(l) > 0).map(l => `• ${l.name} × ${qtyOf(l)}`).join('\n');
@@ -664,9 +683,11 @@ async function saveOrder(P, ls) {
   if (!DB) throw new Error('التسجيل بيشتغل على الموقع الحقيقي بس');
   await setDoc(doc(DB, 'purchasing', 'order_' + at), { d: JSON.stringify(rec), at }); (ORD.log = ORD.log || []).push(rec);
 }
-// قياس يوم: طلبيات اليوم ده مقابل مشتريات نفس اليوم
+// قياس يوم: مشتريات اليوم ده مقابل طلبيات نفس اليوم + طلبيات امبارح اللي موصلتش امبارح (طلبية بالليل بتوصل تاني يوم)
 function dayStats(b) {
-  const want = new Map(); (ORD.log || []).filter(o => o.date === b.date).forEach(o => o.lines.forEach(l => want.set(l[0], l)));
+  const prev = addDays(b.date, -1), pb = (ORD.buys || []).find(x => x.date === prev), gotPrev = new Set(pb ? pb.rows.filter(r => r[4] > 0).map(r => r[0]) : []), want = new Map();
+  (ORD.log || []).filter(o => o.date === prev).forEach(o => o.lines.forEach(l => { if (!gotPrev.has(l[0])) want.set(l[0], l); }));
+  (ORD.log || []).filter(o => o.date === b.date).forEach(o => o.lines.forEach(l => want.set(l[0], l)));
   const grp = new Map(IT.map(x => [x.id, x.grp])), tot = { med: [0, 0], cos: [0, 0], milk: [0, 0] }, got = new Map();
   b.rows.forEach(r => { const [id, sup, c, rt, pk] = r; const g = tot[grp.get(id)] || tot.med; if (pk > 0) { g[0] += c; g[1] += rt; }
     if (want.has(id) && pk > 0 && rt > 0) { const e = got.get(id) || { c: 0, r: 0, by: {} }; e.c += c; e.r += rt; e.by[sup] = (e.by[sup] || 0) + c; got.set(id, e); } });
@@ -686,11 +707,12 @@ function renderPlan() {
   const cards = P.groups.map((g, i) => { const G = lineKpis(g.ls); return `<div class="ivcard" style="border-inline-start:5px solid ${g.sup === '—' ? '#C0392B' : '#1F9B76'}"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center"><h3 style="margin:0">${esc(supLab(P, g.sup))} <span class="sm" style="font-weight:400">· ${G.n} صنف · ${M(G.val)}${G.dNew != null ? ' · خصم متوقع ' + P1(G.dNew) : ''}</span></h3>${g.sup === '—' ? '' : `<span style="display:flex;gap:6px;flex-wrap:wrap"><button class="sm" data-ord="wa:${i}">📋 انسخ رسالة واتساب</button><button class="sm ghost" data-ord="xl:${i}">📥 Excel</button></span>`}</div>
     ${table([[l => `<input type="checkbox" class="ck" data-ck="${l.id}" ${l.done ? 'checked' : ''}>`, 'اتطلب ✓', 'raw'], ['id', 'الكود'], ['name', 'الصنف', 'nm'], [l => abcTag(l), 'ABC', 'raw'], ['stock', 'رصيد', 'n'], ['qty', 'مطلوب (السيستم)', 'n'], [l => `<b${l.gap ? ` style="background:#FFD8A8;color:#8A3B00;padding:1px 6px;border-radius:4px" title="فرق كبير عن السيستم"` : ''}>${l.gap ? (l.qo > l.qty ? '▲ ' : '▼ ') : ''}${l.qo ? N(l.qo) : '0'}</b> <span class="sm">${esc(l.qoNote)}${l.qoEst ? ' ~' : ''}</span>`, 'بطريقتنا', 'raw'], ['price', 'السعر', 'n'], [l => l.disc == null ? '—' : P1(l.disc), 'الخصم المتوقع', 'raw'], [l => l.last ? esc(supLab(P, l.last)) + (l.ld != null ? ' · ' + P1(l.ld) : '') : '—', 'المورد الأخير', 'raw'], [l => esc(l.why) + (l.small ? ' <b style="color:#C0392B">⚠ عينة صغيرة</b>' : ''), 'السبب', 'raw']], g.ls)}</div>`; }).join('');
   const od = P.ordered.length ? `<div class="ivcard"><h3>⏱ اتطلبت النهارده قبل كده (${P.ordered.length}) — مش داخلة في الطلبية</h3><p class="why">الأصناف دي إما اتحفظت في طلبية النهارده، أو الملف نفسه عليه ملاحظة "طلب من 0 يوم". استبعدتها علشان متتطلبش مرتين.</p>${table([['id', 'الكود'], ['name', 'الصنف', 'nm'], ['qty', 'مطلوب', 'n'], ['note', 'الملاحظة']], P.ordered)}</div>` : '';
-  const un = P.unmapped.length ? `<p class="sm">أكواد موردين مقدرتش أربطها باسم مورد (بتظهر زي ما هي): <b>${esc(P.unmapped.join('، '))}</b></p>` : '';
+  const un = (P.unmapped.length ? `<p class="sm">أكواد موردين مقدرتش أربطها باسم مورد (بتظهر زي ما هي): <b>${esc(P.unmapped.join('، '))}</b></p>` : '')
+    + (P.svc && P.svc.length ? `<p class="sm">خدمات اتشالت من الطلبية (مش بتتطلب من مورد): ${esc(P.svc.join('، '))}</p>` : '');
   const cnt = k => P0.lines.filter(l => abcOf(l) === k && (!ORD.est || (ORD.est === 'est') === isEst(l))).length, chip = (k, t) => `<button class="sm ${ORD.abc === k ? '' : 'ghost'}" data-ord="abc:${k}" style="margin-inline-end:6px">${t}</button>`, echip = (k, t) => `<button class="sm ${ORD.est === k ? '' : 'ghost'}" data-ord="est:${k}" style="margin-inline-end:6px">${t}</button>`;
   const chips = `<p style="margin:0 0 10px"><b class="sm">الفئة:</b> ${chip('', 'الكل (' + P0.lines.length + ')')}${chip('A', 'A (' + cnt('A') + ')')}${chip('B', 'B (' + cnt('B') + ')')}${chip('C', 'C (' + cnt('C') + ')')}<span class="sm"> · ~ = الفئة متقدّرة (الصنف مش في تحليل المخزون)</span></p><p style="margin:0 0 10px"><b class="sm">النوع:</b> ${echip('', 'الكل')}${echip('known', 'في تحليل المخزون (' + P0.lines.filter(l => !isEst(l)).length + ')')}${echip('est', 'متقدّرة ~ (' + P0.lines.filter(isEst).length + ')')}</p>`;
   return `${chips}<div class="ivgrid">${kpi('أصناف الطلبية', N(K.n), `${N(P.groups.filter(g => g.sup !== '—').length)} مورد`)}${kpi('قيمة الطلبية (بيعي)', M(K.val), 'بكمية ' + (ORD.qm === 'ours' ? 'طريقتنا' : 'السيستم'))}${kpi('متوسط الخصم المتوقع', P1(K.dNew), K.dOld != null ? 'المورد الأخير كان ' + P1(K.dOld) : '')}${kpi('وفر متوقع', M(K.save), `${N(K.sw)} صنف اتحولوا لمورد أعلى خصم`)}${kpi('محتاجة مورد', N(K.unk), 'مفيش سجل شراء ليها', K.unk ? 'r' : '')}</div>
-  <p class="sm" style="margin:10px 0 4px"><b>الكمية في رسائل الواتساب والإكسل:</b> <label style="margin-inline:8px"><input type="radio" name="qm" value="sys" ${ORD.qm === 'sys' ? 'checked' : ''}> مطلوب السيستم</label><label><input type="radio" name="qm" value="ours" ${ORD.qm === 'ours' ? 'checked' : ''}> بطريقتنا (الأصناف اللي رصيدها كافي بتتشال)</label> <span class="sm">· بطريقتنا = لو الرصيد أقل من ${ORD_MIN.A}/${ORD_MIN.B}/${ORD_MIN.C} يوم نطلب لحد ${ORD_DAYS.A}/${ORD_DAYS.B}/${ORD_DAYS.C} يوم (فئة A/B/C) · ABC: <b style="color:#C0392B">A</b> أهم الأصناف (أعلى مبيعات) · <b style="color:#D68910">B</b> متوسط · <b style="color:#7F8C8D">C</b> أقل أهمية · علامة ~ = الصنف مش في تحليل المخزون فاتحسب كفئة B بمتوسط التقرير، ومش بيزيد عن مطلوب السيستم</span></p>
+  <p class="sm" style="margin:10px 0 4px"><b>الكمية في رسائل الواتساب والإكسل:</b> <label style="margin-inline:8px"><input type="radio" name="qm" value="sys" ${ORD.qm === 'sys' ? 'checked' : ''}> مطلوب السيستم</label><label><input type="radio" name="qm" value="ours" ${ORD.qm === 'ours' ? 'checked' : ''}> بطريقتنا (الأصناف اللي رصيدها كافي بتتشال)</label> <span class="sm">· بطريقتنا = لو الرصيد أقل من ${ORD_MIN.A}/${ORD_MIN.B}/${ORD_MIN.C} يوم نطلب لحد ${ORD_DAYS.A}/${ORD_DAYS.B}/${ORD_DAYS.C} يوم (فئة A/B/C) · ABC: <b style="color:#C0392B">A</b> أهم الأصناف (أعلى مبيعات) · <b style="color:#D68910">B</b> متوسط · <b style="color:#7F8C8D">C</b> أقل أهمية · المعدل = بيع آخر 90 يوم <b>شامل الشرايط</b>، والأصناف الرصيدها صفر ليها معدلها وفئتها الحقيقيين · الموسمي الشتوي بياخد الأعلى من معدله ومن نفس الشهر السنة اللي فاتت · علامة ~ = الصنف ملوش بيانات بيع في التحليل فاتحسب كفئة B بمتوسط التقرير، ومش بيزيد عن مطلوب السيستم</span></p>
   <p class="sm" style="margin:0 0 4px">القيمة والخصم والوفر فوق بيتحسبوا بالكمية المختارة. <b style="background:#FFD8A8;color:#8A3B00;padding:1px 6px;border-radius:4px">▲/▼ برتقالي</b> = فرق كبير بين طريقتنا والسيستم (ضعف أو أكتر وفرق 3 عبوات على الأقل؛ ▲ طريقتنا أكتر، ▼ أقل) — <b>${N(P.lines.filter(l => l.gap).length)}</b> صنف، و<b>${N(P.lines.filter(l => l.qoEst).length)}</b> صنف بتقدير ~. الأصناف دي في أول كل مورد علشان تراجعها بالعين.</p>
   <p style="margin:10px 0"><button data-ord="xl:all">📥 كل الطلبية (Excel — شيت لكل مورد)</button> <button id="ordSaveBtn" data-ord="save" ${P0.lines.some(l => l.done) ? '' : 'disabled'}>💾 حفظ الأصناف اللي اتطلبت (${P0.lines.filter(l => l.done).length}) وشيلها من الطلبية</button> <span class="note" id="ordMsg"></span> <button class="sm ghost" data-ord="refresh">🔄 تحديث من الأجهزة التانية</button></p><p class="sm" style="margin:0 0 8px">علّم ✓ قدام كل صنف بعد ما تطلبه من المورد، وفي الآخر اضغط "حفظ" — الأصناف المعلّمة بتتشال، ويفضل قدامك اللي لسه متطلبش. لو رفعت ملف نواقص تاني النهارده، اللي اتحفظ مش هيرجع.</p>${un}${cards}${od}`;
 }
@@ -701,12 +723,12 @@ function renderLog() {
   const tAct = T.wr ? (1 - T.cc / T.wr) * 100 : null, tExp = T.eN ? T.eD / T.eN : null, tOld = T.oN ? T.oD / T.oN : null, tComp = T.cc ? T.rc / T.cc * 100 : null;
   const kp = days.length ? `<div class="ivgrid">${kpi('أيام اتقاست', N(days.length), `آخر يوم ${dmy(days[days.length - 1].date)}`)}${kpi('الالتزام بالمورد المقترح', P1(tComp), 'من قيمة شراء الأصناف المطلوبة', tComp != null && tComp >= 70 ? '' : 'r')}${kpi('الخصم الفعلي للأصناف المطلوبة', P1(tAct), `المتوقع ${P1(tExp)} · المورد القديم ${P1(tOld)}`)}${kpi('الفرق عن المورد القديم', tAct != null && tOld != null ? (tAct - tOld > 0 ? '+' : '') + (tAct - tOld).toFixed(1) + ' نقطة' : '—', 'موجب = الطلبية الجديدة أحسن')}</div>` : '';
   const rows = days.slice().reverse().map(d => ({ date: dmy(d.date), ordered: d.ordered, bought: d.bought, comply: d.comply, act: d.act, exp: d.exp, old: d.old, all: d.all, med: d.med, cos: d.cos }));
-  return `<div class="ivcard" id="ordLog"><h3>📈 القياس اليومي — قبل وبعد</h3><p class="why">كل صبح ارفع تقرير مشتريات امبارح. بيتقارن بطلبية امبارح: اشترينا من المورد المقترح ولا لأ، والخصم الفعلي مقابل المتوقع ومقابل المورد القديم. وبيتقارن كمان بمتوسط آخر 3 شهور قبل البداية (الكل ${B.kpi.discAvg}% · دواء ${B.kpi.discMed}% · كوزمو ومستلزمات ${B.kpi.discCos}%).</p>
+  return `<div class="ivcard" id="ordLog"><h3>📈 القياس اليومي — قبل وبعد</h3><p class="why">كل صبح ارفع تقرير مشتريات امبارح. بيتقارن بطلبية امبارح (ومعاها طلبية اليوم اللي قبلها اللي موصلتش في يومها): اشترينا من المورد المقترح ولا لأ، والخصم الفعلي مقابل المتوقع ومقابل المورد القديم. وبيتقارن كمان بمتوسط آخر 3 شهور قبل البداية (الكل ${B.kpi.discAvg}% · دواء ${B.kpi.discMed}% · كوزمو ومستلزمات ${B.kpi.discCos}%).</p>
     ${kp}${rows.length ? table([['date', 'اليوم'], ['ordered', 'أصناف مطلوبة', 'n'], ['bought', 'اتشرى منها', 'n'], ['comply', 'التزام %', 'p'], ['act', 'خصم فعلي %', 'p'], ['exp', 'متوقع %', 'p'], ['old', 'مورد قديم %', 'p'], ['all', 'خصم الشراء الكلي %', 'p'], ['med', 'دواء %', 'p'], ['cos', 'كوزمو %', 'p']], rows) : '<p class="sm">لسه مفيش أيام متقاسة. سجّل طلبية النهارده، وبكره الصبح ارفع مشتريات النهارده.</p>'}
     ${missing.length ? `<p class="sm" style="color:#C0392B">طلبيات في أيام مفيش ليها مشتريات مرفوعة: ${esc(missing.map(dmy).join('، '))}</p>` : ''}</div>`;
 }
 function vOrders() {
-  const html = `<div class="ivcard"><h3>🛒 الشغل اليومي — ارفع ملفات الصبح</h3><p class="why">ارفع <b>الملفين مع بعض</b>: تقرير النواقص (بيطلّع طلبية النهارده) وتقرير مشتريات امبارح (بيقيس طلبية امبارح ويحدّث خصومات الموردين). الموقع بيعرف نوع كل ملف لوحده. القاعدة: كل صنف عند المورد اللي <b>أعلى خصم</b> ليه في آخر 3 شهور (من غير outting والصلاحية القصيرة)، <b>بس لو الفرق عن المورد الأخير أقل من ${MINSW} نقطة بيفضل عنده</b>. الأصناف اللي عليها "طلب من 0 يوم" بتتستبعد.</p>
+  const html = `<div class="ivcard"><h3>🛒 الشغل اليومي — ارفع ملفات الصبح</h3><p class="why">ارفع <b>الملفين مع بعض</b>: تقرير النواقص (بيطلّع طلبية النهارده) وتقرير مشتريات امبارح (بيقيس طلبية امبارح ويحدّث خصومات الموردين). الموقع بيعرف نوع كل ملف لوحده. القاعدة: كل صنف عند المورد اللي <b>أعلى خصم</b> ليه في آخر 3 شهور (من غير outting والصلاحية القصيرة)، <b>بس لو الفرق عن المورد الأخير أقل من ${MINSW} نقطة بيفضل عنده</b>، ومبنحوّلش لمورد إلا لو اشترينا منه الصنف <b>في فاتورتين على الأقل</b> (فاتورة واحدة ممكن تكون عرض مؤقت — بتظهر كاقتراح بس). الأصناف اللي عليها "طلب من 0 يوم" بتتستبعد، واللي عليها "طلب من 1 يوم" أو أكتر بتفضل في الطلبية بعلامة ⚠ (اتطلبت ومجتش). الخدمات (توصيل، قياس ضغط، حقن…) بتتشال.</p>
     <p style="margin:6px 0;display:flex;gap:10px;flex-wrap:wrap;align-items:center"><label class="sm ghost" style="cursor:pointer;display:inline-block;border:1px solid var(--line);border-radius:999px;padding:9px 18px;font-size:14px;color:var(--green)">📤 ارفع ملفات الصبح (Excel)<input type="file" id="upAny" accept=".xlsx,.xls" multiple style="display:none"></label><label class="sm">تاريخ المشتريات <input type="date" id="buyDate" value="${yesterday()}"></label></p><div class="note" id="ordUpMsg"></div></div>
     ${ROLE === 'admin' ? '<div class="ivcard" id="buyerAcct"></div><div class="note" id="buyerSync" style="margin:-6px 4px 10px"></div>' : ''}
     <div id="ordPlan">${renderPlan()}</div><div id="ordLogBox">${renderLog()}</div>`;
@@ -755,11 +777,11 @@ async function syncBuyerData() {
   const st = $('#buyerSync', ROOT); if (!DB || ROLE !== 'admin' || !st) return;
   try {
     const m = await getDoc(doc(DB, 'purchasing', 'data_meta'));
-    if (m.exists() && m.data().at === B.at && m.data().v === 3) { st.textContent = 'بيانات مسؤول المشتريات محدّثة ✓'; return; }
+    if (m.exists() && m.data().at === B.at && m.data().v === 4) { st.textContent = 'بيانات مسؤول المشتريات محدّثة ✓'; return; }
     st.textContent = 'بيحدّث بيانات مسؤول المشتريات…';
-    const rows = IT.filter(x => x.sd || x.sup3).map(x => [x.id, x.name, x.sup3 || null, x.grp, x.sd || null, x.abc || null]), per = 900, n = Math.ceil(rows.length / per);
+    const rows = IT.filter(x => x.sd || x.sup3 || x.p90 > 0).map(x => [x.id, x.name, x.sup3 || null, x.grp, x.sd || null, x.abc || null, x.p90 == null ? null : x.p90, w25Of(x)]), per = 900, n = Math.ceil(rows.length / per);
     for (let i = 0; i < n; i++) await setDoc(doc(DB, 'purchasing', 'data_items_' + i), { d: JSON.stringify(rows.slice(i * per, (i + 1) * per)) });
-    const k = B.kpi; await setDoc(doc(DB, 'purchasing', 'data_meta'), { d: JSON.stringify({ kpi: { discAvg: k.discAvg, discMed: k.discMed, discCos: k.discCos, buyEnd: k.buyEnd, cutA: abcCuts()[0], cutB: abcCuts()[1] }, sdx: B.sdx || {} }), chunks: n, at: B.at, v: 3 });
+    const k = B.kpi; await setDoc(doc(DB, 'purchasing', 'data_meta'), { d: JSON.stringify({ kpi: { discAvg: k.discAvg, discMed: k.discMed, discCos: k.discCos, buyEnd: k.buyEnd, cutA: abcCuts()[0], cutB: abcCuts()[1] }, sdx: B.sdx || {}, oos: B.oos || {} }), chunks: n, at: B.at, v: 4 });
     st.textContent = 'بيانات مسؤول المشتريات اتحدّثت ✓';
   } catch (e) { st.textContent = 'تحديث بيانات مسؤول المشتريات فشل: ' + (e.code || e.message) + (e.code === 'permission-denied' ? ' — حط قواعد Firebase الجديدة الأول' : ''); }
 }
@@ -786,7 +808,7 @@ export async function mountBuyer(root) {
     if (!m.exists()) { root.innerHTML = '<div class="banner">البيانات لسه متجهزتش. اطلب من مدير الفرع يفتح تبويب طلبية النواقص مرة واحدة.</div>'; return; }
     const meta = JSON.parse(m.data().d), parts = [];
     for (let i = 0; i < m.data().chunks; i++) { const c = await getDoc(doc(DB, 'purchasing', 'data_items_' + i)); parts.push(...JSON.parse(c.data().d)); }
-    IT = parts.map(r => ({ id: r[0], name: r[1], sup3: r[2], grp: r[3], sd: r[4], abc: r[5] })); B = { kpi: meta.kpi, sdx: meta.sdx, at: m.data().at };
+    IT = parts.map(r => ({ id: r[0], name: r[1], sup3: r[2], grp: r[3], sd: r[4], abc: r[5], p90: r[6] == null ? undefined : r[6], w25: r[7] || null })); B = { kpi: meta.kpi, sdx: meta.sdx, oos: meta.oos || {}, at: m.data().at };
   } catch (e) { root.innerHTML = `<div class="banner bad">مقدرتش أحمّل البيانات: ${esc(e.code || e.message)}</div>`; return; }
   root.innerHTML = '<div id="ivbody"></div>'; VIEW = 'or'; const r = vOrders(), c = $('#ivbody', root); c.innerHTML = r.html; sortable(c); r.after();
 }
