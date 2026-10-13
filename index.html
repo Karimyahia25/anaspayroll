@@ -1565,7 +1565,7 @@ function cashForm(demo){
     <button class="sm ghost" type="button" onclick="cashExpAdd()">+ مصروف</button>
     <h3 class="cfh">٥. نتيجة السيستم</h3>
     <select id="cfPos" onchange="cashCalc()" aria-label="نتيجة السيستم"><option value="">— السيستم قال إيه؟ —</option>
-      <option>مظبوط</option><option>عجز</option><option>زيادة</option></select>
+      <option>عجز</option><option>زيادة</option></select>
     <div id="cfPosRow" class="hide"><label for="cfPosAmt">المبلغ زي ما السيستم كاتبه</label>
       <input enterkeyhint="next" id="cfPosAmt" type="number" min="0" step="0.01" inputmode="decimal" oninput="cashCalc()"></div>
     <label for="cfNote">ملاحظات (اختياري)</label><input enterkeyhint="next" id="cfNote" placeholder="مثال: أوردر طيار لسه مرجعش">
@@ -1717,7 +1717,7 @@ function cashRead(){
     .filter(x => x.type || x.desc || x.amount);
   const expTotal = r2(exps.reduce((a, x) => a + x.amount, 0));
   const posKind = $('cfPos').value;
-  const posAmount = posKind && posKind !== 'مظبوط' ? r2(+$('cfPosAmt').value || 0) : 0;
+  const posAmount = posKind ? r2(+$('cfPosAmt').value || 0) : 0;
   const variance = posKind === 'عجز' ? -posAmount : posKind === 'زيادة' ? posAmount : 0;
   const pen = cPen({ posKind, posAmount, tol: CASH.TOL, surplusCharged: CASH.SURPLUS_CHARGED });
   return { counts, coins, drawer, badCount, fl, got, visa, voda, insta, exps, expTotal,
@@ -1743,7 +1743,7 @@ window.cashCalc = () => {
   $('dtCoins').textContent = s.coins ? M2(s.coins) + ' ج' : '—';
   $('cfCash').textContent = M2(s.cashToSafe) + ' ج';
   $('cfGotRow').classList.toggle('hide', s.fl !== 'no');
-  $('cfPosRow').classList.toggle('hide', !s.posKind || s.posKind === 'مظبوط');
+  $('cfPosRow').classList.toggle('hide', !s.posKind);
   [['cfVisaT', s.visa], ['cfVodaT', s.voda], ['cfInstaT', s.insta]].forEach(([id, x]) =>
     $(id).textContent = x.bad ? '⚠ فيه رقم مش مفهوم — اكتب أرقام بس وبينهم +' : x.n > 1 ? `${x.n} عمليات = ${M2(x.sum)} ج` : '');
   const R = (k, v, c) => `<div class="row ${c || ''}"><span class="k">${k}</span><span class="v">${v}</span></div>`;
@@ -1788,8 +1788,8 @@ window.cashSend = async () => {
     if (!(x.amount > 0)) return bad('اكتب مبلغ كل مصروف');
     if (EXP_NEED_DESC.includes(x.type) && !x.desc) return bad(`اكتب بيان "${x.type}" (مين / فاتورة إيه)`);
   }
-  if (!s.posKind) return bad('اختار نتيجة السيستم (مظبوط / عجز / زيادة)');
-  if (s.posKind !== 'مظبوط' && !(s.posAmount > 0)) return bad('اكتب مبلغ العجز أو الزيادة زي السيستم بالظبط');
+  if (!s.posKind) return bad('اختار نتيجة السيستم (عجز / زيادة)');
+  if ($('cfPosAmt').value.trim() === '') return bad('اكتب مبلغ العجز أو الزيادة زي السيستم بالظبط');
   const now = new Date(), w = bizOf(now);
   const prev = MYCASH.find(c => (c.empUid || c.uid) === empUid), last = prev && cTime(prev);
   if (last && now - last < 45 * 60000 && !confirm(`${station ? who.name + ' قفل' : 'إنت قفلت'} من أقل من ٤٥ دقيقة. دي تقفيلة جديدة فعلاً؟`)) return;
