@@ -399,7 +399,7 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="adm" class="hide"></div>
 <div id="buyer" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-11-E</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-13-A</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -841,7 +841,7 @@ onAuthStateChanged(auth, async user => {
 async function renderBuyer(){
   const b = $('buyer'); b.classList.remove('hide');
   b.innerHTML = `<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div><h2 style="margin:0">🛒 طلبية النواقص</h2><p class="sub" style="margin:2px 0 0">مسؤول المشتريات</p></div><button class="ghost sm" onclick="doOut()">خروج</button></div><div id="buyerRoot"></div>`;
-  try { const m = await import('./sections/inventory.js?v=24'); await m.mountBuyer($('buyerRoot')); }
+  try { const m = await import('./sections/inventory.js?v=25'); await m.mountBuyer($('buyerRoot')); }
   catch (e) { $('buyerRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل الشاشة: ${esc(e.code || e.message)}</div>`; }
 }
 
@@ -1938,6 +1938,8 @@ window.cashAcctMake = async () => {
   } catch (e) {
     m.textContent = e.code === 'auth/email-already-in-use'
       ? `الحساب cashier@${DOMAIN} متعمل قبل كده. امسحه من Firebase Console ← Authentication وجرّب تاني.`
+      : e.code === 'auth/admin-restricted-operation'
+      ? 'التسجيل مقفول من Firebase (Prevent new sign-ups). افتحه مؤقتاً: Firebase Console ← Authentication ← Settings ← User actions ← علّم Enable create (sign-up) ← Save، وبعدين اعمل الحساب تاني، واقفله بعدها.'
       : 'مشكلة: ' + (e.code || e.message);
   }
 };
@@ -2319,7 +2321,7 @@ function renderAdmin(){
 let INV_ON = false;
 async function openInventory(){
   if (INV_ON) return; INV_ON = true;
-  try { const m = await import('./sections/inventory.js?v=24'); await m.mountInventory($('stockRoot'), ROLE); }
+  try { const m = await import('./sections/inventory.js?v=25'); await m.mountInventory($('stockRoot'), ROLE); }
   catch (e) { INV_ON = false; $('stockRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل قسم المخزون: ${esc(e.code || e.message)}</div>`; }
 }
 
@@ -2751,7 +2753,9 @@ window.publish = async () => {
           btn.disabled = false; return;
         }
         msg.style.color = 'var(--warn)';
-        msg.textContent = `مشكلة في إنشاء حساب الكود ${code}: ${e.code}`;
+        msg.textContent = e.code === 'auth/admin-restricted-operation'
+          ? `الكود ${code} موظف جديد ملوش حساب. التسجيل مقفول من Firebase (Prevent new sign-ups). افتحه مؤقتاً: Firebase Console ← Authentication ← Settings ← User actions ← علّم Enable create (sign-up) ← Save، وبعدين انشر تاني، واقفله بعد النشر.`
+          : `مشكلة في إنشاء حساب الكود ${code}: ${e.code}`;
         btn.disabled = false; return;
       }
       try { await setDoc(doc(db, 'staff', uid), { code, name: p.name, job: p.job || '' }, { merge:true }); } catch(e){}

@@ -797,7 +797,7 @@ async function buyerAcct() {
       const app2 = getApps().find(a => a.name === 'buyerAcct') || initializeApp(getApp().options, 'buyerAcct'), a2 = getAuth(app2);
       const cr = await createUserWithEmailAndPassword(a2, 'buyer@anaspharmacy.com', pw); await signOut(a2);
       await setDoc(doc(DB, 'buyers', cr.user.uid), { username: 'buyer', at: Date.now() }); buyerAcct();
-    } catch (e) { m.textContent = e.code === 'auth/email-already-in-use' ? 'الحساب buyer@anaspharmacy.com متعمل قبل كده. امسحه من Firebase Console ← Authentication وجرّب تاني.' : 'مشكلة: ' + (e.code || e.message); }
+    } catch (e) { m.textContent = e.code === 'auth/email-already-in-use' ? 'الحساب buyer@anaspharmacy.com متعمل قبل كده. امسحه من Firebase Console ← Authentication وجرّب تاني.' : e.code === 'auth/admin-restricted-operation' ? 'التسجيل مقفول من Firebase (Prevent new sign-ups). افتحه مؤقتاً: Firebase Console ← Authentication ← Settings ← User actions ← علّم Enable create (sign-up) ← Save، وبعدين اعمل الحساب تاني، واقفله بعدها.' : 'مشكلة: ' + (e.code || e.message); }
   };
 }
 export async function mountBuyer(root) {
