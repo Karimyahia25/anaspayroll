@@ -592,7 +592,7 @@ function ourQty(it, avgMonthly, stock, price) {
 // خدمات بتطلع في تقرير النواقص بس مش بتتطلب من مورد
 const SVC = /^\s*(توصيل|قياس ضغط|قياس سكر|ضرب حقن|زيار|IN ?BODY|اصناف متنوع|ميزان عادي|كشف)/i;
 // أكواد الموردين في تقرير النواقص ← اسم المورد في المشتريات (ثابتة). الأكواد اللي مش هنا بتتربط بالتصويت، ومينفعش تاخد اسم محجوز لكود تاني
-const SUP_CODES = { PHARM: 'Pharmaoverseas', 'داي': 'دايركت', GS: 'جي اس فارم', ANDA: 'alandalos cosmetics', KAR: 'karam center', HE: 'HELAL', TARG: 'TARGET', OUT: 'outting', ALS: 'السلام', RAM: 'RAMCO PHARM', EBN: 'ibnsena', DOCTR: 'doctor anas', SOF: 'SOFICO PHARM', RA: 'رامي مستورد', ELSH: 'elshosh manshia', SO: 'SO STORES', ELR: 'الرواء', NEB: 'نبيولا', ALM: 'العالميه', MI: 'ميرا مستحضرات', ALEX: 'alex way', AHR: 'ايه اتش ار فارما', CHEMI: 'chemi pharma', ROW: 'الروان كوزمو' };
+const SUP_CODES = { PHARM: 'Pharmaoverseas', 'داي': 'دايركت', 'ثري': '3n', GS: 'جي اس فارم', ANDA: 'alandalos cosmetics', KAR: 'karam center', HE: 'HELAL', TARG: 'TARGET', OUT: 'outting', ALS: 'السلام', RAM: 'RAMCO PHARM', EBN: 'ibnsena', DOCTR: 'doctor anas', SOF: 'SOFICO PHARM', RA: 'رامي مستورد', ELSH: 'elshosh manshia', SO: 'SO STORES', ELR: 'الرواء', NEB: 'نبيولا', ALM: 'العالميه', MI: 'ميرا مستحضرات', ALEX: 'alex way', AHR: 'ايه اتش ار فارما', CHEMI: 'chemi pharma', ROW: 'الروان كوزمو' };
 // شارة ABC: A أهم الأصناف (أعلى مبيعات)، C أقلها
 const ABC_C = { A: '#C0392B', B: '#D68910', C: '#7F8C8D' }, abcOf = l => l.abc || l.abcE || '', abcTag = l => { const a = abcOf(l); return a ? `<b style="background:${ABC_C[a]};color:#fff;padding:1px 7px;border-radius:4px">${a}${l.abc ? '' : '~'}</b>` : '<span class="sm">—</span>'; };
 const qtyOf = l => ORD.qm === 'ours' ? (l.qo || 0) : l.qty, valOf = l => qtyOf(l) * l.price;
