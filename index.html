@@ -649,6 +649,9 @@ function gridOf(wb, want){
   return head ? { g: [head, ...rows], h: 0, sheets } : null;
 }
 
+/* مبيعات السوشيال (البائع social أو اسم العميل فيه "سوشيال") مفيهاش عمولة بوشينج ولا بتتحسب في قيمة البوشينج — قرار د. يحيى 13/10 */
+const isSocialSale = (seller, cust) => String(seller == null ? '' : seller).trim().toLowerCase() === 'social' || String(cust == null ? '' : cust).includes('سوشيال');
+
 function parseSales(wb, ps, pe, rates){
   const found = gridOf(wb, 'اسم البائع');
   if (!found) throw new Error('مش لاقي عمود "اسم البائع" — ده مش تقرير المبيعات');
@@ -677,7 +680,7 @@ function parseSales(wb, ps, pe, rates){
     const v = nz(o.total); x.total += v;
     if (hasItem && o.item){
       const name = String(o.item).toUpperCase();
-      if (name.includes('$$')){
+      if (name.includes('$$') && !isSocialSale(o.seller, o.cust)){
         const rate = name.includes('XICLAV') ? rates.xic : (name.includes('NEBULA') ? rates.neb : rates.gen);
         push[seller] = push[seller] || { pushValue:0, pushComm:0, pushLines:0 };
         push[seller].pushValue += v; push[seller].pushComm += v * rate; push[seller].pushLines++;
@@ -711,6 +714,7 @@ function parseItems(wb, salesRows, rates){
     matched++;
     const name = String(o.item).toUpperCase();
     if (!name.includes('$$')) continue;
+    if (isSocialSale(s, o.cust)) continue;
     const rate = name.includes('XICLAV') ? rates.xic : (name.includes('NEBULA') ? rates.neb : rates.gen);
     const v = nz(o.total);
     per[s] = per[s] || { pushValue: 0, pushComm: 0, pushLines: 0 };
