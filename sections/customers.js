@@ -94,6 +94,8 @@ async function delLog(id) {
   LOG = LOG.filter(x => x._id !== id);
 }
 
+// علامة d/D في اسم العميل = ليه خصم عندنا (مش متسجل في السيستم، في الاسم بس): "علاء d" · "D MANAR" · "*Dايمان"
+const hasDisc = n => /(^|[^A-Za-zء-ي])[dD](?![A-Za-z])/.test(n) || /^\*?\s*[dD](?=[ء-ي])/.test(n);
 const logsOf = id => LOG.filter(x => x.cust === id).sort((a, b) => String(b.at).localeCompare(String(a.at)));
 // اشترى بعد التواصل: أول فاتورة من يوم التواصل لحد 14 يوم بعده
 function boughtAfter(rec) {
@@ -136,7 +138,7 @@ function bar() {
 function filtered() {
   const q = ST.q.trim().toLowerCase();
   return CARDS.filter(c => c.status === ST.tab
-    && (!ST.grp || c.grp.includes(ST.grp)) && (!ST.leak || c.leak) && (!ST.deliv || c.deliv)
+    && (!ST.grp || c.grp.includes(ST.grp)) && (!ST.leak || c.leak) && (!ST.deliv || c.deliv) && (!ST.disc || hasDisc(c.name))
     && !(ST.hideDone && contactedRecently(c))
     && (!q || c.name.toLowerCase().includes(q) || c.phones.join(' ').includes(q) || c.items.some(i => String(i[0]).toLowerCase().includes(q))));
 }
@@ -150,7 +152,7 @@ function card(c) {
   return `<div class="cc ${contactedRecently(c) ? 'done' : ''}" style="--g:${g[1]}" data-id="${c.id}">
     <div class="top"><div><h4>${esc(c.name)}</h4>
       <div class="meta">${c.grp.map(x => `<span class="bd" style="background:${(GRP[x] || GRP.med)[1]}">${(GRP[x] || GRP.med)[0]}</span>`).join('')}
-        ${c.deliv ? '<span class="bd dl">عميل توصيل</span>' : ''}${c.leak ? '<span class="bd lk">غالباً بيجيب جزء من برا</span>' : ''}
+        ${c.deliv ? '<span class="bd dl">عميل توصيل</span>' : ''}${hasDisc(c.name) ? '<span class="bd" style="background:#C2417A">عميل خصم</span>' : ''}${c.leak ? '<span class="bd lk">غالباً بيجيب جزء من برا</span>' : ''}
         <br>${when} · آخر زيارة من ${c.visit == null ? '—' : c.visit + ' يوم'}${c.area && c.area !== 'مش متسجل' ? ' · ' + esc(c.area) : ''}</div></div>
       <div class="val">${M(c.monthly)}<div class="meta" style="text-align:left">في الشهر</div></div></div>
     <ul class="its">${its}</ul>
@@ -168,6 +170,7 @@ function listView() {
     <div class="ctl chips"><button class="chip ${!ST.grp ? 'on' : ''}" data-grp="">الكل</button>${grps}
       <label class="chip"><input type="checkbox" id="cleak" ${ST.leak ? 'checked' : ''}> بيجيب من برا</label>
       <label class="chip"><input type="checkbox" id="cdel" ${ST.deliv ? 'checked' : ''}> عملاء توصيل</label>
+      <label class="chip"><input type="checkbox" id="cdisc" ${ST.disc ? 'checked' : ''}> عملاء خصم</label>
       <label class="chip"><input type="checkbox" id="chide" ${ST.hideDone ? 'checked' : ''}> خبّي اللي اتكلموا</label></div>
     <div id="clist">${rows.slice(0, ST.shown).map(card).join('') || '<div class="banner">مفيش حد في القايمة دي بالفلاتر دي.</div>'}</div>
     ${rows.length > ST.shown ? `<button class="ghost more" id="cmore">عرض المزيد (${rows.length - ST.shown})</button>` : ''}`;
@@ -176,6 +179,7 @@ function listView() {
   b.querySelectorAll('[data-grp]').forEach(x => x.onclick = () => { ST.grp = x.dataset.grp; ST.shown = 40; listView(); });
   $('#cleak', b).onchange = e => { ST.leak = e.target.checked; listView(); };
   $('#cdel', b).onchange = e => { ST.deliv = e.target.checked; listView(); };
+  $('#cdisc', b).onchange = e => { ST.disc = e.target.checked; listView(); };
   $('#chide', b).onchange = e => { ST.hideDone = e.target.checked; render(); };
   if ($('#cmore', b)) $('#cmore', b).onclick = () => { ST.shown += 40; listView(); };
   b.querySelectorAll('[data-copy]').forEach(x => x.onclick = () => copy(CARDS.find(c => c.id === +x.dataset.copy).msg));
