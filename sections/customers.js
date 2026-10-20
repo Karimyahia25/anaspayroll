@@ -142,7 +142,7 @@ function bar() {
 function filtered() {
   const q = ST.q.trim().toLowerCase();
   return CARDS.filter(c => c.status === ST.tab
-    && (!ST.grp || c.grp.includes(ST.grp)) && (!ST.leak || c.leak) && (!ST.deliv || c.deliv) && (!ST.disc || hasDisc(c.name))
+    && (!ST.grp || c.grp.includes(ST.grp))
     && !(ST.hideDone && contactedRecently(c))
     && (!q || c.name.toLowerCase().includes(q) || c.phones.join(' ').includes(q) || c.items.some(i => String(i[0]).toLowerCase().includes(q))));
 }
@@ -173,20 +173,12 @@ function listView() {
   const grps = Object.entries(GRP).map(([k, [t]]) => `<button class="chip ${ST.grp === k ? 'on' : ''}" data-grp="${k}">${t}</button>`).join('');
   $('#cbody', ROOT).innerHTML = `<p class="why"><b>${L[1]}</b> — ${L[2]}. مترتبين بقيمة العميل في الشهر.</p>
     <div class="ctl"><input type="search" id="cq" placeholder="دوّر باسم العميل أو التليفون أو الصنف" value="${esc(ST.q)}"></div>
-    <div class="ctl chips"><button class="chip ${!ST.grp ? 'on' : ''}" data-grp="">الكل</button>${grps}
-      <label class="chip"><input type="checkbox" id="cleak" ${ST.leak ? 'checked' : ''}> بيجيب من برا</label>
-      <label class="chip"><input type="checkbox" id="cdel" ${ST.deliv ? 'checked' : ''}> عملاء توصيل</label>
-      <label class="chip"><input type="checkbox" id="cdisc" ${ST.disc ? 'checked' : ''}> عملاء خصم</label>
-      <label class="chip"><input type="checkbox" id="chide" ${ST.hideDone ? 'checked' : ''}> خبّي اللي اتكلموا</label></div>
+    <div class="ctl chips"><button class="chip ${!ST.grp ? 'on' : ''}" data-grp="">الكل</button>${grps}</div>
     <div id="clist">${rows.slice(0, ST.shown).map(card).join('') || '<div class="banner">مفيش حد في القايمة دي بالفلاتر دي.</div>'}</div>
     ${rows.length > ST.shown ? `<button class="ghost more" id="cmore">عرض المزيد (${rows.length - ST.shown})</button>` : ''}`;
   const b = $('#cbody', ROOT);
   $('#cq', b).oninput = e => { ST.q = e.target.value; ST.shown = 40; const p = e.target.selectionStart; listView(); const i = $('#cq', ROOT); i.focus(); i.setSelectionRange(p, p); };
   b.querySelectorAll('[data-grp]').forEach(x => x.onclick = () => { ST.grp = x.dataset.grp; ST.shown = 40; listView(); });
-  $('#cleak', b).onchange = e => { ST.leak = e.target.checked; listView(); };
-  $('#cdel', b).onchange = e => { ST.deliv = e.target.checked; listView(); };
-  $('#cdisc', b).onchange = e => { ST.disc = e.target.checked; listView(); };
-  $('#chide', b).onchange = e => { ST.hideDone = e.target.checked; render(); };
   if ($('#cmore', b)) $('#cmore', b).onclick = () => { ST.shown += 40; listView(); };
   b.querySelectorAll('[data-copy]').forEach(x => x.onclick = () => copy(CARDS.find(c => c.id === +x.dataset.copy).msg));
   // على الكمبيوتر مفيش تليفون يتصل: الدوسة على الرقم بتنسخه بدل ما تفتح برنامج اتصال
