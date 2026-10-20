@@ -11,6 +11,9 @@ const N = n => (n == null || isNaN(n)) ? '—' : Math.round(n).toLocaleString('e
 const M = n => N(n) + ' ج';
 const D = s => { if (!s) return '—'; const [y, m, d] = String(s).slice(0, 10).split('-'); return `${+d}/${+m}`; };
 const today = () => new Date(Date.now() + 2 * 3600e3).toISOString().slice(0, 10);       // تاريخ القاهرة
+// 1 يوم · يومين · 3 أيام · 15 يوم
+const days = n => n === 1 ? 'يوم' : n === 2 ? 'يومين' : n <= 10 ? `${n} أيام` : `${n} يوم`;
+const nm = n => String(n).replace(/\*/g, '').replace(/\s+/g, ' ').trim();   // النجمة ملهاش معنى
 const addDays = (s, n) => { const t = new Date(s + 'T12:00:00Z'); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); };
 
 const LISTS = [['قرّب', '⏰ ميعاده قرّب', 'ابعتله قبل ما يخلص — ومعاه التوصيل في 30 دقيقة'],
@@ -49,6 +52,7 @@ function css() {
 #crmRoot .cc .top{display:flex;justify-content:space-between;gap:8px;align-items:flex-start;flex-wrap:wrap}
 #crmRoot .cc h4{margin:0;font-size:16px}
 #crmRoot .cc .meta{font-size:12.5px;color:var(--muted);margin-top:3px;line-height:1.7}
+#crmRoot .cc .when{font-size:14.5px;font-weight:700;color:var(--ink);margin-top:6px}
 #crmRoot .cc .val{font-family:Alexandria,sans-serif;font-weight:700;font-size:15px;white-space:nowrap}
 #crmRoot .bd{display:inline-block;padding:2px 9px;border-radius:99px;font-size:11.5px;font-weight:700;color:#fff;margin-inline-end:4px}
 #crmRoot .bd.lk{background:#B0761F}#crmRoot .bd.dl{background:#2A6FB0}#crmRoot .bd.ok{background:#1B7F3B}
@@ -144,16 +148,18 @@ function filtered() {
 }
 function card(c) {
   const g = GRP[c.grp[0]] || GRP.med, L = logsOf(c.id)[0], won = L && boughtAfter(L), edit = ROLE === 'admin';
-  const when = c.status === 'قرّب' ? (c.late === 0 ? 'أول صنف يخلص النهارده' : `أول صنف يخلص بعد ${-c.late} يوم`) : `متأخر ${c.late} يوم عن ميعاده`;
+  const when = c.status === 'قرّب' ? (c.late === 0 ? '⏰ محتاج يشتري النهارده' : `⏰ محتاج يشتري بعد ${days(-c.late)}`)
+             : c.status === 'اتأخر' ? `⚠️ كان المفروض يشتري من ${days(c.late)}` : `💔 مجاش الصيدلية من ${days(c.visit || c.late)}`;
+  const seen = c.visit == null ? '' : c.visit === 0 ? '🛒 جه الصيدلية النهارده' : `🛒 آخر مرة جه الصيدلية: من ${days(c.visit)}`;
   const its = c.items.map(([lb, ev, src, dose, due, lk]) => `<li><span>${esc(lb)}${lk ? ' <span class="bd lk">من برا؟</span>' : ''}</span>
       <span class="s">كل ${ev} يوم (${esc(src)})${src === 'عادته' && dose ? ` · الجرعة ${dose}` : ''} · <b>يخلص حوالي ${D(due)}</b></span></li>`).join('');
   const last = L ? `<div class="last ${won ? 'win' : ''}">${won ? `✅ اشترى بعد التواصل: ${M(won.amt)} يوم ${D(won.day)} — ` : ''}
       آخر تواصل: ${esc(L.result)} يوم ${D(L.day)}${L.byName ? ' (' + esc(L.byName) + ')' : ''}${L.note ? ' — ' + esc(L.note) : ''}</div>` : '';
   return `<div class="cc ${contactedRecently(c) ? 'done' : ''}" style="--g:${g[1]}" data-id="${c.id}">
-    <div class="top"><div><h4>${esc(c.name)}</h4>
+    <div class="top"><div><h4>${esc(nm(c.name))}</h4>
       <div class="meta">${c.grp.map(x => `<span class="bd" style="background:${(GRP[x] || GRP.med)[1]}">${(GRP[x] || GRP.med)[0]}</span>`).join('')}
         ${c.deliv ? '<span class="bd dl">عميل توصيل</span>' : ''}${hasDisc(c.name) ? '<span class="bd" style="background:#C2417A">عميل خصم</span>' : ''}${c.leak ? '<span class="bd lk">غالباً بيجيب جزء من برا</span>' : ''}
-        <br>${when} · آخر زيارة من ${c.visit == null ? '—' : c.visit + ' يوم'}${c.area && c.area !== 'مش متسجل' ? ' · ' + esc(c.area) : ''}</div></div>
+        <div class="when">${when}</div>${c.status !== 'بعد' && seen ? `<div>${seen}</div>` : ''}${c.area && c.area !== 'مش متسجل' ? `<div>📍 ${esc(c.area)}</div>` : ''}</div></div>
       <div class="val">${M(c.monthly)}<div class="meta" style="text-align:left">في الشهر</div></div></div>
     <ul class="its">${its}</ul>
     <div class="ph">${c.phones.length ? c.phones.map(p => `<a href="tel:${p}">📞 ${p}</a>`).join('') : '<span class="meta">مفيش رقم متسجل</span>'}</div>
