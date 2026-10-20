@@ -399,7 +399,7 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="adm" class="hide"></div>
 <div id="buyer" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-13-A</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-21-A</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -2303,6 +2303,7 @@ function renderAdmin(){
     <button id="at6" onclick="atab(6)">الأذونات</button>
     <button id="at7" onclick="atab(7)">الخزنة</button>
     <button id="at8" onclick="atab(8)">المخزون</button>
+    <button id="at9" onclick="atab(9)">العملاء</button>
     ${isAdm ? `<button id="at1" onclick="atab(1)">نشر كشف جديد</button>
     <button id="at2" onclick="atab(2)">الموظفين</button>
     <button id="at3" onclick="atab(3)">الاستفسارات</button>` : ''}
@@ -2313,6 +2314,7 @@ function renderAdmin(){
   <div id="ap6" class="card hide"><h2>الأذونات</h2><div id="pmBox"></div></div>
   <div id="ap7" class="card hide"><h2>الخزنة وتقفيل الشيفتات</h2><div id="cashAdm"></div></div>
   <div id="ap8" class="hide"><div id="stockRoot"></div></div>
+  <div id="ap9" class="hide"><div id="crmRoot"></div></div>
   ${isAdm ? `
   <div id="ap1" class="card hide">${adminUploadUI()}</div>
   <div id="ap2" class="card hide"><h2>الموظفين وحساباتهم</h2><div id="staffBox"><p class="sub">جاري التحميل…</p></div></div>
@@ -2320,6 +2322,7 @@ function renderAdmin(){
   if (isAdm) bindUploads();
   loadDash();
   if (new URLSearchParams(location.search).get('tab') === 'stock') atab(8);
+  if (new URLSearchParams(location.search).get('tab') === 'customers') atab(9);
 }
 
 let INV_ON = false;
@@ -2329,12 +2332,19 @@ async function openInventory(){
   catch (e) { INV_ON = false; $('stockRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل قسم المخزون: ${esc(e.code || e.message)}</div>`; }
 }
 
+let CRM_ON = false;
+async function openCustomers(){
+  if (CRM_ON) return; CRM_ON = true;
+  try { const m = await import('./sections/customers.js?v=1'); await m.mountCustomers($('crmRoot'), ROLE); }
+  catch (e) { CRM_ON = false; $('crmRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل قسم العملاء: ${esc(e.code || e.message)}</div>`; }
+}
+
 window.atab = n => {
-  [0,4,5,6,7,8,1,2,3].forEach(i => { const p = $('ap'+i), t = $('at'+i);
+  [0,4,5,6,7,8,9,1,2,3].forEach(i => { const p = $('ap'+i), t = $('at'+i);
     if (p) p.classList.toggle('hide', i !== n); if (t) t.classList.toggle('on', i === n); });
   $('perBox').style.display = (n === 0 || n === 4) ? '' : 'none';
   if ((n === 0 || n === 4) && !DASH.periods.length) loadDash();
-  if (n === 2) loadStaff(); if (n === 3) loadQ(); if (n === 5) otAdmin(); if (n === 6) pmAdmin(); if (n === 7) cashAdmin(); if (n === 8) openInventory();
+  if (n === 2) loadStaff(); if (n === 3) loadQ(); if (n === 5) otAdmin(); if (n === 6) pmAdmin(); if (n === 7) cashAdmin(); if (n === 8) openInventory(); if (n === 9) openCustomers();
 };
 
 async function loadDash(force){
