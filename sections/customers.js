@@ -26,6 +26,7 @@ const RETRY_NR = 2;           // مردش: يرجع يظهر بعد يومين
 
 let ROOT, ROLE, DB = null, LOCAL = null, META = {}, CARDS = [], VIS = {}, LOG = [];
 let ST = { tab: 'قرّب', q: '', grp: '', leak: false, deliv: false, hideDone: true, shown: 40 };
+let H = null, HS = { q: '', sel: null, months: 0, shown: 60 };   // بحث بصنف
 
 /* ---------- ستايل ---------- */
 function css() {
@@ -73,6 +74,9 @@ function css() {
 #crmRoot table{width:100%;border-collapse:collapse;font-size:13px}#crmRoot th,#crmRoot td{padding:8px;border-top:1px solid var(--line);text-align:right}
 #crmRoot th{color:var(--muted);font-size:12px}
 #crmRoot .tw{overflow-x:auto}
+#crmRoot .hc{background:var(--card);border-radius:18px;padding:14px;margin-bottom:10px;box-shadow:var(--shadow)}
+#crmRoot .hr{border-top:1px solid var(--line);padding:10px 0}#crmRoot .hr:first-child{border-top:0}
+#crmRoot .hn{font-weight:700;font-size:15px}#crmRoot .hs{font-size:12.5px;color:var(--muted);margin-top:2px;line-height:1.7}
 #crmRoot .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#0F1B2D;color:#fff;padding:10px 18px;border-radius:12px;z-index:80;font-size:14px}
 `;
   document.head.appendChild(s);
@@ -135,6 +139,7 @@ function kpis() {
 function bar() {
   const cnt = s => CARDS.filter(c => c.status === s && !(ST.hideDone && contactedRecently(c))).length;
   $('#cbar', ROOT).innerHTML = LISTS.map(([k, t]) => `<button class="${ST.tab === k ? 'on' : ''}" data-tab="${k}">${t}<span class="n">${cnt(k)}</span></button>`).join('')
+    + `<button class="${ST.tab === 'find' ? 'on' : ''}" data-tab="find">🔎 بحث بصنف</button>`
     + `<button class="${ST.tab === 'res' ? 'on' : ''}" data-tab="res">📈 النتايج</button>`
     + `<button class="${ST.tab === 'log' ? 'on' : ''}" data-tab="log">🗂️ سجل التواصل<span class="n">${LOG.length}</span></button>`;
   $('#cbar', ROOT).querySelectorAll('button').forEach(b => b.onclick = () => { ST.tab = b.dataset.tab; ST.shown = 40; render(); });
@@ -172,7 +177,7 @@ function listView() {
   const L = LISTS.find(x => x[0] === ST.tab), rows = filtered();
   const grps = Object.entries(GRP).map(([k, [t]]) => `<button class="chip ${ST.grp === k ? 'on' : ''}" data-grp="${k}">${t}</button>`).join('');
   $('#cbody', ROOT).innerHTML = `<p class="why"><b>${L[1]}</b> — ${L[2]}. مترتبين بقيمة العميل في الشهر.</p>
-    <div class="ctl"><input type="search" id="cq" placeholder="دوّر باسم العميل أو التليفون أو الصنف" value="${esc(ST.q)}"></div>
+    <div class="ctl"><input type="search" id="cq" placeholder="دوّر في القايمة دي: اسم العميل أو التليفون أو الصنف" value="${esc(ST.q)}"></div>
     <div class="ctl chips"><button class="chip ${!ST.grp ? 'on' : ''}" data-grp="">الكل</button>${grps}</div>
     <div id="clist">${rows.slice(0, ST.shown).map(card).join('') || '<div class="banner">مفيش حد في القايمة دي بالفلاتر دي.</div>'}</div>
     ${rows.length > ST.shown ? `<button class="ghost more" id="cmore">عرض المزيد (${rows.length - ST.shown})</button>` : ''}`;
@@ -228,7 +233,87 @@ function logView() {
     try { await delLog(b.dataset.del); render(); } catch (e) { toast('متمسحش: ' + (e.code || e.message)); }
   });
 }
-function render() { kpis(); bar(); if (ST.tab === 'res') resView(); else if (ST.tab === 'log') logView(); else listView(); }
+/* ---------- بحث بصنف: مين اشترى صنف معين (أي صنف) من أول 2024 ---------- */
+async function loadHist() {
+  if (H) return;
+  let raw;
+  if (LOCAL) raw = LOCAL.hist;
+  else {
+    const m = await getDoc(doc(DB, 'crm_hist', 'meta'));
+    if (!m.exists()) { H = { none: true }; return; }
+    const k = JSON.parse(m.data().d), buys = [], cust = {};
+    for (let i = 0; i < k.buys; i++) { const c = await getDoc(doc(DB, 'crm_hist', 'buys_' + i)); buys.push(...JSON.parse(c.data().d)); }
+    for (let i = 0; i < k.cust; i++) { const c = await getDoc(doc(DB, 'crm_hist', 'cust_' + i)); Object.assign(cust, JSON.parse(c.data().d)); }
+    const it = await getDoc(doc(DB, 'crm_hist', 'items'));
+    raw = { buys, cust, items: JSON.parse(it.data().d), at: k.at };
+  }
+  const byItem = {};
+  for (const b of raw.buys) (byItem[b[1]] = byItem[b[1]] || []).push(b);
+  const list = Object.entries(raw.items).map(([id, n]) => [+id, n, (byItem[id] || []).length]).filter(x => x[2]);
+  H = { ...raw, byItem, list };
+}
+const since = m => m ? addDays(today(), -30 * m) : '';
+const times = n => n === 1 ? 'مرة' : n === 2 ? 'مرتين' : n <= 10 ? `${n} مرات` : `${n} مرة`;
+function custsFor(ids, from) {
+  const per = {};
+  for (const id of ids) for (const [c, , n, last] of (H.byItem[id] || [])) {
+    if (last < from) continue;
+    const p = per[c] || (per[c] = { c, n: 0, last: '', items: new Set() });
+    p.n += n; if (last > p.last) p.last = last; p.items.add(H.items[id]);
+  }
+  return Object.values(per).sort((a, b) => b.last.localeCompare(a.last));
+}
+function findView() {
+  const body = $('#cbody', ROOT);
+  if (!H) {
+    body.innerHTML = '<div class="card"><p class="sub">جاري تحميل مشتريات العملاء…</p></div>';
+    loadHist().then(findView).catch(e => { body.innerHTML = `<div class="banner bad">مقدرتش أحمّل المشتريات: ${esc(e.code || e.message)}</div>`; });
+    return;
+  }
+  if (H.none) { body.innerHTML = '<div class="banner">لسه السيرفر مرفعش سجل المشتريات — هيظهر بعد أول تشغيل بعد التحديث.</div>'; return; }
+  const q = HS.q.trim().toLowerCase();
+  const hits = q.length < 2 ? [] : H.list.filter(x => x[1].toLowerCase().includes(q)).sort((a, b) => b[2] - a[2]);
+  const ids = HS.sel === '*' ? hits.map(x => x[0]) : (HS.sel ? [HS.sel] : []);
+  let res = '';
+  if (HS.sel) {
+    const rows = custsFor(ids, since(HS.months));
+    const title = HS.sel === '*' ? `كل الأصناف اللي فيها «${esc(HS.q)}» (${ids.length} صنف)` : esc(H.items[HS.sel]);
+    const allPh = rows.map(r => ((H.cust[r.c] || [])[1] || [])[0]).filter(Boolean);
+    res = `<div class="hc" style="margin-top:10px"><h3 style="margin:0 0 6px">${title}</h3>
+      <p class="why">${N(rows.length)} عميل اشتروه${HS.months ? ` في آخر ${HS.months} شهور` : ' من أول 2024'} — الأحدث الأول.</p>
+      <div class="ctl chips">${[[0, 'الكل'], [3, 'آخر 3 شهور'], [6, 'آخر 6 شهور'], [12, 'آخر سنة']].map(([m, t]) =>
+        `<button class="chip ${HS.months === m ? 'on' : ''}" data-m="${m}">${t}</button>`).join('')}
+        ${allPh.length ? `<button class="chip" id="hcopy">📋 نسخ كل الأرقام (${allPh.length})</button>` : ''}</div>
+      <div class="hl">${rows.slice(0, HS.shown).map(r => {
+        const [name, ph, vis, dl] = H.cust[r.c] || ['', [], null, false];
+        return `<div class="hr"><div class="hn">${esc(nm(name))}${dl ? ' <span class="bd dl">توصيل</span>' : ''}${hasDisc(name) ? ' <span class="bd" style="background:#C2417A">خصم</span>' : ''}</div>
+          ${HS.sel === '*' ? `<div class="hs">${esc([...r.items].slice(0, 3).join(' · '))}</div>` : ''}
+          <div class="ph">${(ph || []).map(x => `<a href="tel:${x}">📞 ${x}</a>`).join('') || '<span class="hs">مفيش رقم</span>'}</div>
+          <div class="hs">اشترى ${times(r.n)} · آخر مرة ${D(r.last)} · آخر زيارة للصيدلية ${D(vis)}</div></div>`;
+      }).join('')}
+      </div>${rows.length > HS.shown ? `<button class="ghost more" id="hmore">عرض المزيد (${rows.length - HS.shown})</button>` : ''}</div>`;
+  }
+  body.innerHTML = `<p class="why">اكتب اسم أي صنف (دوا أو تجميل أو أي حاجة) وتطلعلك كل العملاء المسجلين اللي اشتروه من أول 2024 بأرقامهم — مفيد للعروض.
+      آخر تحديث: ${esc(H.at || META.at || '')}.</p>
+    <div class="ctl"><input type="search" id="hq" placeholder="اسم الصنف أو جزء منه — مثلاً NEBULA أو MOLFIX" value="${esc(HS.q)}"></div>
+    ${!HS.sel && q.length >= 2 ? `<div class="hc">${hits.length ? `
+      ${hits.length > 1 ? `<button class="ghost" data-sel="*" style="margin-bottom:8px">كل الأصناف اللي فيها «${esc(HS.q)}» — ${hits.length} صنف</button>` : ''}
+      <div class="tw"><table>${hits.slice(0, 25).map(([id, n, k]) => `<tr data-sel="${id}" style="cursor:pointer"><td>${esc(n)}</td><td>${N(k)} عميل</td></tr>`).join('')}</table></div>`
+      : '<p class="sub">مفيش صنف بالاسم ده اتباع لعميل مسجل.</p>'}</div>` : ''}
+    ${HS.sel ? `<button class="ghost sm" id="hback">← بحث تاني</button>` : ''}${res}`;
+  $('#hq', body).oninput = e => { HS.q = e.target.value; HS.sel = null; HS.shown = 60; const p = e.target.selectionStart; findView(); const j = $('#hq', ROOT); j.focus(); j.setSelectionRange(p, p); };
+  body.querySelectorAll('[data-sel]').forEach(x => x.onclick = () => { HS.sel = x.dataset.sel === '*' ? '*' : +x.dataset.sel; HS.shown = 60; findView(); });
+  body.querySelectorAll('[data-m]').forEach(x => x.onclick = () => { HS.months = +x.dataset.m; findView(); });
+  if ($('#hback', body)) $('#hback', body).onclick = () => { HS.sel = null; findView(); };
+  if ($('#hmore', body)) $('#hmore', body).onclick = () => { HS.shown += 60; findView(); };
+  if ($('#hcopy', body)) $('#hcopy', body).onclick = () => {
+    const seen = custsFor(ids, since(HS.months)).map(r => ((H.cust[r.c] || [])[1] || [])[0]).filter(Boolean);
+    copy(seen.join('\n'), 'الأرقام اتنسخت ✓');
+  };
+  if (!matchMedia('(pointer:coarse)').matches) body.querySelectorAll('.ph a').forEach(x => x.onclick = e => { e.preventDefault(); copy(x.href.replace('tel:', ''), 'الرقم اتنسخ ✓'); });
+}
+
+function render() { kpis(); bar(); if (ST.tab === 'find') findView(); else if (ST.tab === 'res') resView(); else if (ST.tab === 'log') logView(); else listView(); }
 
 /* ---------- أدوات ---------- */
 function toast(t) { const d = document.createElement('div'); d.className = 'toast'; d.textContent = t; document.body.appendChild(d); setTimeout(() => d.remove(), 2200); }

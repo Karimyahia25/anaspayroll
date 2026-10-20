@@ -2335,7 +2335,7 @@ async function openInventory(){
 let CRM_ON = false;
 async function openCustomers(){
   if (CRM_ON) return; CRM_ON = true;
-  try { const m = await import('./sections/customers.js?v=6'); await m.mountCustomers($('crmRoot'), ROLE); }
+  try { const m = await import('./sections/customers.js?v=8'); await m.mountCustomers($('crmRoot'), ROLE); }
   catch (e) { CRM_ON = false; $('crmRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل قسم العملاء: ${esc(e.code || e.message)}</div>`; }
 }
 
