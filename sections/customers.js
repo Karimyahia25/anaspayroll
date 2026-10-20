@@ -179,6 +179,8 @@ function listView() {
   $('#chide', b).onchange = e => { ST.hideDone = e.target.checked; render(); };
   if ($('#cmore', b)) $('#cmore', b).onclick = () => { ST.shown += 40; listView(); };
   b.querySelectorAll('[data-copy]').forEach(x => x.onclick = () => copy(CARDS.find(c => c.id === +x.dataset.copy).msg));
+  // على الكمبيوتر مفيش تليفون يتصل: الدوسة على الرقم بتنسخه بدل ما تفتح برنامج اتصال
+  if (!matchMedia('(pointer:coarse)').matches) b.querySelectorAll('.ph a').forEach(x => x.onclick = e => { e.preventDefault(); copy(x.href.replace('tel:', ''), 'الرقم اتنسخ ✓'); });
   b.querySelectorAll('[data-res]').forEach(x => x.onclick = () => record(+x.dataset.id, x.dataset.res, x));
 }
 async function record(id, result, btn) {
@@ -228,11 +230,11 @@ function render() { kpis(); bar(); if (ST.tab === 'res') resView(); else if (ST.
 
 /* ---------- أدوات ---------- */
 function toast(t) { const d = document.createElement('div'); d.className = 'toast'; d.textContent = t; document.body.appendChild(d); setTimeout(() => d.remove(), 2200); }
-async function copy(t) {
-  try { await navigator.clipboard.writeText(t); toast('الرسالة اتنسخت ✓'); return; } catch (e) { /* متصفح جوه واتساب/فيسبوك */ }
+async function copy(t, ok_ = 'الرسالة اتنسخت ✓') {
+  try { await navigator.clipboard.writeText(t); toast(ok_); return; } catch (e) { /* متصفح جوه واتساب/فيسبوك */ }
   const a = document.createElement('textarea'); a.value = t; a.style.position = 'fixed'; a.style.opacity = '0'; document.body.appendChild(a); a.select();
   let ok = false; try { ok = document.execCommand('copy'); } catch (e) { /* */ }
-  a.remove(); if (ok) { toast('الرسالة اتنسخت ✓'); return; }
+  a.remove(); if (ok) { toast(ok_); return; }
   prompt('انسخ الرسالة من هنا:', t);
 }
 
