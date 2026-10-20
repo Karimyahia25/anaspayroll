@@ -142,9 +142,9 @@ function filtered() {
 }
 function card(c) {
   const g = GRP[c.grp[0]] || GRP.med, L = logsOf(c.id)[0], won = L && boughtAfter(L), edit = ROLE === 'admin';
-  const when = c.status === 'قرّب' ? (c.late === 0 ? 'ميعاده النهارده' : `باقي ${-c.late} يوم`) : `متأخر ${c.late} يوم`;
+  const when = c.status === 'قرّب' ? (c.late === 0 ? 'أول صنف يخلص النهارده' : `أول صنف يخلص بعد ${-c.late} يوم`) : `متأخر ${c.late} يوم عن ميعاده`;
   const its = c.items.map(([lb, ev, src, dose, due, lk]) => `<li><span>${esc(lb)}${lk ? ' <span class="bd lk">من برا؟</span>' : ''}</span>
-      <span class="s">كل ${ev} يوم (${esc(src)})${src === 'عادته' && dose ? ` · الجرعة ${dose}` : ''} · ${D(due)}</span></li>`).join('');
+      <span class="s">كل ${ev} يوم (${esc(src)})${src === 'عادته' && dose ? ` · الجرعة ${dose}` : ''} · <b>يخلص حوالي ${D(due)}</b></span></li>`).join('');
   const last = L ? `<div class="last ${won ? 'win' : ''}">${won ? `✅ اشترى بعد التواصل: ${M(won.amt)} يوم ${D(won.day)} — ` : ''}
       آخر تواصل: ${esc(L.result)} يوم ${D(L.day)}${L.byName ? ' (' + esc(L.byName) + ')' : ''}${L.note ? ' — ' + esc(L.note) : ''}</div>` : '';
   return `<div class="cc ${contactedRecently(c) ? 'done' : ''}" style="--g:${g[1]}" data-id="${c.id}">
