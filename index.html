@@ -399,7 +399,7 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="adm" class="hide"></div>
 <div id="buyer" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-21-A</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-21-B</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -944,6 +944,7 @@ async function renderEmp(){
     <button id="et2" onclick="etab(2)">التأخيرات</button>
     <button id="et3" onclick="etab(3)">أيام الشهر</button>
     ${d.sales ? '<button id="et5" onclick="etab(5)">مبيعاتي</button>' : ''}
+    <button id="et8" onclick="etab(8)">عملائي</button>
     <button id="et7" onclick="etab(7)">تقفيل الخزنة</button>
     <button id="et6" onclick="etab(6)">طلباتي</button>
     <button id="et4" onclick="etab(4)">حسابي</button>
@@ -985,6 +986,7 @@ async function renderEmp(){
       : 'وظيفتك مش داخلة في تقييم المبيعات، فمفيش درجة — الأرقام دي للعلم بس.'}</div></div>` : ''}
 ${reqPanel()}
   <div id="ep7" class="card hide"><div id="cashBox"></div></div>
+  <div id="ep8" class="hide"><div id="myCustRoot"></div></div>
 ${passPanel()}
   <div class="card"><h2>عندك استفسار؟</h2>
     <p class="sub">لو فيه بند مش مظبوط، اكتبه وهيوصل لمدير الفرع.</p>
@@ -1029,14 +1031,24 @@ async function empNoSlip(msg){
       <div class="banner">${esc(msg)}</div></div>
   <div class="tabs">
     <button id="et7" class="on" onclick="etab(7)">تقفيل الخزنة</button>
+    <button id="et8" onclick="etab(8)">عملائي</button>
     <button id="et6" onclick="etab(6)">طلباتي</button>
     <button id="et4" onclick="etab(4)">حسابي</button></div>
   <div id="ep7" class="card"><div id="cashBox"></div></div>
+  <div id="ep8" class="hide"><div id="myCustRoot"></div></div>
   ${reqPanel()}${passPanel()}`;
   cashEmp();
 }
 
-window.etab = n => { if (n === 6) otMine(); if (n === 7) cashEmp(); [1,2,3,4,5,6,7].forEach(i => {
+let MYCUST_ON = false;
+async function openMyCustomers(){
+  if (MYCUST_ON) return; MYCUST_ON = true;
+  let nm_ = '';
+  try { const x = await getDoc(doc(db, 'staff', ME.uid)); if (x.exists()) nm_ = x.data().name || ''; } catch(e){}
+  try { const m = await import('./sections/customers.js?v=9'); await m.mountEmployee($('myCustRoot'), ME.uid, nm_); }
+  catch (e) { MYCUST_ON = false; $('myCustRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل عملائك: ${esc(e.code || e.message)}</div>`; }
+}
+window.etab = n => { if (n === 6) otMine(); if (n === 7) cashEmp(); if (n === 8) openMyCustomers(); [1,2,3,4,5,6,7,8].forEach(i => {
   const p = $('ep'+i), t = $('et'+i);
   if (p) p.classList.toggle('hide', i !== n);
   if (t) t.classList.toggle('on', i === n);
@@ -2335,7 +2347,7 @@ async function openInventory(){
 let CRM_ON = false;
 async function openCustomers(){
   if (CRM_ON) return; CRM_ON = true;
-  try { const m = await import('./sections/customers.js?v=8'); await m.mountCustomers($('crmRoot'), ROLE); }
+  try { const m = await import('./sections/customers.js?v=9'); await m.mountCustomers($('crmRoot'), ROLE); }
   catch (e) { CRM_ON = false; $('crmRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل قسم العملاء: ${esc(e.code || e.message)}</div>`; }
 }
 

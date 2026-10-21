@@ -1,9 +1,10 @@
 // قسم متابعة العملاء (21/10) — بيتحمّل أول ما تفتح تبويب "العملاء".
 // القوايم بيحسبها سيرفر الصيدلية كل يوم 6 الصبح (الجرعة + عادة العميل) وبيكتبها في crm/meta + crm/list_N + crm/visits.
+// التوزيع يدوي (قرار CRM): الأدمن بيوزّع العميل على موظف ← نسخة من الكارت في crm_assign/{uid}، والموظف بيشوف عملاءه بس (تبويب "عملائي").
 // التواصل بيتسجل في crm_log. "اشترى" بيتعرف لوحده: فاتورة للعميل بعد يوم التواصل بـ 14 يوم أو أقل (من crm/visits).
 import { getApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, getDoc, getDocs, collection, addDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, doc, getDoc, getDocs, setDoc, collection, addDoc, deleteDoc, query, where } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = t => String(t == null ? '' : t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -27,6 +28,9 @@ const RETRY_NR = 2;           // مردش: يرجع يظهر بعد يومين
 let ROOT, ROLE, DB = null, LOCAL = null, META = {}, CARDS = [], VIS = {}, LOG = [];
 let ST = { tab: 'قرّب', q: '', grp: '', leak: false, deliv: false, hideDone: true, shown: 40 };
 let H = null, HS = { q: '', sel: null, months: 0, shown: 60 };   // بحث بصنف
+let STAFF = [], ASG = {}, MY = { uid: '', name: '' };           // الموظفين + التوزيع {uid: {name, cards}}
+const ASSIGN_DAYS = 14;        // التوزيع بيفضل ظاهر للموظف 14 يوم
+const NOT_SALES = /طيار|دليفري|delivery|سواق|عامل|نظاف|أمن/i;   // مبيتوزعش عليهم
 
 /* ---------- ستايل ---------- */
 function css() {
@@ -77,6 +81,8 @@ function css() {
 #crmRoot .hc{background:var(--card);border-radius:18px;padding:14px;margin-bottom:10px;box-shadow:var(--shadow)}
 #crmRoot .hr{border-top:1px solid var(--line);padding:10px 0}#crmRoot .hr:first-child{border-top:0}
 #crmRoot .hn{font-weight:700;font-size:15px}#crmRoot .hs{font-size:12.5px;color:var(--muted);margin-top:2px;line-height:1.7}
+#crmRoot .asg{margin-top:8px;font-size:13px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}#crmRoot .asg select{width:auto;min-height:40px;padding:6px 10px}
+#crmRoot .bulk{background:var(--card);border-radius:14px;padding:10px;box-shadow:var(--shadow);font-size:13.5px}#crmRoot .bulk select{width:auto;min-height:40px;padding:6px 10px}
 #crmRoot .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#0F1B2D;color:#fff;padding:10px 18px;border-radius:12px;z-index:80;font-size:14px}
 `;
   document.head.appendChild(s);
@@ -91,7 +97,35 @@ async function load() {
   for (let i = 0; i < n; i++) { const c = await getDoc(doc(DB, 'crm', 'list_' + i)); if (c.exists()) CARDS.push(...JSON.parse(c.data().d)); }
   const v = await getDoc(doc(DB, 'crm', 'visits')); VIS = v.exists() ? JSON.parse(v.data().d) : {};
   LOG = (await getDocs(collection(DB, 'crm_log'))).docs.map(d => ({ _id: d.id, ...d.data() }));
+  if (ROLE === 'admin' || ROLE === 'viewer') {
+    try {
+      STAFF = (await getDocs(collection(DB, 'staff'))).docs.map(d => ({ uid: d.id, ...d.data() }))
+        .filter(x => x.name && !NOT_SALES.test(x.job || '')).sort((a, b) => String(a.name).localeCompare(String(b.name), 'ar'));
+      ASG = {}; (await getDocs(collection(DB, 'crm_assign'))).docs.forEach(d => { ASG[d.id] = { name: d.data().name, cards: JSON.parse(d.data().d || '[]') }; });
+    } catch (e) { STAFF = []; ASG = {}; }
+  }
   return true;
+}
+// العميل ده متوزع على مين (آخر 14 يوم)
+function owner(id) {
+  const from = addDays(today(), -ASSIGN_DAYS);
+  for (const [uid, a] of Object.entries(ASG)) { const c = a.cards.find(x => x.id === id && x.at >= from); if (c) return { uid, name: a.name, at: c.at }; }
+  return null;
+}
+const SNAP = ['id', 'name', 'phones', 'status', 'grp', 'items', 'due', 'late', 'visit', 'leak', 'monthly', 'deliv', 'area', 'msg'];
+async function assign(ids, uid) {
+  const st = STAFF.find(x => x.uid === uid); if (!st) return;
+  const from = addDays(today(), -ASSIGN_DAYS), touched = new Set([uid]);
+  for (const id of ids) { const o = owner(id); if (o && o.uid !== uid) { ASG[o.uid].cards = ASG[o.uid].cards.filter(x => x.id !== id); touched.add(o.uid); } }
+  const a = ASG[uid] || (ASG[uid] = { name: st.name, cards: [] });
+  a.cards = a.cards.filter(x => x.at >= from && !ids.includes(x.id));          // القديم أكتر من 14 يوم بيتشال
+  for (const id of ids) { const c = CARDS.find(x => x.id === id); if (c) { const o = { at: today() }; SNAP.forEach(k => o[k] = c[k]); a.cards.push(o); } }
+  if (!LOCAL) for (const u of touched) await setDoc(doc(DB, 'crm_assign', u), { name: ASG[u].name, d: JSON.stringify(ASG[u].cards), at: today() });
+}
+async function unassign(id) {
+  const o = owner(id); if (!o) return;
+  ASG[o.uid].cards = ASG[o.uid].cards.filter(x => x.id !== id);
+  if (!LOCAL) await setDoc(doc(DB, 'crm_assign', o.uid), { name: ASG[o.uid].name, d: JSON.stringify(ASG[o.uid].cards), at: today() });
 }
 async function saveLog(rec) {
   if (LOCAL) { rec._id = 'L' + Date.now(); LOG.push(rec); return; }
@@ -152,7 +186,8 @@ function filtered() {
     && (!q || c.name.toLowerCase().includes(q) || c.phones.join(' ').includes(q) || c.items.some(i => String(i[0]).toLowerCase().includes(q))));
 }
 function card(c) {
-  const g = GRP[c.grp[0]] || GRP.med, L = logsOf(c.id)[0], won = L && boughtAfter(L), edit = ROLE === 'admin';
+  const g = GRP[c.grp[0]] || GRP.med, L = logsOf(c.id)[0], won = L && boughtAfter(L), edit = ROLE === 'admin' || ROLE === 'emp';
+  const ow = ROLE === 'admin' || ROLE === 'viewer' ? owner(c.id) : null;
   const when = c.status === 'قرّب' ? (c.late === 0 ? '⏰ محتاج يشتري النهارده' : `⏰ محتاج يشتري بعد ${days(-c.late)}`)
              : c.status === 'اتأخر' ? `⚠️ كان المفروض يشتري من ${days(c.late)}` : `💔 مجاش الصيدلية من ${days(c.visit || c.late)}`;
   const seen = c.visit == null ? '' : c.visit === 0 ? '🛒 جه الصيدلية النهارده' : `🛒 آخر مرة جه الصيدلية: من ${days(c.visit)}`;
@@ -171,6 +206,10 @@ function card(c) {
     <details class="msg"><summary>الرسالة</summary><pre>${esc(c.msg)}</pre></details>
     <div class="act"><button class="ghost" data-copy="${c.id}">📋 نسخ الرسالة</button>
       ${edit ? RES.map(([k, t, cl]) => `<button class="r-${cl}" data-res="${k}" data-id="${c.id}">${t}</button>`).join('') : ''}</div>
+    ${ROLE === 'admin' ? `<div class="asg">${ow ? `👤 مع <b>${esc(ow.name)}</b> من ${ow.at === today() ? 'النهارده' : D(ow.at)}
+        <button class="ghost sm" data-unasg="${c.id}">شيل</button>`
+      : `<select data-asg="${c.id}"><option value="">👤 وزّعه على…</option>${STAFF.map(x => `<option value="${x.uid}">${esc(x.name)}</option>`).join('')}</select>`}</div>`
+      : ow ? `<div class="asg">👤 مع ${esc(ow.name)}</div>` : ''}
     ${last}</div>`;
 }
 function listView() {
@@ -179,6 +218,9 @@ function listView() {
   $('#cbody', ROOT).innerHTML = `<p class="why"><b>${L[1]}</b> — ${L[2]}. مترتبين بقيمة العميل في الشهر.</p>
     <div class="ctl"><input type="search" id="cq" placeholder="دوّر في القايمة دي: اسم العميل أو التليفون أو الصنف" value="${esc(ST.q)}"></div>
     <div class="ctl chips"><button class="chip ${!ST.grp ? 'on' : ''}" data-grp="">الكل</button>${grps}</div>
+    ${ROLE === 'admin' && STAFF.length ? `<div class="ctl bulk">وزّع أول <select id="bn">${[5, 10, 15, 20].map(n => `<option ${n === 10 ? 'selected' : ''}>${n}</option>`).join('')}</select>
+      عميل مش متوزعين على <select id="bu"><option value="">اختار موظف</option>${STAFF.map(x => `<option value="${x.uid}">${esc(x.name)}</option>`).join('')}</select>
+      <button class="sm" id="bgo">وزّع</button></div>` : ''}
     <div id="clist">${rows.slice(0, ST.shown).map(card).join('') || '<div class="banner">مفيش حد في القايمة دي بالفلاتر دي.</div>'}</div>
     ${rows.length > ST.shown ? `<button class="ghost more" id="cmore">عرض المزيد (${rows.length - ST.shown})</button>` : ''}`;
   const b = $('#cbody', ROOT);
@@ -189,15 +231,30 @@ function listView() {
   // على الكمبيوتر مفيش تليفون يتصل: الدوسة على الرقم بتنسخه بدل ما تفتح برنامج اتصال
   if (!matchMedia('(pointer:coarse)').matches) b.querySelectorAll('.ph a').forEach(x => x.onclick = e => { e.preventDefault(); copy(x.href.replace('tel:', ''), 'الرقم اتنسخ ✓'); });
   b.querySelectorAll('[data-res]').forEach(x => x.onclick = () => record(+x.dataset.id, x.dataset.res, x));
+  b.querySelectorAll('[data-asg]').forEach(x => x.onchange = async () => {
+    if (!x.value) return; x.disabled = true;
+    try { await assign([+x.dataset.asg], x.value); toast('اتوزّع ✓'); listView(); } catch (e) { x.disabled = false; toast('متوزعش: ' + (e.code || e.message)); }
+  });
+  b.querySelectorAll('[data-unasg]').forEach(x => x.onclick = async () => {
+    try { await unassign(+x.dataset.unasg); toast('اتشال'); listView(); } catch (e) { toast('متشالش: ' + (e.code || e.message)); }
+  });
+  if ($('#bgo', b)) $('#bgo', b).onclick = async () => {
+    const uid = $('#bu', b).value, n = +$('#bn', b).value; if (!uid) { toast('اختار الموظف الأول'); return; }
+    const ids = rows.filter(c => !owner(c.id)).slice(0, n).map(c => c.id);
+    if (!ids.length) { toast('كل اللي في القايمة متوزعين'); return; }
+    $('#bgo', b).disabled = true;
+    try { await assign(ids, uid); toast(`اتوزع ${ids.length} عميل على ${STAFF.find(x => x.uid === uid).name} ✓`); listView(); }
+    catch (e) { $('#bgo', b).disabled = false; toast('متوزعش: ' + (e.code || e.message)); }
+  };
 }
 async function record(id, result, btn) {
   const c = CARDS.find(x => x.id === id); let note = '';
   if (result === 'تم') note = (prompt('ملاحظة (اختياري) — مثلاً: هيعدّي بكرة / عايز توصيل', '') || '').trim();
   const me = LOCAL ? { uid: 'local' } : getAuth(getApp()).currentUser;
   const rec = { cust: id, name: c.name, result, note, list: c.status, monthly: c.monthly, day: today(), at: new Date().toISOString(),
-                by: me.uid, byName: 'مدير الفرع' };
+                by: me.uid, byName: ROLE === 'emp' ? MY.name : 'مدير الفرع' };
   btn.disabled = true;
-  try { await saveLog(rec); toast('اتسجّل: ' + result); render(); }
+  try { await saveLog(rec); toast('اتسجّل: ' + result); ROLE === 'emp' ? empRender() : render(); }
   catch (e) { btn.disabled = false; toast('متسجلش: ' + (e.code || e.message)); }
 }
 function results(days) {
@@ -218,8 +275,15 @@ function resView() {
       ${R.won.length ? `<div class="tw"><table><tr><th>العميل</th><th>اتكلمنا</th><th>اشترى</th><th>بكام</th><th>القايمة</th></tr>
         ${R.won.map(x => `<tr><td>${esc(x.name)}</td><td>${D(x.day)}</td><td>${D(x.w.day)}</td><td>${M(x.w.amt)}</td><td>${esc(x.list)}</td></tr>`).join('')}</table></div>` : ''}</div>`;
   }).join('');
+  const R30 = results(30), people = {};
+  for (const r of R30.recs) { const p = people[r.byName || '—'] || (people[r.byName || '—'] = { n: 0, ok: 0, won: 0, rev: 0 }); p.n++; if (r.result === 'تم') p.ok++; }
+  for (const w of R30.won) { const p = people[w.byName || '—']; if (p) { p.won++; p.rev += w.w.amt; } }
+  const byEmp = Object.keys(people).length ? `<div class="card" style="margin-bottom:12px"><h3 style="margin:0 0 8px">حسب الموظف — آخر 30 يوم</h3><div class="tw"><table>
+      <tr><th>الموظف</th><th>تواصل</th><th>اتكلم معاهم</th><th>اشتروا بعدها</th><th>مبيعاتهم</th></tr>
+      ${Object.entries(people).sort((a, b) => b[1].rev - a[1].rev).map(([k, p]) => `<tr><td>${esc(k)}</td><td>${p.n}</td><td>${p.ok}</td><td>${p.won}</td><td>${M(p.rev)}</td></tr>`).join('')}
+      </table></div></div>` : '';
   $('#cbody', ROOT).innerHTML = `<p class="why">"اشترى بعد التواصل" بيتحسب لوحده: أي فاتورة للعميل من يوم المكالمة لحد ${WINDOW} يوم بعدها (من السيستم، مش بالزرار).
-    الفلوس = كل اللي اشتراه في الفترة دي.</p>${blocks}`;
+    الفلوس = كل اللي اشتراه في الفترة دي.</p>${byEmp}${blocks}`;
 }
 function logView() {
   const rows = [...LOG].sort((a, b) => String(b.at).localeCompare(String(a.at)));
@@ -335,5 +399,31 @@ export async function mountCustomers(root, role) {
   if (!ok) { root.innerHTML = '<div class="banner">لسه مفيش قوايم — هتظهر بعد أول تشغيل للسيرفر (6 الصبح) بعد التحديث.</div>'; return; }
   shell(); render();
 }
+/* ---------- الموظف: عملائي ---------- */
+function empRender() {
+  const from = addDays(today(), -ASSIGN_DAYS);
+  const mine = CARDS.filter(c => c.at >= from);
+  const done = c => !!logsOf(c.id)[0] && contactedRecently(c);
+  const todo = mine.filter(c => !done(c)).sort((a, b) => String(a.due).localeCompare(String(b.due)));
+  const fin = mine.filter(done);
+  ROOT.innerHTML = `<div class="card" style="margin-bottom:12px"><h2 style="margin:0">عملائي للمتابعة</h2>
+      <p class="sub" style="margin:4px 0 0">${mine.length ? `فاضل <b>${todo.length}</b> من ${mine.length} · ابعت الرسالة واتصل، وبعدين دوس النتيجة` : 'مفيش عملاء متوزعين عليك دلوقتي.'}</p></div>
+    <div id="clist">${todo.map(card).join('')}${fin.length ? `<h3 style="margin:16px 4px 8px">خلصتهم (${fin.length})</h3>${fin.map(card).join('')}` : ''}</div>`;
+  ROOT.querySelectorAll('[data-copy]').forEach(x => x.onclick = () => copy(CARDS.find(c => c.id === +x.dataset.copy).msg));
+  if (!matchMedia('(pointer:coarse)').matches) ROOT.querySelectorAll('.ph a').forEach(x => x.onclick = e => { e.preventDefault(); copy(x.href.replace('tel:', ''), 'الرقم اتنسخ ✓'); });
+  ROOT.querySelectorAll('[data-res]').forEach(x => x.onclick = () => record(+x.dataset.id, x.dataset.res, x));
+}
+export async function mountEmployee(root, uid, name) {
+  ROOT = root; ROLE = 'emp'; DB = getFirestore(getApp()); LOCAL = null; MY = { uid, name }; css(); root.id = 'crmRoot';
+  root.innerHTML = '<div class="card"><p class="sub">جاري تحميل عملائك…</p></div>';
+  try {
+    const a = await getDoc(doc(DB, 'crm_assign', uid));
+    CARDS = a.exists() ? JSON.parse(a.data().d || '[]') : [];
+    LOG = (await getDocs(query(collection(DB, 'crm_log'), where('by', '==', uid)))).docs.map(d => ({ _id: d.id, ...d.data() }));
+  } catch (e) { root.innerHTML = `<div class="banner bad">مقدرتش أحمّل عملائك: ${esc(e.code || e.message)}</div>`; return; }
+  VIS = {}; empRender();
+}
+export function mountEmployeeLocal(root, cards, name = 'موظف تجربة') { ROOT = root; ROLE = 'emp'; LOCAL = { log: [] }; LOG = LOCAL.log; MY = { uid: 'local', name }; CARDS = cards; VIS = {}; css(); root.id = 'crmRoot'; empRender(); }
+
 // للتجربة المحلية من غير Firestore
-export function mountLocal(root, data, role = 'admin') { ROOT = root; ROLE = role; LOCAL = data; css(); root.id = 'crmRoot'; load(); shell(); render(); }
+export function mountLocal(root, data, role = 'admin') { ROOT = root; ROLE = role; LOCAL = data; STAFF = data.staff || []; ASG = data.asg || {}; css(); root.id = 'crmRoot'; load(); shell(); render(); }
