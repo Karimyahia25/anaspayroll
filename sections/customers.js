@@ -20,7 +20,7 @@ const addDays = (s, n) => { const t = new Date(s + 'T12:00:00Z'); t.setUTCDate(t
 const LISTS = [['قرّب', '⏰ ميعاده قرّب', 'ابعتله قبل ما يخلص — ومعاه التوصيل في 30 دقيقة'],
                ['اتأخر', '⚠️ اتأخر', 'عدّى ميعاده ومجاش — يمكن جاب من برا أو نسي'],
                ['بعد', '💔 بعد عننا', 'مجاش خالص من أكتر من شهرين — رسالة الاسترجاع']];
-const GRP = { med: ['دوا', '#0B8577'], diaper: ['حفاضات', '#2A6FB0'], milk: ['لبن أطفال', '#6B5BA8'], adult: ['كبار السن', '#7F8C8D'], cosmo: ['تجميل', '#C2417A'] };
+const GRP = { lapsed: ['كان بيشتري وبطّل', '#8E5A2B'], med: ['دوا', '#0B8577'], diaper: ['حفاضات', '#2A6FB0'], milk: ['لبن أطفال', '#6B5BA8'], adult: ['كبار السن', '#7F8C8D'], cosmo: ['تجميل', '#C2417A'] };
 const RES = [['تم', '✅ اتكلمنا', 'ok'], ['مردش', '📵 مردش', 'nr'], ['مش مهتم', '🙅 مش مهتم', 'no'], ['رقم غلط', '☎️ رقم غلط', 'bad']];
 const WINDOW = 14;            // اشترى خلال 14 يوم من التواصل = نجاح
 const RETRY_NR = 2;           // مردش: يرجع يظهر بعد يومين
@@ -30,7 +30,8 @@ let ST = { tab: 'قرّب', q: '', grp: '', leak: false, deliv: false, hideDone:
 let H = null, HS = { q: '', sel: null, months: 0, shown: 60 };   // بحث بصنف
 let STAFF = [], ASG = {}, MY = { uid: '', name: '' };           // الموظفين + التوزيع {uid: {name, cards}}
 const ASSIGN_DAYS = 14;        // التوزيع بيفضل ظاهر للموظف 14 يوم
-const NOT_SALES = /طيار|دليفري|delivery|سواق|عامل|نظاف|أمن/i;   // مبيتوزعش عليهم
+const NOT_SALES = /طيار|دليفري|delivery|سواق|عامل|نظاف|أمن|كاشير|مدير/i;   // مبيتوزعش عليهم
+const LEFT = /ترك/;            // "ترك العمل" في شيت الموظفين (آخر كشف منشور)
 
 /* ---------- ستايل ---------- */
 function css() {
@@ -99,8 +100,12 @@ async function load() {
   LOG = (await getDocs(collection(DB, 'crm_log'))).docs.map(d => ({ _id: d.id, ...d.data() }));
   if (ROLE === 'admin' || ROLE === 'viewer') {
     try {
-      STAFF = (await getDocs(collection(DB, 'staff'))).docs.map(d => ({ uid: d.id, ...d.data() }))
-        .filter(x => x.name && !NOT_SALES.test(x.job || '')).sort((a, b) => String(a.name).localeCompare(String(b.name), 'ar'));
+      // الحالة والوظيفة من آخر كشف مرتبات منشور — اللي ساب الشغل ميظهرش في التوزيع
+      const per = (await getDocs(collection(DB, 'periods'))).docs.filter(d => d.data().published && !d.data().archived).map(d => d.id).sort().pop();
+      const last = {};
+      if (per) (await getDocs(collection(DB, 'payslips', per, 'employees'))).docs.forEach(d => { last[d.id] = d.data(); });
+      STAFF = (await getDocs(collection(DB, 'staff'))).docs.map(d => ({ uid: d.id, ...d.data(), ...(last[d.id] ? { job: last[d.id].job || d.data().job, status: last[d.id].status || '' } : {}) }))
+        .filter(x => x.name && !NOT_SALES.test(x.job || '') && !LEFT.test(x.status || '')).sort((a, b) => String(a.name).localeCompare(String(b.name), 'ar'));
       ASG = {}; (await getDocs(collection(DB, 'crm_assign'))).docs.forEach(d => { ASG[d.id] = { name: d.data().name, cards: JSON.parse(d.data().d || '[]') }; });
     } catch (e) { STAFF = []; ASG = {}; }
   }
@@ -191,7 +196,7 @@ function card(c) {
   const when = c.status === 'قرّب' ? (c.late === 0 ? '⏰ محتاج يشتري النهارده' : `⏰ محتاج يشتري بعد ${days(-c.late)}`)
              : c.status === 'اتأخر' ? `⚠️ كان المفروض يشتري من ${days(c.late)}` : `💔 مجاش الصيدلية من ${days(c.visit || c.late)}`;
   const seen = c.visit == null ? '' : c.visit === 0 ? '🛒 جه الصيدلية النهارده' : `🛒 آخر مرة جه الصيدلية: من ${days(c.visit)}`;
-  const its = c.items.map(([lb, ev, src, dose, due, lk]) => `<li><span>${esc(lb)}${lk ? ' <span class="bd lk">من برا؟</span>' : ''}</span>
+  const its = c.items.map(([lb, ev, src, dose, due, lk]) => ev == null ? `<li><span>${esc(lb)}</span><span class="s">${esc(src)} · آخر مرة ${String(due).slice(0, 10).split('-').reverse().map(Number).join('/')}</span></li>` : `<li><span>${esc(lb)}${lk ? ' <span class="bd lk">من برا؟</span>' : ''}</span>
       <span class="s">كل ${ev} يوم (${esc(src)})${src === 'عادته' && dose ? ` · الجرعة ${dose}` : ''} · <b>يخلص حوالي ${D(due)}</b></span></li>`).join('');
   const last = L ? `<div class="last ${won ? 'win' : ''}">${won ? `✅ اشترى بعد التواصل: ${M(won.amt)} يوم ${D(won.day)} — ` : ''}
       آخر تواصل: ${esc(L.result)} يوم ${D(L.day)}${L.byName ? ' (' + esc(L.byName) + ')' : ''}${L.note ? ' — ' + esc(L.note) : ''}</div>` : '';
@@ -200,7 +205,7 @@ function card(c) {
       <div class="meta">${c.grp.map(x => `<span class="bd" style="background:${(GRP[x] || GRP.med)[1]}">${(GRP[x] || GRP.med)[0]}</span>`).join('')}
         ${c.deliv ? '<span class="bd dl">عميل توصيل</span>' : ''}${hasDisc(c.name) ? '<span class="bd" style="background:#C2417A">عميل خصم</span>' : ''}${c.leak ? '<span class="bd lk">غالباً بيجيب جزء من برا</span>' : ''}
         <div class="when">${when}</div>${c.status !== 'بعد' && seen ? `<div>${seen}</div>` : ''}${c.area && c.area !== 'مش متسجل' ? `<div>📍 ${esc(c.area)}</div>` : ''}</div></div>
-      <div class="val">${M(c.monthly)}<div class="meta" style="text-align:left">في الشهر</div></div></div>
+      <div class="val">${M(c.monthly)}<div class="meta" style="text-align:left">${c.grp[0] === 'lapsed' ? 'كان بيدفع في الشهر' : 'في الشهر'}</div></div></div>
     <ul class="its">${its}</ul>
     <div class="ph">${c.phones.length ? c.phones.map(p => `<a href="tel:${p}">📞 ${p}</a>`).join('') : '<span class="meta">مفيش رقم متسجل</span>'}</div>
     <details class="msg"><summary>الرسالة</summary><pre>${esc(c.msg)}</pre></details>
@@ -219,7 +224,7 @@ function listView() {
     <div class="ctl"><input type="search" id="cq" placeholder="دوّر في القايمة دي: اسم العميل أو التليفون أو الصنف" value="${esc(ST.q)}"></div>
     <div class="ctl chips"><button class="chip ${!ST.grp ? 'on' : ''}" data-grp="">الكل</button>${grps}</div>
     ${ROLE === 'admin' && STAFF.length ? `<div class="ctl bulk">وزّع أول <select id="bn">${[5, 10, 15, 20].map(n => `<option ${n === 10 ? 'selected' : ''}>${n}</option>`).join('')}</select>
-      عميل مش متوزعين على <select id="bu"><option value="">اختار موظف</option>${STAFF.map(x => `<option value="${x.uid}">${esc(x.name)}</option>`).join('')}</select>
+      عميل مش متوزعين على <select id="bu"><option value="">اختار موظف</option><option value="*">كل الموظفين بالتساوي (${STAFF.length})</option>${STAFF.map(x => `<option value="${x.uid}">${esc(x.name)}</option>`).join('')}</select>
       <button class="sm" id="bgo">وزّع</button></div>` : ''}
     <div id="clist">${rows.slice(0, ST.shown).map(card).join('') || '<div class="banner">مفيش حد في القايمة دي بالفلاتر دي.</div>'}</div>
     ${rows.length > ST.shown ? `<button class="ghost more" id="cmore">عرض المزيد (${rows.length - ST.shown})</button>` : ''}`;
@@ -240,10 +245,20 @@ function listView() {
   });
   if ($('#bgo', b)) $('#bgo', b).onclick = async () => {
     const uid = $('#bu', b).value, n = +$('#bn', b).value; if (!uid) { toast('اختار الموظف الأول'); return; }
-    const ids = rows.filter(c => !owner(c.id)).slice(0, n).map(c => c.id);
-    if (!ids.length) { toast('كل اللي في القايمة متوزعين'); return; }
+    const free = rows.filter(c => !owner(c.id));
+    if (!free.length) { toast('كل اللي في القايمة متوزعين'); return; }
     $('#bgo', b).disabled = true;
-    try { await assign(ids, uid); toast(`اتوزع ${ids.length} عميل على ${STAFF.find(x => x.uid === uid).name} ✓`); listView(); }
+    try {
+      if (uid === '*') {          // N لكل موظف، بالدور: الأعلى قيمة بيتوزعوا على الكل مش على واحد بس
+        const per = {}; free.slice(0, n * STAFF.length).forEach((c, i) => (per[STAFF[i % STAFF.length].uid] ||= []).push(c.id));
+        for (const [u, ids] of Object.entries(per)) await assign(ids, u);
+        toast(`اتوزع ${Object.values(per).flat().length} عميل على ${Object.keys(per).length} موظفين ✓`);
+      } else {
+        const ids = free.slice(0, n).map(c => c.id);
+        await assign(ids, uid); toast(`اتوزع ${ids.length} عميل على ${STAFF.find(x => x.uid === uid).name} ✓`);
+      }
+      listView();
+    }
     catch (e) { $('#bgo', b).disabled = false; toast('متوزعش: ' + (e.code || e.message)); }
   };
 }

@@ -399,7 +399,7 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="adm" class="hide"></div>
 <div id="buyer" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-21-B</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-22-A</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -1045,7 +1045,7 @@ async function openMyCustomers(){
   if (MYCUST_ON) return; MYCUST_ON = true;
   let nm_ = '';
   try { const x = await getDoc(doc(db, 'staff', ME.uid)); if (x.exists()) nm_ = x.data().name || ''; } catch(e){}
-  try { const m = await import('./sections/customers.js?v=9'); await m.mountEmployee($('myCustRoot'), ME.uid, nm_); }
+  try { const m = await import('./sections/customers.js?v=10'); await m.mountEmployee($('myCustRoot'), ME.uid, nm_); }
   catch (e) { MYCUST_ON = false; $('myCustRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل عملائك: ${esc(e.code || e.message)}</div>`; }
 }
 window.etab = n => { if (n === 6) otMine(); if (n === 7) cashEmp(); if (n === 8) openMyCustomers(); [1,2,3,4,5,6,7,8].forEach(i => {
@@ -2347,7 +2347,7 @@ async function openInventory(){
 let CRM_ON = false;
 async function openCustomers(){
   if (CRM_ON) return; CRM_ON = true;
-  try { const m = await import('./sections/customers.js?v=9'); await m.mountCustomers($('crmRoot'), ROLE); }
+  try { const m = await import('./sections/customers.js?v=10'); await m.mountCustomers($('crmRoot'), ROLE); }
   catch (e) { CRM_ON = false; $('crmRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل قسم العملاء: ${esc(e.code || e.message)}</div>`; }
 }
 
