@@ -122,7 +122,7 @@ export async function mountOrder(root, role, who) {
   try {
     const L = await getDoc(doc(DB, 'orders', 'latest'));
     if (!L.exists()) { root.innerHTML = '<div class="banner">لسه مفيش طلبية — ابعت للبوت «طلبية» وهتظهر هنا.</div>'; return; }
-    DATE = L.data().date; AT = L.data().at || '';
+    DATE = L.data().date; AT = (L.data().at || '') + (L.data().ver ? ' · نسخة ' + L.data().ver : '');
     const o = await getDoc(doc(DB, 'orders', DATE));
     ROWS = o.exists() ? JSON.parse(o.data().d) : [];
     if (UNSUB) UNSUB();
