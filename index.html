@@ -399,7 +399,7 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="adm" class="hide"></div>
 <div id="buyer" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-22-A</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-23-A</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -844,7 +844,8 @@ onAuthStateChanged(auth, async user => {
 /* ================= مسؤول المشتريات: طلبية النواقص بس ================= */
 async function renderBuyer(){
   const b = $('buyer'); b.classList.remove('hide');
-  b.innerHTML = `<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div><h2 style="margin:0">🛒 طلبية النواقص</h2><p class="sub" style="margin:2px 0 0">مسؤول المشتريات</p></div><button class="ghost sm" onclick="doOut()">خروج</button></div><div id="buyerRoot"></div>`;
+  b.innerHTML = `<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div><h2 style="margin:0">🛒 طلبية النواقص</h2><p class="sub" style="margin:2px 0 0">مسؤول المشتريات</p></div><button class="ghost sm" onclick="doOut()">خروج</button></div><div id="orderRoot"></div><div id="buyerRoot" style="margin-top:14px"></div>`;
+  try { const o = await import('./sections/order.js?v=1'); await o.mountOrder($('orderRoot'), 'buyer'); } catch (e) {}
   try { const m = await import('./sections/inventory.js?v=25'); await m.mountBuyer($('buyerRoot')); }
   catch (e) { $('buyerRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل الشاشة: ${esc(e.code || e.message)}</div>`; }
 }
@@ -2316,6 +2317,7 @@ function renderAdmin(){
     <button id="at7" onclick="atab(7)">الخزنة</button>
     <button id="at8" onclick="atab(8)">المخزون</button>
     <button id="at9" onclick="atab(9)">العملاء</button>
+    <button id="at10" onclick="atab(10)">🛒 الطلبية</button>
     ${isAdm ? `<button id="at1" onclick="atab(1)">نشر كشف جديد</button>
     <button id="at2" onclick="atab(2)">الموظفين</button>
     <button id="at3" onclick="atab(3)">الاستفسارات</button>` : ''}
@@ -2327,6 +2329,7 @@ function renderAdmin(){
   <div id="ap7" class="card hide"><h2>الخزنة وتقفيل الشيفتات</h2><div id="cashAdm"></div></div>
   <div id="ap8" class="hide"><div id="stockRoot"></div></div>
   <div id="ap9" class="hide"><div id="crmRoot"></div></div>
+  <div id="ap10" class="hide"><div id="orderRoot"></div></div>
   ${isAdm ? `
   <div id="ap1" class="card hide">${adminUploadUI()}</div>
   <div id="ap2" class="card hide"><h2>الموظفين وحساباتهم</h2><div id="staffBox"><p class="sub">جاري التحميل…</p></div></div>
@@ -2335,6 +2338,7 @@ function renderAdmin(){
   loadDash();
   if (new URLSearchParams(location.search).get('tab') === 'stock') atab(8);
   if (new URLSearchParams(location.search).get('tab') === 'customers') atab(9);
+  if (new URLSearchParams(location.search).get('tab') === 'order') atab(10);
 }
 
 let INV_ON = false;
@@ -2351,12 +2355,19 @@ async function openCustomers(){
   catch (e) { CRM_ON = false; $('crmRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل قسم العملاء: ${esc(e.code || e.message)}</div>`; }
 }
 
+let ORD_ON = false;
+async function openOrder(){
+  if (ORD_ON) return; ORD_ON = true;
+  try { const m = await import('./sections/order.js?v=1'); await m.mountOrder($('orderRoot'), ROLE); }
+  catch (e) { ORD_ON = false; $('orderRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل الطلبية: ${esc(e.code || e.message)}</div>`; }
+}
+
 window.atab = n => {
-  [0,4,5,6,7,8,9,1,2,3].forEach(i => { const p = $('ap'+i), t = $('at'+i);
+  [0,4,5,6,7,8,9,10,1,2,3].forEach(i => { const p = $('ap'+i), t = $('at'+i);
     if (p) p.classList.toggle('hide', i !== n); if (t) t.classList.toggle('on', i === n); });
   $('perBox').style.display = (n === 0 || n === 4) ? '' : 'none';
   if ((n === 0 || n === 4) && !DASH.periods.length) loadDash();
-  if (n === 2) loadStaff(); if (n === 3) loadQ(); if (n === 5) otAdmin(); if (n === 6) pmAdmin(); if (n === 7) cashAdmin(); if (n === 8) openInventory(); if (n === 9) openCustomers();
+  if (n === 2) loadStaff(); if (n === 3) loadQ(); if (n === 5) otAdmin(); if (n === 6) pmAdmin(); if (n === 7) cashAdmin(); if (n === 8) openInventory(); if (n === 9) openCustomers(); if (n === 10) openOrder();
 };
 
 async function loadDash(force){
