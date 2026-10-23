@@ -653,7 +653,7 @@ function gridOf(wb, want){
 const isSocialSale = (seller, cust) => String(seller == null ? '' : seller).trim().toLowerCase() === 'social' || String(cust == null ? '' : cust).includes('سوشيال');
 
 /* عميل حقيقي ولا لأ (نفس تعريف تقارير السيرفر): «ا/هالة» (كود 13071) = العميل اللي بيطلع لوحده لما البائع يدوس Enter
-   (قرار د. يحيى 24/10: يتشال من الحسابات) + زائر / walkin / "عميل" / أسماء كلها أرقام — دول مش "فاتورة باسم عميل" */
+   (قرار د. يحيى 23/10: يتشال من الحسابات) + زائر / walkin / "عميل" / أسماء كلها أرقام — دول مش "فاتورة باسم عميل" */
 const FAKE_CUST = new Set(['13071']);
 function realCust(code, name){
   const c = cNorm(code).replace(/\.0+$/,''), s = cNorm(name);
