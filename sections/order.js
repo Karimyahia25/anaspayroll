@@ -2,7 +2,8 @@
 // مقسمة بالمورد (أحسن خصم). «تم الطلب» = دوسة واحدة، بتتحفظ فوراً في orders/<التاريخ>_done وبتظهر عند الكل لايف.
 // الأدمن ومسؤول المشتريات بيعلّموا، وصاحب الصيدلية بيشوف بس.
 // «حفظ الطلبية» (23/10) = صورة نهائية باللي اتطلب (الكود + الكمية + المورد) في orders/<التاريخ>_done.saved —
-// دي اللي هتتقارن بعدين باللي وصل الفرع فعلاً من فواتير الشرا.
+// دي اللي بتتقارن باللي وصل الفرع فعلاً من فواتير الشرا: السيرفر بيكتب orders/<التاريخ>_recv (6 الصبح لطلبية امبارح +
+// أمر «وصل» في البوت)، والصفحة بتحط على كل صنف ✅ وصل · ⚠️ ناقص · 🔄 مورد تاني · ❌ موصلش — نفس قواعد receive.py.
 import { getApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot, deleteField } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
@@ -13,7 +14,8 @@ const P = n => (n == null || isNaN(n)) ? '—' : (+n).toFixed(1);
 const GRP_COLORS = ['#FFE8A3', '#C9F0E4', '#FFD6D6', '#D6E4FF', '#E9D8FD', '#FFE0C2', '#D2F4FA', '#E2F0CB'];
 const SHEETS = [['meds', '💊 الأدوية'], ['supply', '🧴 المستلزمات والتجميل']];
 
-let LOCAL = false, ROOT, DB, ROLE, WHO, DATE = '', AT = '', ROWS = [], DONE = {}, SAVED = null, SAVING = false, ST = { sheet: 'meds', hide: false, open: {} }, UNSUB = null;
+let LOCAL = false, ROOT, DB, ROLE, WHO, DATE = '', AT = '', ROWS = [], DONE = {}, SAVED = null, SAVING = false, ST = { sheet: 'meds', hide: false, miss: false, open: {} }, UNSUB = null,
+  RECV = null, RECV_TO = '', LATEST = '', LATEST_AT = '';   // RECV = اللي وصل من فواتير الشرا (السيرفر بيكتبه في orders/<التاريخ>_recv)
 
 function css() {
   if ($('#ordCss')) return;
@@ -56,6 +58,10 @@ function css() {
 #ordRoot .save{min-height:52px;border-radius:14px;padding:10px 22px;background:#C2410C;color:#fff;border:0;font-weight:800;font-size:16.5px;cursor:pointer;box-shadow:var(--shadow)}
 #ordRoot .save.ok{background:#1B7F3B}#ordRoot .save[disabled]{opacity:.6;cursor:default}
 #ordRoot .savedat{font-size:12px;color:var(--muted);width:100%;text-align:end}
+#ordRoot .nav{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}#ordRoot .nav button{min-height:40px;border-radius:99px;padding:6px 14px;border:0;background:rgba(255,255,255,.2);color:#fff;font-weight:700;cursor:pointer}
+#ordRoot .rsum{background:#fff;color:#1F2A44;border-radius:12px;padding:8px 12px;margin-top:10px;font-size:14px;font-weight:700;line-height:1.9}
+#ordRoot .rc{display:inline-block;border-radius:8px;padding:1px 8px;font-weight:800;font-size:13px}
+#ordRoot .rc.ok{background:#DCF5E3;color:#1B7F3B}#ordRoot .rc.part{background:#FFF1B8;color:#7A5A00}#ordRoot .rc.other{background:#E0E9FF;color:#2A4FB0}#ordRoot .rc.none{background:#FDE2E1;color:#A32E1E}#ordRoot .rc.extra{background:#EEF1F5;color:#475467}
 #ordRoot .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#0F1B2D;color:#fff;padding:10px 18px;border-radius:12px;z-index:80;font-size:14px}
 `;
   document.head.appendChild(s);
@@ -103,9 +109,36 @@ async function saveOrder() {
   SAVING = false; render();
 }
 
+// حالة الاستلام — نفس compare() في receive.py: المرجع «حفظ الطلبية» ولو متحفظتش = العلامات
+const RC = { ok: '✅ وصل كامل', part: '⚠️ وصل ناقص', other: '🔄 من مورد تاني', none: '❌ موصلش' };
+function recvOf(r) {
+  if (!RECV) return null;
+  const ord = SAVED && SAVED.items ? SAVED.items[r.code] : (DONE[r.code] ? r : null);
+  const x = RECV[r.code], q = x ? x.q : 0, sups = x ? [...new Set(x.s.map(s => s[0]))] : [];
+  if (!ord) return q > 0 ? { st: 'extra', q, sups } : null;           // وصل من غير ما يتعلّم عليه
+  const need = ord.need || 1, sup = ord.sup || '';
+  const st = q <= 0 ? 'none' : (sup && sup !== 'مورد مش محدد' && !sups.includes(sup)) ? 'other' : q + 1e-9 < need ? 'part' : 'ok';
+  return { st, q, sups, need };
+}
+
+async function loadDate(d) {
+  const o = await getDoc(doc(DB, 'orders', d));
+  if (!o.exists()) { toast('مفيش طلبية يوم ' + d.split('-').reverse().join('/')); return false; }
+  DATE = d; ROWS = JSON.parse(o.data().d || '[]');
+  AT = d === LATEST ? LATEST_AT : String(o.data().at || '').slice(11);
+  RECV = null; RECV_TO = '';
+  try { const r = await getDoc(doc(DB, 'orders', d + '_recv')); if (r.exists()) { RECV = JSON.parse(r.data().d || '{}'); RECV_TO = r.data().to || ''; } } catch (e) {}
+  if (UNSUB) UNSUB();
+  UNSUB = onSnapshot(doneRef(), s => { DONE = (s.exists() && s.data().t) || {}; SAVED = (s.exists() && s.data().saved) || null; render(); }, () => render());
+  return true;
+}
+const shiftDay = (d, k) => { const x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + k); return x.toISOString().slice(0, 10); };
+
 function render() {
   const all = ROWS.length, done = ROWS.filter(r => DONE[r.code]).length;
   const rows = ROWS.filter(r => r.sheet === ST.sheet);
+  const rs = {}; ROWS.forEach(r => { const x = recvOf(r); if (x) rs[x.st] = (rs[x.st] || 0) + 1; });
+  const keep = r => !(ST.hide && DONE[r.code]) && !(ST.miss && !['none', 'part', 'other'].includes((recvOf(r) || {}).st));
   // الموردين: الأكتر أصناف الأول، و"مورد مش محدد" في الآخر — نفس ترتيب الإكسل
   const g = {};
   rows.forEach(r => (g[r.sup] ||= []).push(r));
@@ -114,15 +147,19 @@ function render() {
   ROOT.innerHTML = `
     <div class="ohd"><h2>🛒 طلبية النواقص — ${esc(DATE.split('-').reverse().join('/'))}</h2>
       <div class="s">اتعملت من رصيد السيستم الساعة ${esc(AT)} · اتطلب <b>${done}</b> من ${all} صنف${canEdit() ? ' · علّم على اللي اتطلب، وفي الآخر دوس «حفظ الطلبية»' : ''}</div>
-      <div class="bar"><i style="width:${all ? (100 * done / all).toFixed(1) : 0}%"></i></div></div>
+      <div class="bar"><i style="width:${all ? (100 * done / all).toFixed(1) : 0}%"></i></div>
+      ${RECV ? `<div class="rsum">📦 اللي وصل لحد ${esc(RECV_TO.slice(11))} ${esc(RECV_TO.slice(8, 10) + '/' + RECV_TO.slice(5, 7))}${SAVED ? '' : ' <small>(الطلبية متحفظتش — بالعلامات)</small>'}:
+        ${Object.keys(RC).map(k => `<span class="rc ${k}">${RC[k]} ${rs[k] || 0}</span>`).join(' ')}${rs.extra ? ` <span class="rc extra">📦 وصل من غير علامة ${rs.extra}</span>` : ''}</div>` : ''}
+      ${LOCAL ? '' : `<div class="nav"><button data-day="-1">‹ طلبية اليوم اللي قبله</button>${DATE < LATEST ? '<button data-day="1">اليوم اللي بعده ›</button>' : ''}</div>`}</div>
     <div class="tabs2">${SHEETS.map(([k, t]) => `<button class="${ST.sheet === k ? 'on' : ''}" data-sh="${k}">${t} <small>(${cntDone(k)}/${cnt(k)})</small></button>`).join('')}
       <label><input type="checkbox" id="ohide" ${ST.hide ? 'checked' : ''}> خبّي اللي اتطلب</label>
+      ${RECV ? `<label><input type="checkbox" id="omiss" ${ST.miss ? 'checked' : ''}> اللي موصلش أو فيه مشكلة بس</label>` : ''}
       ${canEdit() ? (() => { const u = unsaved(), ok = SAVED && !u;
         return `<button class="save ${ok ? 'ok' : ''}" id="osave" ${SAVING ? 'disabled' : ''}>${SAVING ? 'جاري الحفظ…' : ok ? '✔ الطلبية محفوظة' : SAVED ? `💾 حفظ التعديلات (${u})` : '💾 حفظ الطلبية'}</button>`; })() : ''}
       ${SAVED ? `<div class="savedat">آخر حفظ الساعة ${esc(SAVED.at)}${SAVED.by ? ' — ' + esc(SAVED.by) : ''} · ${SAVED.n} صنف</div>` : ''}</div>
     ${sups.map((s, i) => {
       const list = g[s], d = list.filter(r => DONE[r.code]).length, cost = list.reduce((a, r) => a + (r.cost || 0), 0);
-      const shown = ST.hide ? list.filter(r => !DONE[r.code]) : list;
+      const shown = list.filter(keep);
       const closed = ST.open[s] === false;
       return `<div class="grp"><div class="gh" data-g="${esc(s)}" style="background:${GRP_COLORS[i % GRP_COLORS.length]}">
           <span>🏷️ ${esc(s)} <span class="n">— ${list.length} صنف · حوالي ${N(cost)} ج</span></span>
@@ -132,12 +169,15 @@ function render() {
   ROOT.querySelectorAll('[data-sh]').forEach(b => b.onclick = () => { ST.sheet = b.dataset.sh; render(); });
   if ($('#osave', ROOT)) $('#osave', ROOT).onclick = saveOrder;
   $('#ohide', ROOT).onchange = e => { ST.hide = e.target.checked; render(); };
+  if ($('#omiss', ROOT)) $('#omiss', ROOT).onchange = e => { ST.miss = e.target.checked; render(); };
+  ROOT.querySelectorAll('[data-day]').forEach(b => b.onclick = async () => { if (await loadDate(shiftDay(DATE, +b.dataset.day))) render(); });
   ROOT.querySelectorAll('[data-g]').forEach(h => h.onclick = () => { const k = h.dataset.g; ST.open[k] = ST.open[k] === false; render(); });
   ROOT.querySelectorAll('[data-code]').forEach(b => b.onclick = () => tick(+b.dataset.code));
 }
 
 function row(r) {
-  const D = DONE[r.code];
+  const D = DONE[r.code], R = recvOf(r), qq = n => String(Math.round(n * 100) / 100);
+  const rc = !R ? '' : `<br><span class="rc ${R.st}">${R.st === 'extra' ? '📦 وصل من غير علامة' : RC[R.st]}${R.q > 0 ? ` — ${qq(R.q)}${R.need ? ' من ' + R.need : ''} من ${esc(R.sups.join('، '))}` : ''}</span>`;
   return `<div class="row ${D ? 'ok' : ''}">
     <button class="chk ${D ? 'on' : ''}" data-code="${r.code}" ${canEdit() ? '' : 'disabled'} aria-label="تم الطلب">${D ? '✓' : ''}</button>
     <div><div class="nm">${esc(r.name)}</div>
@@ -145,7 +185,7 @@ function row(r) {
         · خصم المورد ده <b class="sd">${P(r.sd)}%</b>
         ${r.lsup ? `<br>آخر شرا ${esc(r.last)} من <span class="${r.gap != null ? 'yel' : ''}">${esc(r.lsup)} ${P(r.ld)}%</span>${r.gap != null ? ` <span class="yel">أقل بـ ${P(r.gap)}</span>` : ''}` : ''}
         ${r.up ? ' · <span class="up">⚠ السعر زاد</span>' : ''}${r.sea ? ' · <span class="sea">☀️ صيفي — بمعدل آخر 30 يوم</span>' : ''}
-        ${D ? `<br><span class="by">✔ اتطلب${D.by ? ' — ' + esc(D.by) : ''}${D.at ? ' الساعة ' + esc(D.at) : ''}</span>` : ''}</div></div>
+        ${D ? `<br><span class="by">✔ اتطلب${D.by ? ' — ' + esc(D.by) : ''}${D.at ? ' الساعة ' + esc(D.at) : ''}</span>` : ''}${rc}</div></div>
     <div class="need"><div class="v">${r.need}</div><div class="l">علبة</div></div></div>`;
 }
 
@@ -155,11 +195,8 @@ export async function mountOrder(root, role, who) {
   try {
     const L = await getDoc(doc(DB, 'orders', 'latest'));
     if (!L.exists()) { root.innerHTML = '<div class="banner">لسه مفيش طلبية — ابعت للبوت «طلبية» وهتظهر هنا.</div>'; return; }
-    DATE = L.data().date; AT = (L.data().at || '') + (L.data().ver ? ' · نسخة ' + L.data().ver : '');
-    const o = await getDoc(doc(DB, 'orders', DATE));
-    ROWS = o.exists() ? JSON.parse(o.data().d) : [];
-    if (UNSUB) UNSUB();
-    UNSUB = onSnapshot(doneRef(), s => { DONE = (s.exists() && s.data().t) || {}; SAVED = (s.exists() && s.data().saved) || null; render(); }, () => render());
+    LATEST = L.data().date; LATEST_AT = (L.data().at || '') + (L.data().ver ? ' · نسخة ' + L.data().ver : '');
+    if (!(await loadDate(LATEST))) ROWS = [];
   } catch (e) {
     root.innerHTML = `<div class="banner bad">مقدرتش أقرا الطلبية: ${esc(e.code || e.message)}${e.code === 'permission-denied' ? ' — حط قواعد Firebase الجديدة الأول' : ''}</div>`; return;
   }
@@ -167,6 +204,7 @@ export async function mountOrder(root, role, who) {
 }
 
 // تجربة محلية (_crmtest/order.html) — من غير Firebase
-export function mountOrderLocal(root, rows, role = 'admin') {
-  LOCAL = true; ROOT = root; ROLE = role; WHO = 'تجربة'; ROWS = rows; DATE = '2026-10-23'; AT = '14:05'; DONE = {}; SAVED = null; css(); root.id = 'ordRoot'; render();
+export function mountOrderLocal(root, rows, role = 'admin', recv = null) {
+  LOCAL = true; ROOT = root; ROLE = role; WHO = 'تجربة'; ROWS = rows; DATE = LATEST = '2026-10-23'; AT = '14:05'; DONE = {}; SAVED = null;
+  RECV = recv; RECV_TO = '2026-10-24 06:00'; css(); root.id = 'ordRoot'; render();
 }
