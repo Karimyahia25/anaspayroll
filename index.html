@@ -399,7 +399,7 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="adm" class="hide"></div>
 <div id="buyer" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-23-A</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-24-A</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -652,6 +652,17 @@ function gridOf(wb, want){
 /* مبيعات السوشيال (البائع social أو اسم العميل فيه "سوشيال") مفيهاش عمولة بوشينج ولا بتتحسب في قيمة البوشينج — قرار د. يحيى 13/10 */
 const isSocialSale = (seller, cust) => String(seller == null ? '' : seller).trim().toLowerCase() === 'social' || String(cust == null ? '' : cust).includes('سوشيال');
 
+/* عميل حقيقي ولا لأ (نفس تعريف تقارير السيرفر): «ا/هالة» (كود 13071) = العميل اللي بيطلع لوحده لما البائع يدوس Enter
+   (قرار د. يحيى 24/10: يتشال من الحسابات) + زائر / walkin / "عميل" / أسماء كلها أرقام — دول مش "فاتورة باسم عميل" */
+const FAKE_CUST = new Set(['13071']);
+function realCust(code, name){
+  const c = cNorm(code).replace(/\.0+$/,''), s = cNorm(name);
+  if (FAKE_CUST.has(c) || s.replace(/\s/g,'') === 'ا/هالة') return false;
+  if (!s) return !!c && c !== '0';
+  if (s.includes('زائر') || /walk\s*-?\s*in|test|تجرب|طلبات|كاش/i.test(s)) return false;
+  if (['عميل','العميل','خعميل','عميلة'].includes(s.replace(/[^ء-ي]/g,''))) return false;
+  return s.replace(/[^ء-ي a-zA-Z]/g,'').trim() !== '';
+}
 function parseSales(wb, ps, pe, rates){
   const found = gridOf(wb, 'اسم البائع');
   if (!found) throw new Error('مش لاقي عمود "اسم البائع" — ده مش تقرير المبيعات');
@@ -674,7 +685,7 @@ function parseSales(wb, ps, pe, rates){
       : (ymd(dt) + '|' + hhmm(o.time) + '|' + cNorm(o.cust) + '|' + seller);
     let x = inv.get(id);
     if (!x){ x = { id, ret: String(o.kind||'').includes('مرتج'), type: cNorm(o.type),
-      hasCust: !!(o.custCode || cNorm(o.cust)), cust: cNorm(o.cust),
+      hasCust: realCust(o.custCode, o.cust), cust: cNorm(o.cust),
       key: ymd(dt) + '|' + hhmm(o.time) + '|' + cNorm(o.cust), total: 0, seller };
       inv.set(id, x); }
     const v = nz(o.total); x.total += v;
@@ -1046,7 +1057,7 @@ async function openMyCustomers(){
   if (MYCUST_ON) return; MYCUST_ON = true;
   let nm_ = '';
   try { const x = await getDoc(doc(db, 'staff', ME.uid)); if (x.exists()) nm_ = x.data().name || ''; } catch(e){}
-  try { const m = await import('./sections/customers.js?v=10'); await m.mountEmployee($('myCustRoot'), ME.uid, nm_); }
+  try { const m = await import('./sections/customers.js?v=11'); await m.mountEmployee($('myCustRoot'), ME.uid, nm_); }
   catch (e) { MYCUST_ON = false; $('myCustRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل عملائك: ${esc(e.code || e.message)}</div>`; }
 }
 window.etab = n => { if (n === 6) otMine(); if (n === 7) cashEmp(); if (n === 8) openMyCustomers(); [1,2,3,4,5,6,7,8].forEach(i => {
@@ -2351,7 +2362,7 @@ async function openInventory(){
 let CRM_ON = false;
 async function openCustomers(){
   if (CRM_ON) return; CRM_ON = true;
-  try { const m = await import('./sections/customers.js?v=10'); await m.mountCustomers($('crmRoot'), ROLE); }
+  try { const m = await import('./sections/customers.js?v=11'); await m.mountCustomers($('crmRoot'), ROLE); }
   catch (e) { CRM_ON = false; $('crmRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل قسم العملاء: ${esc(e.code || e.message)}</div>`; }
 }
 

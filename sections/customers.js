@@ -1,10 +1,11 @@
 // قسم متابعة العملاء (21/10) — بيتحمّل أول ما تفتح تبويب "العملاء".
 // القوايم بيحسبها سيرفر الصيدلية كل يوم 6 الصبح (الجرعة + عادة العميل) وبيكتبها في crm/meta + crm/list_N + crm/visits.
-// التوزيع يدوي (قرار CRM): الأدمن بيوزّع العميل على موظف ← نسخة من الكارت في crm_assign/{uid}، والموظف بيشوف عملاءه بس (تبويب "عملائي").
+// (24/10، قرار د. يحيى) مفيش توزيع: كل موظف بيفتح القوايم من حسابه ويحط اسمه على العميل اللي هيتابعه ← crm_claim/{كود العميل}
+// (فيه نسخة من الكارت). العميل اللي عليه اسم حد بيختفي من قوايم الباقيين 14 يوم.
 // التواصل بيتسجل في crm_log. "اشترى" بيتعرف لوحده: فاتورة للعميل بعد يوم التواصل بـ 14 يوم أو أقل (من crm/visits).
 import { getApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, getDoc, getDocs, setDoc, collection, addDoc, deleteDoc, query, where } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, doc, getDoc, getDocs, setDoc, collection, addDoc, deleteDoc, query, where, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = t => String(t == null ? '' : t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -28,10 +29,8 @@ const RETRY_NR = 2;           // مردش: يرجع يظهر بعد يومين
 let ROOT, ROLE, DB = null, LOCAL = null, META = {}, CARDS = [], VIS = {}, LOG = [];
 let ST = { tab: 'قرّب', q: '', grp: '', leak: false, deliv: false, hideDone: true, shown: 40 };
 let H = null, HS = { q: '', sel: null, months: 0, shown: 60 };   // بحث بصنف
-let STAFF = [], ASG = {}, MY = { uid: '', name: '' };           // الموظفين + التوزيع {uid: {name, cards}}
-const ASSIGN_DAYS = 14;        // التوزيع بيفضل ظاهر للموظف 14 يوم
-const NOT_SALES = /طيار|دليفري|delivery|سواق|عامل|نظاف|أمن|كاشير|مدير/i;   // مبيتوزعش عليهم
-const LEFT = /ترك/;            // "ترك العمل" في شيت الموظفين (آخر كشف منشور)
+let CLAIM = {}, MY = { uid: '', name: '' };                    // مين حاطط اسمه على العميل {كود العميل: {uid, name, at, d}}
+const CLAIM_DAYS = 14;         // الاسم بيفضل على العميل 14 يوم وبعدها يرجع متاح للكل
 
 /* ---------- ستايل ---------- */
 function css() {
@@ -97,40 +96,28 @@ async function load() {
   META = JSON.parse(m.data().d); const n = m.data().chunks; CARDS = [];
   for (let i = 0; i < n; i++) { const c = await getDoc(doc(DB, 'crm', 'list_' + i)); if (c.exists()) CARDS.push(...JSON.parse(c.data().d)); }
   const v = await getDoc(doc(DB, 'crm', 'visits')); VIS = v.exists() ? JSON.parse(v.data().d) : {};
-  LOG = (await getDocs(collection(DB, 'crm_log'))).docs.map(d => ({ _id: d.id, ...d.data() }));
-  if (ROLE === 'admin' || ROLE === 'viewer') {
-    try {
-      // الحالة والوظيفة من آخر كشف مرتبات منشور — اللي ساب الشغل ميظهرش في التوزيع
-      const per = (await getDocs(collection(DB, 'periods'))).docs.filter(d => d.data().published && !d.data().archived).map(d => d.id).sort().pop();
-      const last = {};
-      if (per) (await getDocs(collection(DB, 'payslips', per, 'employees'))).docs.forEach(d => { last[d.id] = d.data(); });
-      STAFF = (await getDocs(collection(DB, 'staff'))).docs.map(d => ({ uid: d.id, ...d.data(), ...(last[d.id] ? { job: last[d.id].job || d.data().job, status: last[d.id].status || '' } : {}) }))
-        .filter(x => x.name && !NOT_SALES.test(x.job || '') && !LEFT.test(x.status || '')).sort((a, b) => String(a.name).localeCompare(String(b.name), 'ar'));
-      ASG = {}; (await getDocs(collection(DB, 'crm_assign'))).docs.forEach(d => { ASG[d.id] = { name: d.data().name, cards: JSON.parse(d.data().d || '[]') }; });
-    } catch (e) { STAFF = []; ASG = {}; }
-  }
+  LOG = ROLE === 'emp'                                     // الموظف بيقرا تسجيلاته هو بس (القواعد)
+    ? (await getDocs(query(collection(DB, 'crm_log'), where('by', '==', MY.uid)))).docs.map(d => ({ _id: d.id, ...d.data() }))
+    : (await getDocs(collection(DB, 'crm_log'))).docs.map(d => ({ _id: d.id, ...d.data() }));
+  CLAIM = {}; (await getDocs(collection(DB, 'crm_claim'))).docs.forEach(d => { CLAIM[d.id] = d.data(); });
   return true;
 }
-// العميل ده متوزع على مين (آخر 14 يوم)
+// مين حاطط اسمه على العميل ده (آخر 14 يوم)
 function owner(id) {
-  const from = addDays(today(), -ASSIGN_DAYS);
-  for (const [uid, a] of Object.entries(ASG)) { const c = a.cards.find(x => x.id === id && x.at >= from); if (c) return { uid, name: a.name, at: c.at }; }
-  return null;
+  const c = CLAIM[id];
+  return c && c.at >= addDays(today(), -CLAIM_DAYS) ? c : null;
 }
+const mine = id => { const o = owner(id); return !!o && o.uid === MY.uid; };
 const SNAP = ['id', 'name', 'phones', 'status', 'grp', 'items', 'due', 'late', 'visit', 'leak', 'monthly', 'deliv', 'area', 'msg'];
-async function assign(ids, uid) {
-  const st = STAFF.find(x => x.uid === uid); if (!st) return;
-  const from = addDays(today(), -ASSIGN_DAYS), touched = new Set([uid]);
-  for (const id of ids) { const o = owner(id); if (o && o.uid !== uid) { ASG[o.uid].cards = ASG[o.uid].cards.filter(x => x.id !== id); touched.add(o.uid); } }
-  const a = ASG[uid] || (ASG[uid] = { name: st.name, cards: [] });
-  a.cards = a.cards.filter(x => x.at >= from && !ids.includes(x.id));          // القديم أكتر من 14 يوم بيتشال
-  for (const id of ids) { const c = CARDS.find(x => x.id === id); if (c) { const o = { at: today() }; SNAP.forEach(k => o[k] = c[k]); a.cards.push(o); } }
-  if (!LOCAL) for (const u of touched) await setDoc(doc(DB, 'crm_assign', u), { name: ASG[u].name, d: JSON.stringify(ASG[u].cards), at: today() });
+async function claim(id) {
+  const c = CARDS.find(x => x.id === id), snap = {}; SNAP.forEach(k => snap[k] = c[k]);
+  const rec = { uid: MY.uid, name: MY.name, at: today(), d: JSON.stringify(snap) };
+  if (!LOCAL) await setDoc(doc(DB, 'crm_claim', String(id)), { ...rec, ts: serverTimestamp() });
+  CLAIM[id] = rec;
 }
-async function unassign(id) {
-  const o = owner(id); if (!o) return;
-  ASG[o.uid].cards = ASG[o.uid].cards.filter(x => x.id !== id);
-  if (!LOCAL) await setDoc(doc(DB, 'crm_assign', o.uid), { name: ASG[o.uid].name, d: JSON.stringify(ASG[o.uid].cards), at: today() });
+async function unclaim(id) {
+  if (!LOCAL) await deleteDoc(doc(DB, 'crm_claim', String(id)));
+  delete CLAIM[id];
 }
 async function saveLog(rec) {
   if (LOCAL) { rec._id = 'L' + Date.now(); LOG.push(rec); return; }
@@ -167,6 +154,7 @@ function shell() {
   <div id="cbody"></div>`;
 }
 function kpis() {
+  if (ROLE === 'emp') { $('#ckpi', ROOT).innerHTML = ''; $('#cmeta', ROOT).textContent = `حط اسمك على العميل اللي هتكلمه — بيختفي من قوايم زمايلك ${CLAIM_DAYS} يوم.`; return; }
   const n = META.n || {}, v = META.value || {}, wk = results(7);
   $('#ckpi', ROOT).innerHTML = `
     <div><div class="l">عملاء متابعين</div><div class="v">${N(META.tracked)}</div></div>
@@ -176,7 +164,14 @@ function kpis() {
   $('#cmeta', ROOT).textContent = `آخر تحديث من السيرفر: ${META.at || '—'} · الأرقام على مشتريات لحد ${D(META.ref)}`;
 }
 function bar() {
-  const cnt = s => CARDS.filter(c => c.status === s && !(ST.hideDone && contactedRecently(c))).length;
+  const cnt = s => CARDS.filter(c => c.status === s && !(ST.hideDone && contactedRecently(c)) && !(ROLE === 'emp' && owner(c.id))).length;
+  if (ROLE === 'emp') {
+    const n = myCards().filter(c => !contactedRecently(c)).length;
+    $('#cbar', ROOT).innerHTML = `<button class="${ST.tab === 'mine' ? 'on' : ''}" data-tab="mine">👤 عملائي<span class="n">${n}</span></button>`
+      + LISTS.map(([k, t]) => `<button class="${ST.tab === k ? 'on' : ''}" data-tab="${k}">${t}<span class="n">${cnt(k)}</span></button>`).join('');
+    $('#cbar', ROOT).querySelectorAll('button').forEach(b => b.onclick = () => { ST.tab = b.dataset.tab; ST.shown = 40; render(); });
+    return;
+  }
   $('#cbar', ROOT).innerHTML = LISTS.map(([k, t]) => `<button class="${ST.tab === k ? 'on' : ''}" data-tab="${k}">${t}<span class="n">${cnt(k)}</span></button>`).join('')
     + `<button class="${ST.tab === 'find' ? 'on' : ''}" data-tab="find">🔎 بحث بصنف</button>`
     + `<button class="${ST.tab === 'res' ? 'on' : ''}" data-tab="res">📈 النتايج</button>`
@@ -186,13 +181,14 @@ function bar() {
 function filtered() {
   const q = ST.q.trim().toLowerCase();
   return CARDS.filter(c => c.status === ST.tab
+    && !(ROLE === 'emp' && owner(c.id))                   // الموظف: اللي عليه اسم (بتاعه أو بتاع زميله) مش في القايمة
     && (!ST.grp || c.grp.includes(ST.grp))
     && !(ST.hideDone && contactedRecently(c))
     && (!q || c.name.toLowerCase().includes(q) || c.phones.join(' ').includes(q) || c.items.some(i => String(i[0]).toLowerCase().includes(q))));
 }
 function card(c) {
   const g = GRP[c.grp[0]] || GRP.med, L = logsOf(c.id)[0], won = L && boughtAfter(L), edit = ROLE === 'admin' || ROLE === 'emp';
-  const ow = ROLE === 'admin' || ROLE === 'viewer' ? owner(c.id) : null;
+  const ow = owner(c.id), me = ROLE === 'emp' && !!ow && ow.uid === MY.uid;
   const when = c.status === 'قرّب' ? (c.late === 0 ? '⏰ محتاج يشتري النهارده' : `⏰ محتاج يشتري بعد ${days(-c.late)}`)
              : c.status === 'اتأخر' ? `⚠️ كان المفروض يشتري من ${days(c.late)}` : `💔 مجاش الصيدلية من ${days(c.visit || c.late)}`;
   const seen = c.visit == null ? '' : c.visit === 0 ? '🛒 جه الصيدلية النهارده' : `🛒 آخر مرة جه الصيدلية: من ${days(c.visit)}`;
@@ -210,11 +206,10 @@ function card(c) {
     <div class="ph">${c.phones.length ? c.phones.map(p => `<a href="tel:${p}">📞 ${p}</a>`).join('') : '<span class="meta">مفيش رقم متسجل</span>'}</div>
     <details class="msg"><summary>الرسالة</summary><pre>${esc(c.msg)}</pre></details>
     <div class="act"><button class="ghost" data-copy="${c.id}">📋 نسخ الرسالة</button>
-      ${edit ? RES.map(([k, t, cl]) => `<button class="r-${cl}" data-res="${k}" data-id="${c.id}">${t}</button>`).join('') : ''}</div>
-    ${ROLE === 'admin' ? `<div class="asg">${ow ? `👤 مع <b>${esc(ow.name)}</b> من ${ow.at === today() ? 'النهارده' : D(ow.at)}
-        <button class="ghost sm" data-unasg="${c.id}">شيل</button>`
-      : `<select data-asg="${c.id}"><option value="">👤 وزّعه على…</option>${STAFF.map(x => `<option value="${x.uid}">${esc(x.name)}</option>`).join('')}</select>`}</div>`
-      : ow ? `<div class="asg">👤 مع ${esc(ow.name)}</div>` : ''}
+      ${ROLE === 'emp' && !ow ? `<button data-claim="${c.id}">✋ أنا هتابعه</button>` : ''}
+      ${edit && (ROLE !== 'emp' || me) ? RES.map(([k, t, cl]) => `<button class="r-${cl}" data-res="${k}" data-id="${c.id}">${t}</button>`).join('') : ''}</div>
+    ${ow ? `<div class="asg">👤 ${me ? 'معاك' : `مع <b>${esc(ow.name)}</b>`} من ${ow.at === today() ? 'النهارده' : D(ow.at)}
+        ${ROLE === 'admin' || me ? `<button class="ghost sm" data-unclaim="${c.id}">${me ? 'سيبه لحد تاني' : 'شيل الاسم'}</button>` : ''}</div>` : ''}
     ${last}</div>`;
 }
 function listView() {
@@ -223,53 +218,48 @@ function listView() {
   $('#cbody', ROOT).innerHTML = `<p class="why"><b>${L[1]}</b> — ${L[2]}. مترتبين بقيمة العميل في الشهر.</p>
     <div class="ctl"><input type="search" id="cq" placeholder="دوّر في القايمة دي: اسم العميل أو التليفون أو الصنف" value="${esc(ST.q)}"></div>
     <div class="ctl chips"><button class="chip ${!ST.grp ? 'on' : ''}" data-grp="">الكل</button>${grps}</div>
-    ${ROLE === 'admin' && STAFF.length ? `<div class="ctl bulk">وزّع أول <select id="bn">${[5, 10, 15, 20].map(n => `<option ${n === 10 ? 'selected' : ''}>${n}</option>`).join('')}</select>
-      عميل مش متوزعين على <select id="bu"><option value="">اختار موظف</option><option value="*">كل الموظفين بالتساوي (${STAFF.length})</option>${STAFF.map(x => `<option value="${x.uid}">${esc(x.name)}</option>`).join('')}</select>
-      <button class="sm" id="bgo">وزّع</button></div>` : ''}
     <div id="clist">${rows.slice(0, ST.shown).map(card).join('') || '<div class="banner">مفيش حد في القايمة دي بالفلاتر دي.</div>'}</div>
     ${rows.length > ST.shown ? `<button class="ghost more" id="cmore">عرض المزيد (${rows.length - ST.shown})</button>` : ''}`;
   const b = $('#cbody', ROOT);
   $('#cq', b).oninput = e => { ST.q = e.target.value; ST.shown = 40; const p = e.target.selectionStart; listView(); const i = $('#cq', ROOT); i.focus(); i.setSelectionRange(p, p); };
   b.querySelectorAll('[data-grp]').forEach(x => x.onclick = () => { ST.grp = x.dataset.grp; ST.shown = 40; listView(); });
   if ($('#cmore', b)) $('#cmore', b).onclick = () => { ST.shown += 40; listView(); };
-  b.querySelectorAll('[data-copy]').forEach(x => x.onclick = () => copy(CARDS.find(c => c.id === +x.dataset.copy).msg));
+  hooks(b);
+}
+// أزرار الكارت (القوايم + عملائي)
+function hooks(b) {
+  b.querySelectorAll('[data-copy]').forEach(x => x.onclick = () => copy(cardOf(+x.dataset.copy).msg));
   // على الكمبيوتر مفيش تليفون يتصل: الدوسة على الرقم بتنسخه بدل ما تفتح برنامج اتصال
   if (!matchMedia('(pointer:coarse)').matches) b.querySelectorAll('.ph a').forEach(x => x.onclick = e => { e.preventDefault(); copy(x.href.replace('tel:', ''), 'الرقم اتنسخ ✓'); });
   b.querySelectorAll('[data-res]').forEach(x => x.onclick = () => record(+x.dataset.id, x.dataset.res, x));
-  b.querySelectorAll('[data-asg]').forEach(x => x.onchange = async () => {
-    if (!x.value) return; x.disabled = true;
-    try { await assign([+x.dataset.asg], x.value); toast('اتوزّع ✓'); listView(); } catch (e) { x.disabled = false; toast('متوزعش: ' + (e.code || e.message)); }
+  b.querySelectorAll('[data-claim]').forEach(x => x.onclick = async () => {
+    x.disabled = true;
+    try { await claim(+x.dataset.claim); toast('العميل ده بقى معاك ✓ — تلاقيه في «عملائي»'); render(); }
+    catch (e) { x.disabled = false; toast(e.code === 'permission-denied' ? 'زميلك سبقك عليه' : 'متسجلش: ' + (e.code || e.message)); }
   });
-  b.querySelectorAll('[data-unasg]').forEach(x => x.onclick = async () => {
-    try { await unassign(+x.dataset.unasg); toast('اتشال'); listView(); } catch (e) { toast('متشالش: ' + (e.code || e.message)); }
+  b.querySelectorAll('[data-unclaim]').forEach(x => x.onclick = async () => {
+    try { await unclaim(+x.dataset.unclaim); toast('اتشال الاسم'); render(); } catch (e) { toast('متشالش: ' + (e.code || e.message)); }
   });
-  if ($('#bgo', b)) $('#bgo', b).onclick = async () => {
-    const uid = $('#bu', b).value, n = +$('#bn', b).value; if (!uid) { toast('اختار الموظف الأول'); return; }
-    const free = rows.filter(c => !owner(c.id));
-    if (!free.length) { toast('كل اللي في القايمة متوزعين'); return; }
-    $('#bgo', b).disabled = true;
-    try {
-      if (uid === '*') {          // N لكل موظف، بالدور: الأعلى قيمة بيتوزعوا على الكل مش على واحد بس
-        const per = {}; free.slice(0, n * STAFF.length).forEach((c, i) => (per[STAFF[i % STAFF.length].uid] ||= []).push(c.id));
-        for (const [u, ids] of Object.entries(per)) await assign(ids, u);
-        toast(`اتوزع ${Object.values(per).flat().length} عميل على ${Object.keys(per).length} موظفين ✓`);
-      } else {
-        const ids = free.slice(0, n).map(c => c.id);
-        await assign(ids, uid); toast(`اتوزع ${ids.length} عميل على ${STAFF.find(x => x.uid === uid).name} ✓`);
-      }
-      listView();
-    }
-    catch (e) { $('#bgo', b).disabled = false; toast('متوزعش: ' + (e.code || e.message)); }
-  };
+}
+// الكارت من قايمة النهارده، ولو العميل خرج منها: النسخة اللي اتحفظت لما الموظف حط اسمه
+const cardOf = id => CARDS.find(c => c.id === id) || (CLAIM[id] && CLAIM[id].d ? JSON.parse(CLAIM[id].d) : null);
+function myCards() {
+  return Object.keys(CLAIM).filter(id => mine(+id)).map(id => cardOf(+id)).filter(Boolean);
+}
+function mineView() {
+  const all = myCards(), todo = all.filter(c => !contactedRecently(c)).sort((a, b) => String(a.due).localeCompare(String(b.due))), fin = all.filter(c => contactedRecently(c));
+  $('#cbody', ROOT).innerHTML = `<p class="why">${all.length ? `فاضل <b>${todo.length}</b> من ${all.length} · ابعت الرسالة واتصل، وبعدين دوس النتيجة` : 'لسه محطتش اسمك على حد — افتح «ميعاده قرّب» أو «اتأخر» أو «بعد عننا» ودوس «✋ أنا هتابعه».'}</p>
+    <div id="clist">${todo.map(card).join('')}${fin.length ? `<h3 style="margin:16px 4px 8px">خلصتهم (${fin.length})</h3>${fin.map(card).join('')}` : ''}</div>`;
+  hooks($('#cbody', ROOT));
 }
 async function record(id, result, btn) {
-  const c = CARDS.find(x => x.id === id); let note = '';
+  const c = cardOf(id); let note = '';
   if (result === 'تم') note = (prompt('ملاحظة (اختياري) — مثلاً: هيعدّي بكرة / عايز توصيل', '') || '').trim();
   const me = LOCAL ? { uid: 'local' } : getAuth(getApp()).currentUser;
   const rec = { cust: id, name: c.name, result, note, list: c.status, monthly: c.monthly, day: today(), at: new Date().toISOString(),
                 by: me.uid, byName: ROLE === 'emp' ? MY.name : 'مدير الفرع' };
   btn.disabled = true;
-  try { await saveLog(rec); toast('اتسجّل: ' + result); ROLE === 'emp' ? empRender() : render(); }
+  try { await saveLog(rec); toast('اتسجّل: ' + result); render(); }
   catch (e) { btn.disabled = false; toast('متسجلش: ' + (e.code || e.message)); }
 }
 function results(days) {
@@ -392,7 +382,7 @@ function findView() {
   if (!matchMedia('(pointer:coarse)').matches) body.querySelectorAll('.ph a').forEach(x => x.onclick = e => { e.preventDefault(); copy(x.href.replace('tel:', ''), 'الرقم اتنسخ ✓'); });
 }
 
-function render() { kpis(); bar(); if (ST.tab === 'find') findView(); else if (ST.tab === 'res') resView(); else if (ST.tab === 'log') logView(); else listView(); }
+function render() { kpis(); bar(); if (ST.tab === 'mine') mineView(); else if (ST.tab === 'find') findView(); else if (ST.tab === 'res') resView(); else if (ST.tab === 'log') logView(); else listView(); }
 
 /* ---------- أدوات ---------- */
 function toast(t) { const d = document.createElement('div'); d.className = 'toast'; d.textContent = t; document.body.appendChild(d); setTimeout(() => d.remove(), 2200); }
@@ -414,31 +404,19 @@ export async function mountCustomers(root, role) {
   if (!ok) { root.innerHTML = '<div class="banner">لسه مفيش قوايم — هتظهر بعد أول تشغيل للسيرفر (6 الصبح) بعد التحديث.</div>'; return; }
   shell(); render();
 }
-/* ---------- الموظف: عملائي ---------- */
-function empRender() {
-  const from = addDays(today(), -ASSIGN_DAYS);
-  const mine = CARDS.filter(c => c.at >= from);
-  const done = c => !!logsOf(c.id)[0] && contactedRecently(c);
-  const todo = mine.filter(c => !done(c)).sort((a, b) => String(a.due).localeCompare(String(b.due)));
-  const fin = mine.filter(done);
-  ROOT.innerHTML = `<div class="card" style="margin-bottom:12px"><h2 style="margin:0">عملائي للمتابعة</h2>
-      <p class="sub" style="margin:4px 0 0">${mine.length ? `فاضل <b>${todo.length}</b> من ${mine.length} · ابعت الرسالة واتصل، وبعدين دوس النتيجة` : 'مفيش عملاء متوزعين عليك دلوقتي.'}</p></div>
-    <div id="clist">${todo.map(card).join('')}${fin.length ? `<h3 style="margin:16px 4px 8px">خلصتهم (${fin.length})</h3>${fin.map(card).join('')}` : ''}</div>`;
-  ROOT.querySelectorAll('[data-copy]').forEach(x => x.onclick = () => copy(CARDS.find(c => c.id === +x.dataset.copy).msg));
-  if (!matchMedia('(pointer:coarse)').matches) ROOT.querySelectorAll('.ph a').forEach(x => x.onclick = e => { e.preventDefault(); copy(x.href.replace('tel:', ''), 'الرقم اتنسخ ✓'); });
-  ROOT.querySelectorAll('[data-res]').forEach(x => x.onclick = () => record(+x.dataset.id, x.dataset.res, x));
-}
+/* ---------- الموظف: نفس القوايم من حسابه + «عملائي» ---------- */
 export async function mountEmployee(root, uid, name) {
   ROOT = root; ROLE = 'emp'; DB = getFirestore(getApp()); LOCAL = null; MY = { uid, name }; css(); root.id = 'crmRoot';
-  root.innerHTML = '<div class="card"><p class="sub">جاري تحميل عملائك…</p></div>';
-  try {
-    const a = await getDoc(doc(DB, 'crm_assign', uid));
-    CARDS = a.exists() ? JSON.parse(a.data().d || '[]') : [];
-    LOG = (await getDocs(query(collection(DB, 'crm_log'), where('by', '==', uid)))).docs.map(d => ({ _id: d.id, ...d.data() }));
-  } catch (e) { root.innerHTML = `<div class="banner bad">مقدرتش أحمّل عملائك: ${esc(e.code || e.message)}</div>`; return; }
-  VIS = {}; empRender();
+  root.innerHTML = '<div class="card"><p class="sub">جاري تحميل العملاء…</p></div>';
+  let ok = false;
+  try { ok = await load(); } catch (e) {
+    root.innerHTML = `<div class="banner bad">مقدرتش أحمّل العملاء: ${esc(e.code || e.message)}</div>`; return;
+  }
+  if (!ok) { root.innerHTML = '<div class="banner">لسه مفيش قوايم.</div>'; return; }
+  ST.tab = 'mine'; shell(); render();
 }
-export function mountEmployeeLocal(root, cards, name = 'موظف تجربة') { ROOT = root; ROLE = 'emp'; LOCAL = { log: [] }; LOG = LOCAL.log; MY = { uid: 'local', name }; CARDS = cards; VIS = {}; css(); root.id = 'crmRoot'; empRender(); }
 
 // للتجربة المحلية من غير Firestore
-export function mountLocal(root, data, role = 'admin') { ROOT = root; ROLE = role; LOCAL = data; STAFF = data.staff || []; ASG = data.asg || {}; css(); root.id = 'crmRoot'; load(); shell(); render(); }
+export function mountLocal(root, data, role = 'admin', me = { uid: 'local', name: 'موظف تجربة' }) {
+  ROOT = root; ROLE = role; LOCAL = data; MY = me; CLAIM = data.claim || {}; css(); root.id = 'crmRoot'; load(); if (role === 'emp') ST.tab = 'mine'; shell(); render();
+}
