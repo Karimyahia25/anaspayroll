@@ -189,22 +189,88 @@ function row(r) {
     <div class="need"><div class="v">${r.need}</div><div class="l">علبة</div></div></div>`;
 }
 
+// ---- البحث بالصنف (24/10، طلب د. يحيى): أي صنف — التصنيف، الرصيد، يكفي كام يوم، آخر شرا، أحسن مورد، وأطلب ولا لأ.
+// السيرفر بيكتب orders/catalog {date, at, parts} + orders/catalog_<i> (كل صنف اتباع آخر 90 يوم أو عليه رصيد) — نفس أرقام الطلبية.
+let CAT = null, CAT_AT = '', CAT_LOADING = null;
+const norm = t => String(t || '').toUpperCase().replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه').replace(/\s+/g, ' ').trim();
+async function loadCat() {
+  if (CAT || LOCAL) return;
+  CAT_LOADING ||= (async () => {
+    const m = await getDoc(doc(DB, 'orders', 'catalog'));
+    if (!m.exists()) { CAT = []; return; }
+    const parts = await Promise.all([...Array(m.data().parts || 0).keys()].map(i => getDoc(doc(DB, 'orders', 'catalog_' + i))));
+    CAT = parts.flatMap(p => p.exists() ? JSON.parse(p.data().d || '[]') : []);
+    CAT.forEach(x => x._n = norm(x.n));
+    CAT_AT = `${m.data().date.split('-').reverse().join('/')} الساعة ${m.data().at}`;
+  })();
+  await CAT_LOADING;
+}
+function srchCss() {
+  if ($('#srchCss')) return;
+  const s = document.createElement('style'); s.id = 'srchCss';
+  s.textContent = `
+#ordRoot .srch{background:var(--card);border-radius:16px;padding:10px 12px;margin-bottom:10px;box-shadow:var(--shadow)}
+#ordRoot .srch input{width:100%;min-height:46px;font-size:16px;border-radius:12px;border:2px solid #0E9AA7;padding:8px 12px;margin:0;box-sizing:border-box}
+#ordRoot .srch .hint{font-size:12px;color:var(--muted);margin-top:6px}
+#ordRoot .hit{border-top:1px solid var(--line);padding:10px 2px}
+#ordRoot .hit .why{display:inline-block;margin-top:5px;border-radius:10px;padding:4px 10px;font-weight:800;font-size:13.5px;background:#EEF1F5;color:#344054}
+#ordRoot .hit .why.go{background:#DCF5E3;color:#1B7F3B}#ordRoot .hit .why.out{background:#FDE2E1;color:#A32E1E}
+#ordRoot .hit .cv{font-weight:800}`;
+  document.head.appendChild(s);
+}
+function hit(x) {
+  const cls = x.w.startsWith('🛒') ? 'go' : x.o ? 'out' : '';
+  const D = DONE[x.c];
+  return `<div class="hit"><div class="nm">${esc(x.n)}</div>
+    <div class="mt">${x.a !== '-' ? `<span class="abc ${x.a}">${x.a}</span>` : ''}كود ${x.c}${x.k ? ' · ' + esc(x.k) : ''} · ${x.sh === 'supply' ? 'مستلزمات وتجميل' : 'أدوية'}
+      <br>الرصيد <span class="${x.o ? 'oos' : ''}">${esc(x.st)}</span>${x.cv != null ? ` · يكفي <span class="cv">${x.cv} يوم</span>` : ''}${x.m ? ` · بيتباع ~${P(x.m)} علبة/شهر` : ''}${x.se ? ' · <span class="sea">☀️ صيفي</span>' : ''}
+      <br>أحسن مورد: <b>${esc(x.s)}</b>${x.sd != null ? ` <b class="sd">${P(x.sd)}%</b>` : ''}
+      ${x.ls ? `<br>آخر شرا ${esc(x.l)} من ${esc(x.ls)}${x.ld != null ? ' ' + P(x.ld) + '%' : ''}` : '<br>مفيش شرا آخر سنة'}
+      <br><span class="why ${cls}">${esc(x.w)}</span>${D ? ` <span class="by">✔ اتطلب${D.by ? ' — ' + esc(D.by) : ''}</span>` : ''}</div></div>`;
+}
+function mountSearch(box) {
+  srchCss();
+  box.className = 'srch';
+  box.innerHTML = `<input id="oq" type="search" placeholder="🔎 دوّر على صنف بالاسم أو الكود…" autocomplete="off"><div class="hint" id="oqh">اكتب جزء من الاسم (أو الكود) — يطلعلك رصيده ويكفي كام يوم وأحسن مورد وتطلبه ولا لأ</div><div id="oqr"></div>`;
+  const q = $('#oq', box), res = $('#oqr', box), h = $('#oqh', box);
+  let t;
+  q.oninput = q.onkeyup = () => { clearTimeout(t); t = setTimeout(go, 200); };
+  async function go() {
+    const v = norm(q.value);
+    if (v.length < 2) { res.innerHTML = ''; return; }
+    if (!CAT) { h.textContent = 'جاري تحميل الأصناف…'; try { await loadCat(); } catch (e) { h.textContent = 'مقدرتش أحمّل الأصناف: ' + (e.code || e.message); return; } }
+    if (!CAT.length) { h.textContent = 'البحث هيشتغل من طلبية بكره 6 الصبح (السيرفر لسه مرفعش الأصناف).'; return; }
+    h.textContent = `${CAT.length.toLocaleString('en-US')} صنف · أرقام ${CAT_AT}`;
+    const words = v.split(' ');
+    const m = /^\d+$/.test(v) ? CAT.filter(x => String(x.c) === v) : [];
+    const list = m.length ? m : CAT.filter(x => words.every(w => x._n.includes(w)))
+      .sort((a, b) => (b.m || 0) - (a.m || 0));
+    res.innerHTML = list.length ? list.slice(0, 25).map(hit).join('') + (list.length > 25 ? `<div class="hint">و${list.length - 25} صنف كمان — اكتب أكتر علشان تقلل</div>` : '')
+      : '<div class="hint">مفيش صنف بالاسم ده اتباع آخر 90 يوم أو عليه رصيد</div>';
+  }
+}
+
 export async function mountOrder(root, role, who) {
-  ROOT = root; ROLE = role; WHO = who || (role === 'admin' ? 'المدير' : 'المشتريات'); DB = getFirestore(getApp()); css(); root.id = 'ordRoot';
-  root.innerHTML = '<div class="card"><p class="sub">جاري تحميل الطلبية…</p></div>';
+  ROLE = role; WHO = who || (role === 'admin' ? 'المدير' : 'المشتريات'); DB = getFirestore(getApp()); css(); root.id = 'ordRoot';
+  root.innerHTML = '<div></div><div><div class="card"><p class="sub">جاري تحميل الطلبية…</p></div></div>';
+  mountSearch(root.children[0]);
+  ROOT = root.children[1];
   try {
     const L = await getDoc(doc(DB, 'orders', 'latest'));
-    if (!L.exists()) { root.innerHTML = '<div class="banner">لسه مفيش طلبية — ابعت للبوت «طلبية» وهتظهر هنا.</div>'; return; }
+    if (!L.exists()) { ROOT.innerHTML = '<div class="banner">لسه مفيش طلبية — ابعت للبوت «طلبية» وهتظهر هنا.</div>'; return; }
     LATEST = L.data().date; LATEST_AT = (L.data().at || '') + (L.data().ver ? ' · نسخة ' + L.data().ver : '');
     if (!(await loadDate(LATEST))) ROWS = [];
   } catch (e) {
-    root.innerHTML = `<div class="banner bad">مقدرتش أقرا الطلبية: ${esc(e.code || e.message)}${e.code === 'permission-denied' ? ' — حط قواعد Firebase الجديدة الأول' : ''}</div>`; return;
+    ROOT.innerHTML = `<div class="banner bad">مقدرتش أقرا الطلبية: ${esc(e.code || e.message)}${e.code === 'permission-denied' ? ' — حط قواعد Firebase الجديدة الأول' : ''}</div>`; return;
   }
   render();
 }
 
 // تجربة محلية (_crmtest/order.html) — من غير Firebase
-export function mountOrderLocal(root, rows, role = 'admin', recv = null) {
-  LOCAL = true; ROOT = root; ROLE = role; WHO = 'تجربة'; ROWS = rows; DATE = LATEST = '2026-10-23'; AT = '14:05'; DONE = {}; SAVED = null;
-  RECV = recv; RECV_TO = '2026-10-24 06:00'; css(); root.id = 'ordRoot'; render();
+export function mountOrderLocal(root, rows, role = 'admin', recv = null, cat = null) {
+  LOCAL = true; ROLE = role; WHO = 'تجربة'; ROWS = rows; DATE = LATEST = '2026-10-23'; AT = '14:05'; DONE = {}; SAVED = null;
+  RECV = recv; RECV_TO = '2026-10-24 06:00'; css(); root.id = 'ordRoot';
+  root.innerHTML = '<div></div><div></div>';
+  CAT = cat || []; CAT.forEach(x => x._n = norm(x.n)); CAT_AT = '20/10 الساعة 06:00';
+  mountSearch(root.children[0]); ROOT = root.children[1]; render();
 }
