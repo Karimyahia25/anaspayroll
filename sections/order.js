@@ -37,6 +37,8 @@ function css() {
   font-size:26px;color:#fff;cursor:pointer;padding:0;min-height:44px}
 #ordRoot .chk.on{background:#1B7F3B;border-color:#1B7F3B}
 #ordRoot .chk[disabled]{cursor:default;opacity:.8}
+#ordRoot .sd{color:#C2410C;background:#FFEDD5;font-weight:800;font-size:16px;padding:1px 8px;border-radius:8px}
+#ordRoot .sea{color:#B45309;font-weight:700}
 #ordRoot .nm{font-weight:700;font-size:14.5px;direction:ltr;text-align:right;word-break:break-word}
 #ordRoot .mt{font-size:12.5px;color:var(--muted);margin-top:3px;line-height:1.8}
 #ordRoot .mt b{color:var(--ink)}
@@ -109,9 +111,9 @@ function row(r) {
     <button class="chk ${D ? 'on' : ''}" data-code="${r.code}" ${canEdit() ? '' : 'disabled'} aria-label="تم الطلب">${D ? '✓' : ''}</button>
     <div><div class="nm">${esc(r.name)}</div>
       <div class="mt"><span class="abc ${r.abc}">${r.abc}</span>كود ${r.code} · الرصيد <span class="${r.oos ? 'oos' : ''}">${esc(r.stock)}</span>
-        · خصم المورد ده <b>${P(r.sd)}%</b>
+        · خصم المورد ده <b class="sd">${P(r.sd)}%</b>
         ${r.lsup ? `<br>آخر شرا ${esc(r.last)} من <span class="${r.gap != null ? 'yel' : ''}">${esc(r.lsup)} ${P(r.ld)}%</span>${r.gap != null ? ` <span class="yel">أقل بـ ${P(r.gap)}</span>` : ''}` : ''}
-        ${r.up ? ' · <span class="up">⚠ السعر زاد</span>' : ''}
+        ${r.up ? ' · <span class="up">⚠ السعر زاد</span>' : ''}${r.sea ? ' · <span class="sea">☀️ صيفي — بمعدل آخر 30 يوم</span>' : ''}
         ${D ? `<br><span class="by">✔ اتطلب${D.by ? ' — ' + esc(D.by) : ''}${D.at ? ' الساعة ' + esc(D.at) : ''}</span>` : ''}</div></div>
     <div class="need"><div class="v">${r.need}</div><div class="l">علبة</div></div></div>`;
 }
