@@ -209,11 +209,20 @@ function srchCss() {
   if ($('#srchCss')) return;
   const s = document.createElement('style'); s.id = 'srchCss';
   s.textContent = `
-#ordRoot .srch{background:var(--card);border-radius:16px;padding:10px 12px;margin-bottom:10px;box-shadow:var(--shadow)}
-#ordRoot .srch input{width:100%;min-height:46px;font-size:16px;border-radius:12px;border:2px solid #0E9AA7;padding:8px 12px;margin:0;box-sizing:border-box}
-#ordRoot .srch .hint{font-size:12px;color:var(--muted);margin-top:6px}
-#ordRoot .hit{border-top:1px solid var(--line);padding:10px 2px}
-#ordRoot .hit .why{display:inline-block;margin-top:5px;border-radius:10px;padding:4px 10px;font-weight:800;font-size:13.5px;background:#EEF1F5;color:#344054}
+#ordRoot .srch{margin:0 0 14px}
+#ordRoot .sbox{position:relative}
+#ordRoot .sbox svg{position:absolute;inset-inline-start:18px;top:50%;transform:translateY(-50%);width:20px;height:20px;color:#0E9AA7;pointer-events:none}
+#ordRoot .srch input{width:100%;min-height:54px;margin:0;box-sizing:border-box;font-size:16px;font-weight:600;color:var(--ink);
+  background:var(--card);border:1px solid var(--line);border-radius:99px;padding:12px 20px;padding-inline-start:52px;
+  box-shadow:var(--shadow);transition:border-color .2s,box-shadow .2s}
+#ordRoot .srch input::placeholder{color:var(--muted);font-weight:500}
+#ordRoot .srch input:focus{outline:none;border-color:#0E9AA7;box-shadow:0 0 0 4px color-mix(in srgb,#0E9AA7 16%,transparent),var(--shadow)}
+#ordRoot .sres{background:var(--card);border-radius:18px;box-shadow:var(--shadow);margin-top:8px;padding:4px 16px 6px;max-height:70vh;overflow:auto}
+#ordRoot .sres:empty{display:none}
+#ordRoot .sres .hint{font-size:12px;color:var(--muted);padding:8px 0}
+#ordRoot .hit{border-top:1px solid var(--line);padding:12px 0}
+#ordRoot .hint+.hit{border-top:0}
+#ordRoot .hit .why{display:inline-block;margin-top:6px;border-radius:10px;padding:4px 10px;font-weight:800;font-size:13.5px;background:#EEF1F5;color:#344054}
 #ordRoot .hit .why.go{background:#DCF5E3;color:#1B7F3B}#ordRoot .hit .why.out{background:#FDE2E1;color:#A32E1E}
 #ordRoot .hit .cv{font-weight:800}`;
   document.head.appendChild(s);
@@ -231,22 +240,23 @@ function hit(x) {
 function mountSearch(box) {
   srchCss();
   box.className = 'srch';
-  box.innerHTML = `<input id="oq" type="search" placeholder="🔎 دوّر على صنف بالاسم أو الكود…" autocomplete="off"><div class="hint" id="oqh">اكتب جزء من الاسم (أو الكود) — يطلعلك رصيده ويكفي كام يوم وأحسن مورد وتطلبه ولا لأ</div><div id="oqr"></div>`;
-  const q = $('#oq', box), res = $('#oqr', box), h = $('#oqh', box);
+  box.innerHTML = `<div class="sbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+    <input id="oq" type="search" placeholder="دوّر على صنف بالاسم أو الكود" autocomplete="off" aria-label="بحث بالصنف"></div><div class="sres" id="oqr"></div>`;
+  const q = $('#oq', box), res = $('#oqr', box);
   let t;
   q.oninput = q.onkeyup = () => { clearTimeout(t); t = setTimeout(go, 200); };
   async function go() {
     const v = norm(q.value);
     if (v.length < 2) { res.innerHTML = ''; return; }
-    if (!CAT) { h.textContent = 'جاري تحميل الأصناف…'; try { await loadCat(); } catch (e) { h.textContent = 'مقدرتش أحمّل الأصناف: ' + (e.code || e.message); return; } }
-    if (!CAT.length) { h.textContent = 'البحث هيشتغل من طلبية بكره 6 الصبح (السيرفر لسه مرفعش الأصناف).'; return; }
-    h.textContent = `${CAT.length.toLocaleString('en-US')} صنف · أرقام ${CAT_AT}`;
+    if (!CAT) { res.innerHTML = '<div class="hint">جاري تحميل الأصناف…</div>'; try { await loadCat(); } catch (e) { res.innerHTML = `<div class="hint">مقدرتش أحمّل الأصناف: ${esc(e.code || e.message)}</div>`; CAT_LOADING = null; return; } }
+    if (!CAT.length) { CAT = null; CAT_LOADING = null; res.innerHTML = '<div class="hint">الأصناف لسه مترفعتش</div>'; return; }
     const words = v.split(' ');
     const m = /^\d+$/.test(v) ? CAT.filter(x => String(x.c) === v) : [];
     const list = m.length ? m : CAT.filter(x => words.every(w => x._n.includes(w)))
       .sort((a, b) => (b.m || 0) - (a.m || 0));
-    res.innerHTML = list.length ? list.slice(0, 25).map(hit).join('') + (list.length > 25 ? `<div class="hint">و${list.length - 25} صنف كمان — اكتب أكتر علشان تقلل</div>` : '')
-      : '<div class="hint">مفيش صنف بالاسم ده اتباع آخر 90 يوم أو عليه رصيد</div>';
+    res.innerHTML = !list.length ? '<div class="hint">مفيش صنف بالاسم ده اتباع آخر 90 يوم أو عليه رصيد</div>'
+      : `<div class="hint">${list.length} صنف · أرقام ${esc(CAT_AT)}</div>` + list.slice(0, 25).map(hit).join('')
+        + (list.length > 25 ? `<div class="hint">و${list.length - 25} صنف كمان — اكتب أكتر علشان تقلل</div>` : '');
   }
 }
 
