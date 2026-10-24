@@ -121,7 +121,10 @@ function recvOf(r) {
   if (!ord) return q > 0 ? { st: 'extra', q, sups } : null;           // وصل من غير ما يتعلّم عليه
   const need = ord.need || 1, sup = ord.sup || '';
   const st = q <= 0 ? 'none' : (sup && sup !== 'مورد مش محدد' && !sups.includes(sup)) ? 'other' : q + 1e-9 < need ? 'part' : 'ok';
-  return { st, q, sups, need };
+  // الخصم اللي اتشرى بيه (البونص محسوب) قصاد «خصم المورد ده» — نفس receive.py (25/10)
+  const bd = x && x.r ? Math.round((1 - x.c / x.r) * 1000) / 10 : null, sd = ord.sd ?? null;
+  const gain = bd != null && sd != null ? Math.round(x.r * (bd - sd) / 100) : null;
+  return { st, q, sups, need, bd, sd, gain };
 }
 
 async function loadDate(d) {
@@ -175,7 +178,8 @@ async function exportXl(done) {
 function render() {
   const all = ROWS.length, done = ROWS.filter(r => DONE[r.code]).length;
   const rows = ROWS.filter(r => r.sheet === ST.sheet);
-  const rs = {}; ROWS.forEach(r => { const x = recvOf(r); if (x) rs[x.st] = (rs[x.st] || 0) + 1; });
+  const rs = {}; let gain = 0, gn = 0, gl = 0;
+  ROWS.forEach(r => { const x = recvOf(r); if (!x) return; rs[x.st] = (rs[x.st] || 0) + 1; if (x.gain != null) { gain += x.gain; gn++; if (x.gain < 0) gl++; } });
   const keep = r => !(ST.hide && DONE[r.code]) && !(ST.miss && !['none', 'part', 'other'].includes((recvOf(r) || {}).st));
   // الموردين: الأكتر أصناف الأول، و"مورد مش محدد" في الآخر — نفس ترتيب الإكسل
   const g = {};
@@ -187,7 +191,8 @@ function render() {
       <div class="s">اتعملت من رصيد السيستم الساعة ${esc(AT)} · اتطلب <b>${done}</b> من ${all} صنف${canEdit() ? ' · علّم على اللي اتطلب، وفي الآخر دوس «حفظ الطلبية»' : ''}</div>
       <div class="bar"><i style="width:${all ? (100 * done / all).toFixed(1) : 0}%"></i></div>
       ${RECV ? `<div class="rsum">📦 اللي وصل لحد ${esc(RECV_TO.slice(11))} ${esc(RECV_TO.slice(8, 10) + '/' + RECV_TO.slice(5, 7))}${SAVED ? '' : ' <small>(الطلبية متحفظتش — بالعلامات)</small>'}:
-        ${Object.keys(RC).map(k => `<span class="rc ${k}">${RC[k]} ${rs[k] || 0}</span>`).join(' ')}${rs.extra ? ` <span class="rc extra">📦 وصل من غير علامة ${rs.extra}</span>` : ''}</div>` : ''}
+        ${Object.keys(RC).map(k => `<span class="rc ${k}">${RC[k]} ${rs[k] || 0}</span>`).join(' ')}${rs.extra ? ` <span class="rc extra">📦 وصل من غير علامة ${rs.extra}</span>` : ''}
+        ${gn ? `<br>💰 الخصم (${gn} صنف وصل): <span class="rc ${gain >= 0 ? 'ok' : 'none'}">${gain >= 0 ? 'كسبنا' : 'خسرنا'} ${N(Math.abs(gain))} ج عن المقترح</span> · ${gl} صنف اتشرى بخصم أقل` : ''}</div>` : ''}
       ${LOCAL ? '' : `<div class="nav"><button data-day="-1">‹ طلبية اليوم اللي قبله</button>${DATE < LATEST ? '<button data-day="1">اليوم اللي بعده ›</button>' : ''}</div>`}</div>
     <div class="tabs2">${SHEETS.map(([k, t]) => `<button class="${ST.sheet === k ? 'on' : ''}" data-sh="${k}">${t} <small>(${cntDone(k)}/${cnt(k)})</small></button>`).join('')}
       <label><input type="checkbox" id="ohide" ${ST.hide ? 'checked' : ''}> خبّي اللي اتطلب</label>
@@ -219,7 +224,8 @@ function render() {
 
 function row(r) {
   const D = DONE[r.code], R = recvOf(r), qq = n => String(Math.round(n * 100) / 100);
-  const rc = !R ? '' : `<br><span class="rc ${R.st}">${R.st === 'extra' ? '📦 وصل من غير علامة' : RC[R.st]}${R.q > 0 ? ` — ${qq(R.q)}${R.need ? ' من ' + R.need : ''} من ${esc(R.sups.join('، '))}` : ''}</span>`;
+  const rc = !R ? '' : `<br><span class="rc ${R.st}">${R.st === 'extra' ? '📦 وصل من غير علامة' : RC[R.st]}${R.q > 0 ? ` — ${qq(R.q)}${R.need ? ' من ' + R.need : ''} من ${esc(R.sups.join('، '))}` : ''}</span>`
+    + (R.gain == null ? '' : ` <span class="rc ${R.gain >= 0 ? 'ok' : 'none'}">خصم ${P(R.bd)}% بدل ${P(R.sd)}% (${R.gain >= 0 ? '+' : '−'}${N(Math.abs(R.gain))} ج)</span>`);
   return `<div class="row ${D ? 'ok' : ''}">
     <button class="chk ${D ? 'on' : ''}" data-code="${r.code}" ${canEdit() ? '' : 'disabled'} aria-label="تم الطلب">${D ? '✓' : ''}</button>
     <div><div class="nm">${esc(r.name)}</div>
