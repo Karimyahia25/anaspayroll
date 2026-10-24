@@ -211,12 +211,12 @@ function srchCss() {
   s.textContent = `
 #ordRoot .srch{margin:0 0 14px}
 #ordRoot .sbox{position:relative}
-#ordRoot .sbox svg{position:absolute;inset-inline-start:18px;top:50%;transform:translateY(-50%);width:20px;height:20px;color:#0E9AA7;pointer-events:none}
-#ordRoot .srch input{width:100%;min-height:54px;margin:0;box-sizing:border-box;font-size:16px;font-weight:600;color:var(--ink);
-  background:var(--card);border:1px solid var(--line);border-radius:99px;padding:12px 20px;padding-inline-start:52px;
-  box-shadow:var(--shadow);transition:border-color .2s,box-shadow .2s}
-#ordRoot .srch input::placeholder{color:var(--muted);font-weight:500}
-#ordRoot .srch input:focus{outline:none;border-color:#0E9AA7;box-shadow:0 0 0 4px color-mix(in srgb,#0E9AA7 16%,transparent),var(--shadow)}
+#ordRoot .sbox svg{position:absolute;inset-inline-start:18px;top:50%;transform:translateY(-50%);width:22px;height:22px;color:#1F2A44;pointer-events:none}
+#ordRoot .srch input{width:100%;min-height:56px;margin:0;box-sizing:border-box;font-size:16.5px;font-weight:700;color:#1F2A44;
+  background:linear-gradient(135deg,#FFE58A,#FFC83D);border:2px solid #F0A800;border-radius:99px;padding:12px 20px;padding-inline-start:54px;
+  box-shadow:0 6px 18px -8px rgba(240,168,0,.7);transition:border-color .2s,box-shadow .2s}
+#ordRoot .srch input::placeholder{color:#6B4E00;font-weight:600;opacity:1}
+#ordRoot .srch input:focus{outline:none;border-color:#1F2A44;box-shadow:0 0 0 4px rgba(255,200,61,.45),0 6px 18px -8px rgba(240,168,0,.7)}
 #ordRoot .sres{background:var(--card);border-radius:18px;box-shadow:var(--shadow);margin-top:8px;padding:4px 16px 6px;max-height:70vh;overflow:auto}
 #ordRoot .sres:empty{display:none}
 #ordRoot .sres .hint{font-size:12px;color:var(--muted);padding:8px 0}
