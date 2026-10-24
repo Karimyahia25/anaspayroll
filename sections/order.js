@@ -14,7 +14,7 @@ const P = n => (n == null || isNaN(n)) ? '—' : (+n).toFixed(1);
 const GRP_COLORS = ['#FFE8A3', '#C9F0E4', '#FFD6D6', '#D6E4FF', '#E9D8FD', '#FFE0C2', '#D2F4FA', '#E2F0CB'];
 const SHEETS = [['meds', '💊 الأدوية'], ['supply', '🧴 المستلزمات والتجميل']];
 
-let LOCAL = false, ROOT, DB, ROLE, WHO, DATE = '', AT = '', ROWS = [], DONE = {}, SAVED = null, SAVING = false, ST = { sheet: 'meds', hide: false, miss: false, open: {} }, UNSUB = null,
+let LOCAL = false, ROOT, DB, ROLE, WHO, DATE = '', AT = '', ROWS = [], DONE = {}, SAVED = null, SAVING = false, ST = { sheet: 'meds', hide: false, miss: false, exp: false, open: {} }, UNSUB = null,
   RECV = null, RECV_TO = '', LATEST = '', LATEST_AT = '';   // RECV = اللي وصل من فواتير الشرا (السيرفر بيكتبه في orders/<التاريخ>_recv)
 
 function css() {
@@ -62,6 +62,9 @@ function css() {
 #ordRoot .rsum{background:#fff;color:#1F2A44;border-radius:12px;padding:8px 12px;margin-top:10px;font-size:14px;font-weight:700;line-height:1.9}
 #ordRoot .rc{display:inline-block;border-radius:8px;padding:1px 8px;font-weight:800;font-size:13px}
 #ordRoot .rc.ok{background:#DCF5E3;color:#1B7F3B}#ordRoot .rc.part{background:#FFF1B8;color:#7A5A00}#ordRoot .rc.other{background:#E0E9FF;color:#2A4FB0}#ordRoot .rc.none{background:#FDE2E1;color:#A32E1E}#ordRoot .rc.extra{background:#EEF1F5;color:#475467}
+#ordRoot .xbtn{min-height:52px;border-radius:14px;padding:10px 18px;background:#1F2A44;color:#fff;border:0;font-weight:800;font-size:15.5px;cursor:pointer;box-shadow:var(--shadow)}
+#ordRoot .xmenu{display:flex;gap:6px;width:100%;justify-content:flex-end;flex-wrap:wrap}
+#ordRoot .xmenu button{min-height:46px;border-radius:12px;padding:8px 16px;border:2px solid #1F2A44;background:var(--card);color:var(--ink);font-weight:800;cursor:pointer}
 #ordRoot .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#0F1B2D;color:#fff;padding:10px 18px;border-radius:12px;z-index:80;font-size:14px}
 `;
   document.head.appendChild(s);
@@ -134,6 +137,41 @@ async function loadDate(d) {
 }
 const shiftDay = (d, k) => { const x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + k); return x.toISOString().slice(0, 10); };
 
+// تصدير إكسل (24/10): «اللي اتطلب» أو «اللي متطلبش» — اللي متطلبش = أصناف مش عند موردها، نسأل عليها في أماكن تانية.
+// شيت لكل قسم، مترتب بالمورد زي الصفحة.
+function loadXlsx() {
+  if (window.XLSX) return Promise.resolve();
+  return new Promise((ok, no) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload = ok; s.onerror = () => no(new Error('مقدرتش أحمّل مكتبة الإكسل')); document.head.appendChild(s); });
+}
+async function exportXl(done) {
+  const pick = ROWS.filter(r => !!DONE[r.code] === done);
+  if (!pick.length) { toast(done ? 'مفيش أصناف متعلّم عليها لسه' : 'كل الأصناف اتطلبت 🎉'); return; }
+  try { await loadXlsx(); } catch (e) { toast(e.message); return; }
+  const wb = XLSX.utils.book_new(); wb.Workbook = { Views: [{ RTL: true }] };
+  const head = ['المورد', 'الكود', 'الصنف', 'ABC', 'الرصيد', 'المطلوب (علب)', 'خصم المورد ده %', 'آخر شرا', 'آخر مورد', 'خصمه %', 'ملاحظة',
+    ...(done ? ['اتطلب بواسطة', 'الساعة'] : []), ...(RECV ? ['الاستلام'] : [])];
+  const title = done ? 'اللي اتطلب' : 'اللي متطلبش';
+  SHEETS.forEach(([k, nm]) => {
+    const rows = pick.filter(r => r.sheet === k);
+    if (!rows.length) return;
+    const n = {}; rows.forEach(r => n[r.sup] = (n[r.sup] || 0) + 1);
+    rows.sort((a, b) => (a.sup === 'مورد مش محدد') - (b.sup === 'مورد مش محدد') || n[b.sup] - n[a.sup] || a.sup.localeCompare(b.sup) || a.name.localeCompare(b.name));
+    const aoa = [[`طلبية النواقص ${DATE.split('-').reverse().join('/')} — ${title} — ${rows.length} صنف`], [], head, ...rows.map(r => {
+      const D = DONE[r.code], R = recvOf(r);
+      const note = [r.up ? 'السعر زاد' : '', r.sea ? 'صيفي — بمعدل آخر 30 يوم' : '', r.moved || ''].filter(Boolean).join(' · ');
+      return [r.sup, r.code, r.name, r.abc, r.stock, r.need, r.sd ?? '', r.last || '', r.lsup || '', r.ld ?? '', note,
+        ...(done ? [D.by || '', D.at || ''] : []), ...(RECV ? [R ? (R.st === 'extra' ? 'وصل من غير علامة' : RC[R.st]) + (R.q > 0 ? ' ' + Math.round(R.q * 100) / 100 + ' من ' + R.sups.join('، ') : '') : ''] : [])];
+    })];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = [18, 9, 40, 6, 10, 11, 12, 10, 18, 8, 26, 14, 8, 30].slice(0, head.length).map(w => ({ wch: w }));
+    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: head.length - 1 } }];
+    ws['!views'] = [{ RTL: true }];
+    XLSX.utils.book_append_sheet(wb, ws, nm.replace(/[^\u0600-\u06FF a-zA-Z]/g, '').trim().slice(0, 31));
+  });
+  XLSX.writeFile(wb, `طلبية_${DATE}_${title.replace(/ /g, '_')}.xlsx`);
+  ST.exp = false; render();
+}
+
 function render() {
   const all = ROWS.length, done = ROWS.filter(r => DONE[r.code]).length;
   const rows = ROWS.filter(r => r.sheet === ST.sheet);
@@ -156,6 +194,8 @@ function render() {
       ${RECV ? `<label><input type="checkbox" id="omiss" ${ST.miss ? 'checked' : ''}> اللي موصلش أو فيه مشكلة بس</label>` : ''}
       ${canEdit() ? (() => { const u = unsaved(), ok = SAVED && !u;
         return `<button class="save ${ok ? 'ok' : ''}" id="osave" ${SAVING ? 'disabled' : ''}>${SAVING ? 'جاري الحفظ…' : ok ? '✔ الطلبية محفوظة' : SAVED ? `💾 حفظ التعديلات (${u})` : '💾 حفظ الطلبية'}</button>`; })() : ''}
+      <button class="xbtn" id="oexp">📥 تصدير إكسل</button>
+      ${ST.exp ? `<div class="xmenu"><button data-x="1">✔ اللي اتطلب (${done})</button><button data-x="0">✖ اللي متطلبش (${all - done})</button></div>` : ''}
       ${SAVED ? `<div class="savedat">آخر حفظ الساعة ${esc(SAVED.at)}${SAVED.by ? ' — ' + esc(SAVED.by) : ''} · ${SAVED.n} صنف</div>` : ''}</div>
     ${sups.map((s, i) => {
       const list = g[s], d = list.filter(r => DONE[r.code]).length, cost = list.reduce((a, r) => a + (r.cost || 0), 0);
@@ -168,6 +208,8 @@ function render() {
     }).join('') || '<div class="banner">مفيش نواقص في القسم ده 🎉</div>'}`;
   ROOT.querySelectorAll('[data-sh]').forEach(b => b.onclick = () => { ST.sheet = b.dataset.sh; render(); });
   if ($('#osave', ROOT)) $('#osave', ROOT).onclick = saveOrder;
+  $('#oexp', ROOT).onclick = () => { ST.exp = !ST.exp; render(); };
+  ROOT.querySelectorAll('[data-x]').forEach(b => b.onclick = () => exportXl(b.dataset.x === '1'));
   $('#ohide', ROOT).onchange = e => { ST.hide = e.target.checked; render(); };
   if ($('#omiss', ROOT)) $('#omiss', ROOT).onchange = e => { ST.miss = e.target.checked; render(); };
   ROOT.querySelectorAll('[data-day]').forEach(b => b.onclick = async () => { if (await loadDate(shiftDay(DATE, +b.dataset.day))) render(); });
