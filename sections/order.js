@@ -69,6 +69,8 @@ function css() {
 #ordRoot .xmenu button{min-height:46px;border-radius:12px;padding:8px 16px;border:2px solid #1F2A44;background:var(--card);color:var(--ink);font-weight:800;cursor:pointer}
 #ordRoot .pend{background:#FFF1B8;color:#7A5A00;border-radius:8px;padding:1px 8px;font-weight:800}
 #ordRoot .kept{background:#EEF1F5;color:#475467;border-radius:8px;padding:1px 8px;font-weight:700}
+#ordRoot .sib{background:#E0E9FF;color:#2A4FB0;border-radius:8px;padding:1px 8px;font-weight:800}
+#ordRoot .sibs{color:#2A4FB0;font-weight:700}
 #ordRoot .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#0F1B2D;color:#fff;padding:10px 18px;border-radius:12px;z-index:80;font-size:14px}
 `;
   document.head.appendChild(s);
@@ -240,6 +242,8 @@ function row(r) {
         ${r.up ? ' · <span class="up">⚠ السعر زاد</span>' : ''}${r.sea ? ' · <span class="sea">☀️ صيفي — بمعدل آخر 30 يوم</span>' : ''}
         ${r.pend ? `<br><span class="pend">⏳ اتطلب امبارح ولسه موصلش ${String(Math.round(r.pend * 100) / 100)} علبة${r.pend_sup ? ' من ' + esc(r.pend_sup) : ''} — ${r.need ? `اتخصموا: كان ${r.need0} بقى ${r.need}` : 'مستنيين يوصل، متطلبوش تاني'}</span>` : ''}
         ${r.kept ? '<br><span class="kept">📌 اتعلّم عليه قبل تحديث الطلبية — رصيده بقى كويس بعد اللي وصل</span>' : ''}
+        ${r.pend_sib ? `<br><span class="sib">🔁 وصل بدله: ${r.pend_sib.map(s => esc(s[0]) + ' (' + String(Math.round(s[1] * 100) / 100) + ' علبة)').join('، ')} — اتأكد إن ده المقصود</span>` : ''}
+        ${sibLine(r.sib)}
         ${D ? `<br><span class="by">✔ اتطلب${D.by ? ' — ' + esc(D.by) : ''}${D.at ? ' الساعة ' + esc(D.at) : ''}</span>` : ''}${rc}</div></div>
     <div class="need"><div class="v">${r.need}</div><div class="l">${r.pend && !r.need ? 'مستني' : 'علبة'}</div></div></div>`;
 }
@@ -282,6 +286,10 @@ function srchCss() {
 #ordRoot .hit .cv{font-weight:800}`;
   document.head.appendChild(s);
 }
+// نفس الصنف بكارتة تانية (عدد أقراص/علبة مختلف) — 26/10، طلبه بعد BIOLEGAM 8TAB / 12TAB
+function sibLine(sb) {
+  return sb && sb.length ? `<br><span class="sibs">🔁 نفس الصنف بكارتة تانية: ${sb.map(s => `${esc(s[1])} <small>(كود ${s[0]} · رصيد ${esc(s[2])})</small>`).join(' · ')}</span>` : '';
+}
 function hit(x) {
   const cls = x.w.startsWith('🛒') ? 'go' : x.o ? 'out' : '';
   const D = DONE[x.c];
@@ -290,6 +298,7 @@ function hit(x) {
       <br>الرصيد <span class="${x.o ? 'oos' : ''}">${esc(x.st)}</span>${x.cv != null ? ` · يكفي <span class="cv">${x.cv} يوم</span>` : ''}${x.m ? ` · بيتباع ~${P(x.m)} علبة/شهر` : ''}${x.se ? ' · <span class="sea">☀️ صيفي</span>' : ''}
       <br>أحسن مورد: <b>${esc(x.s)}</b>${x.sd != null ? ` <b class="sd">${P(x.sd)}%</b>` : ''}
       ${x.ls ? `<br>آخر شرا ${esc(x.l)} من ${esc(x.ls)}${x.ld != null ? ' ' + P(x.ld) + '%' : ''}` : '<br>مفيش شرا آخر سنة'}
+      ${sibLine(x.sb)}
       <br><span class="why ${cls}">${esc(x.w)}</span>${D ? ` <span class="by">✔ اتطلب${D.by ? ' — ' + esc(D.by) : ''}</span>` : ''}</div></div>`;
 }
 function mountSearch(box) {
