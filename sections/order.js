@@ -15,7 +15,9 @@ const GRP_COLORS = ['#FFE8A3', '#C9F0E4', '#FFD6D6', '#D6E4FF', '#E9D8FD', '#FFE
 const SHEETS = [['meds', '💊 الأدوية'], ['supply', '🧴 المستلزمات والتجميل']];
 
 let LOCAL = false, ROOT, DB, ROLE, WHO, DATE = '', AT = '', ROWS = [], DONE = {}, SAVED = null, SAVING = false, ST = { sheet: 'meds', hide: false, miss: false, exp: false, open: {} }, UNSUB = null,
-  RECV = null, RECV_TO = '', LATEST = '', LATEST_AT = '';   // RECV = اللي وصل من فواتير الشرا (السيرفر بيكتبه في orders/<التاريخ>_recv)
+  RECV = null, RECV_TO = '', LATEST = '', LATEST_AT = '';
+// (25/10، قراره) المقارنة باللي وصل مستخبية لحد ما يعدّي أسبوع طلب — true = ترجع تظهر (السيرفر لسه بيكتب _recv)
+const SHOW_RECV = false;   // RECV = اللي وصل من فواتير الشرا (السيرفر بيكتبه في orders/<التاريخ>_recv)
 
 function css() {
   if ($('#ordCss')) return;
@@ -135,7 +137,7 @@ async function loadDate(d) {
   DATE = d; ROWS = JSON.parse(o.data().d || '[]');
   AT = d === LATEST ? LATEST_AT : String(o.data().at || '').slice(11);
   RECV = null; RECV_TO = '';
-  try { const r = await getDoc(doc(DB, 'orders', d + '_recv')); if (r.exists()) { RECV = JSON.parse(r.data().d || '{}'); RECV_TO = r.data().to || ''; } } catch (e) {}
+  if (SHOW_RECV) try { const r = await getDoc(doc(DB, 'orders', d + '_recv')); if (r.exists()) { RECV = JSON.parse(r.data().d || '{}'); RECV_TO = r.data().to || ''; } } catch (e) {}
   if (UNSUB) UNSUB();
   UNSUB = onSnapshot(doneRef(), s => { DONE = (s.exists() && s.data().t) || {}; SAVED = (s.exists() && s.data().saved) || null; render(); }, () => render());
   return true;
