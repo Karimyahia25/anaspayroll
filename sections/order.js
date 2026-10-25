@@ -65,6 +65,8 @@ function css() {
 #ordRoot .xbtn{min-height:52px;border-radius:14px;padding:10px 18px;background:#1F2A44;color:#fff;border:0;font-weight:800;font-size:15.5px;cursor:pointer;box-shadow:var(--shadow)}
 #ordRoot .xmenu{display:flex;gap:6px;width:100%;justify-content:flex-end;flex-wrap:wrap}
 #ordRoot .xmenu button{min-height:46px;border-radius:12px;padding:8px 16px;border:2px solid #1F2A44;background:var(--card);color:var(--ink);font-weight:800;cursor:pointer}
+#ordRoot .pend{background:#FFF1B8;color:#7A5A00;border-radius:8px;padding:1px 8px;font-weight:800}
+#ordRoot .kept{background:#EEF1F5;color:#475467;border-radius:8px;padding:1px 8px;font-weight:700}
 #ordRoot .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#0F1B2D;color:#fff;padding:10px 18px;border-radius:12px;z-index:80;font-size:14px}
 `;
   document.head.appendChild(s);
@@ -161,7 +163,8 @@ async function exportXl(done) {
     rows.sort((a, b) => (a.sup === 'مورد مش محدد') - (b.sup === 'مورد مش محدد') || n[b.sup] - n[a.sup] || a.sup.localeCompare(b.sup) || a.name.localeCompare(b.name));
     const aoa = [[`طلبية النواقص ${DATE.split('-').reverse().join('/')} — ${title} — ${rows.length} صنف`], [], head, ...rows.map(r => {
       const D = DONE[r.code], R = recvOf(r);
-      const note = [r.up ? 'السعر زاد' : '', r.sea ? 'صيفي — بمعدل آخر 30 يوم' : '', r.moved || ''].filter(Boolean).join(' · ');
+      const note = [r.up ? 'السعر زاد' : '', r.sea ? 'صيفي — بمعدل آخر 30 يوم' : '', r.moved || '',
+        r.kept ? 'اتعلّم عليه قبل التحديث' : '', r.pend ? `اتطلب امبارح ولسه موصلش ${String(Math.round(r.pend * 100) / 100)} علبة${r.pend_sup ? ' من ' + r.pend_sup : ''}` : ''].filter(Boolean).join(' · ');
       return [r.sup, r.code, r.name, r.abc, r.stock, r.need, r.sd ?? '', r.last || '', r.lsup || '', r.ld ?? '', note,
         ...(done ? [D.by || '', D.at || ''] : []), ...(RECV ? [R ? (R.st === 'extra' ? 'وصل من غير علامة' : RC[R.st]) + (R.q > 0 ? ' ' + Math.round(R.q * 100) / 100 + ' من ' + R.sups.join('، ') : '') : ''] : [])];
     })];
@@ -233,8 +236,10 @@ function row(r) {
         · خصم المورد ده <b class="sd">${P(r.sd)}%</b>
         ${r.lsup ? `<br>آخر شرا ${esc(r.last)} من <span class="${r.gap != null ? 'yel' : ''}">${esc(r.lsup)} ${P(r.ld)}%</span>${r.gap != null ? ` <span class="yel">أقل بـ ${P(r.gap)}</span>` : ''}` : ''}
         ${r.up ? ' · <span class="up">⚠ السعر زاد</span>' : ''}${r.sea ? ' · <span class="sea">☀️ صيفي — بمعدل آخر 30 يوم</span>' : ''}
+        ${r.pend ? `<br><span class="pend">⏳ اتطلب امبارح ولسه موصلش ${String(Math.round(r.pend * 100) / 100)} علبة${r.pend_sup ? ' من ' + esc(r.pend_sup) : ''} — ${r.need ? `اتخصموا: كان ${r.need0} بقى ${r.need}` : 'مستنيين يوصل، متطلبوش تاني'}</span>` : ''}
+        ${r.kept ? '<br><span class="kept">📌 اتعلّم عليه قبل تحديث الطلبية — رصيده بقى كويس بعد اللي وصل</span>' : ''}
         ${D ? `<br><span class="by">✔ اتطلب${D.by ? ' — ' + esc(D.by) : ''}${D.at ? ' الساعة ' + esc(D.at) : ''}</span>` : ''}${rc}</div></div>
-    <div class="need"><div class="v">${r.need}</div><div class="l">علبة</div></div></div>`;
+    <div class="need"><div class="v">${r.need}</div><div class="l">${r.pend && !r.need ? 'مستني' : 'علبة'}</div></div></div>`;
 }
 
 // ---- البحث بالصنف (24/10، طلب د. يحيى): أي صنف — التصنيف، الرصيد، يكفي كام يوم، آخر شرا، أحسن مورد، وأطلب ولا لأ.
