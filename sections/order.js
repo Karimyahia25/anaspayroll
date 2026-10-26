@@ -84,8 +84,8 @@ function css() {
 #ordRoot .mres{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}#ordRoot .mres button{min-height:40px;border-radius:10px;padding:6px 10px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-weight:700;font-size:12.5px;cursor:pointer}#ordRoot .mres button.on{background:#1F2A44;color:#fff;border-color:#1F2A44}
 #ordRoot .nq{width:64px;min-height:44px;text-align:center;font-family:Alexandria,sans-serif;font-size:22px;font-weight:700;color:#0E6F78;border:2px solid #9AD8D0;border-radius:12px;background:var(--card);padding:2px}
 #ordRoot .nq.chgd{border-color:#C2410C;color:#C2410C}
-#ordRoot .spb{min-height:34px;border-radius:10px;padding:4px 10px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-weight:700;font-size:12px;cursor:pointer;margin-inline-start:4px}
-#ordRoot .sps{min-height:40px;border-radius:10px;padding:4px 8px;font-size:14px;max-width:100%}
+#ordRoot .spb{min-height:34px;border-radius:10px;padding:4px 10px;border:1px solid #FDBA74;background:#FFEDD5;color:#9A3412;font-weight:700;font-size:12px;cursor:pointer;margin-inline-start:4px}
+#ordRoot .sps{min-height:40px;border-radius:10px;padding:4px 8px;font-size:14px;max-width:100%;background:#FFF7ED;border:2px solid #FDBA74;color:#7C2D12;font-weight:700}
 #ordRoot .chg{background:#FFEDD5;color:#9A3412;border-radius:8px;padding:1px 8px;font-weight:800}
 #ordRoot .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#0F1B2D;color:#fff;padding:10px 18px;border-radius:12px;z-index:80;font-size:14px}
 `;

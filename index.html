@@ -856,7 +856,7 @@ onAuthStateChanged(auth, async user => {
 async function renderBuyer(){
   const b = $('buyer'); b.classList.remove('hide');
   b.innerHTML = `<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div><h2 style="margin:0">🛒 طلبية النواقص</h2><p class="sub" style="margin:2px 0 0">مسؤول المشتريات</p></div><button class="ghost sm" onclick="doOut()">خروج</button></div><div id="orderRoot"></div><div id="buyerRoot" style="margin-top:14px"></div>`;
-  try { const o = await import('./sections/order.js?v=16'); await o.mountOrder($('orderRoot'), 'buyer'); } catch (e) {}
+  try { const o = await import('./sections/order.js?v=17'); await o.mountOrder($('orderRoot'), 'buyer'); } catch (e) {}
   try { const m = await import('./sections/inventory.js?v=25'); await m.mountBuyer($('buyerRoot')); }
   catch (e) { $('buyerRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل الشاشة: ${esc(e.code || e.message)}</div>`; }
 }
@@ -2369,7 +2369,7 @@ async function openCustomers(){
 let ORD_ON = false;
 async function openOrder(){
   if (ORD_ON) return; ORD_ON = true;
-  try { const m = await import('./sections/order.js?v=16'); await m.mountOrder($('orderRoot'), ROLE); }
+  try { const m = await import('./sections/order.js?v=17'); await m.mountOrder($('orderRoot'), ROLE); }
   catch (e) { ORD_ON = false; $('orderRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل الطلبية: ${esc(e.code || e.message)}</div>`; }
 }
 
