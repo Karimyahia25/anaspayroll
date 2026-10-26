@@ -75,6 +75,7 @@ function css() {
 #ordRoot .sib{background:#E0E9FF;color:#2A4FB0;border-radius:8px;padding:1px 8px;font-weight:800}
 #ordRoot .sibs{color:#2A4FB0;font-weight:700}
 #ordRoot .tabs2 button.mk{border-color:#C2410C;color:#C2410C}#ordRoot .tabs2 button.mk.on{background:#C2410C;color:#fff}
+#ordRoot .mkb label{display:inline-flex;gap:6px;align-items:center;font-weight:700;margin-top:6px}#ordRoot .mkb label input{width:auto;margin:0}
 #ordRoot .mkb{background:#FFF7ED;border:1px solid #FED7AA;color:#7C2D12;line-height:1.8}
 #ordRoot .mrow{grid-template-columns:4px 1fr auto}
 #ordRoot .mres{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}#ordRoot .mres button{min-height:40px;border-radius:10px;padding:6px 10px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-weight:700;font-size:12.5px;cursor:pointer}#ordRoot .mres button.on{background:#1F2A44;color:#fff;border-color:#1F2A44}
@@ -190,16 +191,21 @@ async function exportXl(done) {
 }
 
 function marketHtml() {
-  const list = MARKET.filter(m => !(ST.hide && MDONE[m.c]));
+  // اللي اتبدّل بعدد أقراص تاني وبيتباع (rep) واللي اتعلّم «اتوقف/اتغير كوده» مستخبيين — زرار يظهرهم (26/10)
+  const gone = m => (m.rep && m.rep.length) || (MDONE[m.c] && MDONE[m.c].res === 'stop');
+  const nGone = MARKET.filter(gone).length;
+  const list = MARKET.filter(m => !(ST.hide && MDONE[m.c]) && (ST.mgone || !gone(m)));
   return `<div class="banner mkb">🔍 <b>نواقص السوق — اسأل عليها</b>: رصيدها صفر ومتباعتش خالص آخر 90 يوم، بس كانت بتتباع كويس قبل كده.
-      مش بتدخل الطلبية بكمية — اسأل عليها الموردين مرة في الأسبوع وسجّل النتيجة. مترتبة بقيمة البيع اللي ضايعة في الشهر.</div>
+      مش بتدخل الطلبية بكمية — اسأل عليها الموردين مرة في الأسبوع وسجّل النتيجة. مترتبة بقيمة البيع اللي ضايعة في الشهر.
+      ${nGone ? `<br><label><input type="checkbox" id="mgone" ${ST.mgone ? 'checked' : ''}> اعرض اللي اتبدّل بكارتة تانية أو اتوقف (${nGone})</label>` : ''}</div>
     <div class="grp">${list.map(m => {
       const D = MDONE[m.c];
       return `<div class="row mrow ${D ? 'ok' : ''}"><div></div>
         <div><div class="nm">${esc(m.n)}</div>
           <div class="mt">كود ${m.c} · ${m.sh === 'supply' ? 'مستلزمات وتجميل' : 'أدوية'} · كان بيتباع ~${P(m.m)} علبة/شهر (${m.inv} فاتورة) · آخر بيع ${esc(m.last)}
             ${m.ls ? `<br>آخر شرا ${esc(m.lb)} من <b>${esc(m.ls)}</b>` : ''}
-            ${m.rep ? '<br><span class="sib">🔁 غالباً اتبدّل بكارتة تانية بتتباع</span>' : ''}${sibLine(m.sb)}
+            ${m.rep ? `<br><span class="sib">🔁 اتبدّل بـ ${m.rep.map(esc).join('، ')} (بيتباع)</span>` : sibLine(m.sb)}
+            ${!m.rep && m.may ? `<br><span class="sibs">❓ ممكن يكون اتبدّل بـ ${m.may.map(esc).join('، ')} — لو كده دوس ⛔</span>` : ''}
             ${D ? `<br><span class="by">${MRES[D.res] || ''} — ${esc(D.by || '')} ${esc(D.d || '')}</span>` : ''}
             ${canEdit() ? `<div class="mres">${Object.keys(MRES).map(k => `<button class="${D && D.res === k ? 'on' : ''}" data-mc="${m.c}" data-mr="${k}">${MRES[k]}</button>`).join('')}</div>` : ''}</div></div>
         <div class="need"><div class="v">${N(m.v)}</div><div class="l">ج/شهر</div></div></div>`;
@@ -239,7 +245,7 @@ function render() {
         ${gn ? `<br>💰 الخصم (${gn} صنف وصل): <span class="rc ${gain >= 0 ? 'ok' : 'none'}">${gain >= 0 ? 'كسبنا' : 'خسرنا'} ${N(Math.abs(gain))} ج عن المقترح</span> · ${gl} صنف اتشرى بخصم أقل` : ''}</div>` : ''}
       ${LOCAL ? '' : `<div class="nav"><button data-day="-1">‹ طلبية اليوم اللي قبله</button>${DATE < LATEST ? '<button data-day="1">اليوم اللي بعده ›</button>' : ''}</div>`}</div>
     <div class="tabs2">${SHEETS.map(([k, t]) => `<button class="${ST.sheet === k ? 'on' : ''}" data-sh="${k}">${t} <small>(${cntDone(k)}/${cnt(k)})</small></button>`).join('')}
-      ${MARKET.length ? `<button class="mk ${ST.sheet === 'market' ? 'on' : ''}" data-sh="market">🔍 نواقص السوق <small>(${MARKET.filter(m => MDONE[m.c]).length}/${MARKET.length})</small></button>` : ''}
+      ${MARKET.length ? `<button class="mk ${ST.sheet === 'market' ? 'on' : ''}" data-sh="market">🔍 نواقص السوق <small>(${MARKET.filter(m => MDONE[m.c] && !(m.rep && m.rep.length)).length}/${MARKET.filter(m => !(m.rep && m.rep.length)).length})</small></button>` : ''}
       <label><input type="checkbox" id="ohide" ${ST.hide ? 'checked' : ''}> خبّي اللي اتطلب</label>
       ${RECV ? `<label><input type="checkbox" id="omiss" ${ST.miss ? 'checked' : ''}> اللي موصلش أو فيه مشكلة بس</label>` : ''}
       ${canEdit() ? (() => { const u = unsaved(), ok = SAVED && !u;
@@ -257,6 +263,7 @@ function render() {
         ${closed ? '' : shown.map(row).join('')}</div>`;
     }).join('') || '<div class="banner">مفيش نواقص في القسم ده 🎉</div>'}`;
   ROOT.querySelectorAll('[data-mr]').forEach(b => b.onclick = () => markRes(+b.dataset.mc, b.dataset.mr));
+  if ($('#mgone', ROOT)) $('#mgone', ROOT).onchange = e => { ST.mgone = e.target.checked; render(); };
   ROOT.querySelectorAll('[data-sh]').forEach(b => b.onclick = () => { ST.sheet = b.dataset.sh; render(); });
   if ($('#osave', ROOT)) $('#osave', ROOT).onclick = saveOrder;
   $('#oexp', ROOT).onclick = () => { ST.exp = !ST.exp; render(); };
