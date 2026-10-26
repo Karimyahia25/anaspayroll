@@ -399,7 +399,7 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="adm" class="hide"></div>
 <div id="buyer" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-27-A</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-27-B</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -793,9 +793,10 @@ function buildKPI(people, sales, items, W0){
 /* ================= قفل الجلسة بعد سكون ================= */
 const IDLE_MIN = 15;
 let idleTimer = null;
+const NO_IDLE = ['cashier', 'buyer'];   // (27/10، طلبه) الكاشير وشاشة الطلبية مبيقفلوش لوحدهم خالص
 function idleReset(){
-  if (!ME || ROLE === 'cashier') return;
   clearTimeout(idleTimer);
+  if (!ME || !ROLE || NO_IDLE.includes(ROLE)) return;
   idleTimer = setTimeout(async () => {
     try { sessionStorage.setItem('idleOut', '1'); } catch(e){}
     try { await signOut(auth); } catch(e){}
@@ -833,7 +834,7 @@ onAuthStateChanged(auth, async user => {
     $('loginErr').textContent = msg;
     $('login').classList.remove('hide'); return;
   }
-  ME = user; idleReset();
+  ME = user; ROLE = null; clearTimeout(idleTimer);
   ROLE = 'emp'; IS_ADMIN = false;
   try { if ((await getDoc(doc(db, 'admins', user.uid))).exists()) { ROLE = 'admin'; IS_ADMIN = true; } } catch(e){}
   if (ROLE === 'emp'){
@@ -843,8 +844,9 @@ onAuthStateChanged(auth, async user => {
     try { if ((await getDoc(doc(db, 'cashiers', user.uid))).exists()) ROLE = 'cashier'; } catch(e){}
   }
   if (ROLE === 'emp'){
-    try { if ((await getDoc(doc(db, 'buyers', user.uid))).exists()) { ROLE = 'buyer'; clearTimeout(idleTimer); } } catch(e){}
+    try { if ((await getDoc(doc(db, 'buyers', user.uid))).exists()) { ROLE = 'buyer'; } } catch(e){}
   }
+  idleReset();                                   // بعد ما الدور اتعرف — قبل كده الكاشير كان بيتقفل بعد 15 دقيقة
   DASH = { periods: [], staff: [], rows: [], period: null };
   if (ROLE === 'admin' || ROLE === 'viewer') { $('adm').classList.remove('hide'); renderAdmin(); }
   else if (ROLE === 'cashier') { $('emp').classList.remove('hide'); await renderStation(); }
