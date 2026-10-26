@@ -20,6 +20,9 @@ let LOCAL = false, ROOT, DB, ROLE, WHO, DATE = '', AT = '', ROWS = [], DONE = {}
 const SHOW_RECV = false;
 // نواقص السوق — اسأل عليها (26/10): السيرفر بيكتب orders/market، والنتيجة بتتحفظ في orders/market_done {t: {كود: {res, by, at, d}}}
 let MARKET = [], MDONE = {}, MUNSUB = null;
+// تعديل المورد والكمية لكل صنف (26/10، طلبه — موردين أجل ونقدي): orders/<التاريخ>_done.ov {كود: {sup?, need?, by, at}}.
+// الأصل محفوظ في r._s0 / r._n0، والتعديل بيتطبق على r.sup / r.need ← التجميع والحفظ والإكسل بياخدوه لوحدهم.
+let OV = {}, SPOPEN = null;
 const MRES = { none: '❌ مش موجود في السوق', found: '✅ لقيناه واتطلب', stop: '⛔ اتوقف / اتغير كوده' };   // RECV = اللي وصل من فواتير الشرا (السيرفر بيكتبه في orders/<التاريخ>_recv)
 
 function css() {
@@ -79,6 +82,11 @@ function css() {
 #ordRoot .mkb{background:#FFF7ED;border:1px solid #FED7AA;color:#7C2D12;line-height:1.8}
 #ordRoot .mrow{grid-template-columns:4px 1fr auto}
 #ordRoot .mres{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}#ordRoot .mres button{min-height:40px;border-radius:10px;padding:6px 10px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-weight:700;font-size:12.5px;cursor:pointer}#ordRoot .mres button.on{background:#1F2A44;color:#fff;border-color:#1F2A44}
+#ordRoot .nq{width:64px;min-height:44px;text-align:center;font-family:Alexandria,sans-serif;font-size:22px;font-weight:700;color:#0E6F78;border:2px solid #9AD8D0;border-radius:12px;background:var(--card);padding:2px}
+#ordRoot .nq.chgd{border-color:#C2410C;color:#C2410C}
+#ordRoot .spb{min-height:34px;border-radius:10px;padding:4px 10px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-weight:700;font-size:12px;cursor:pointer;margin-inline-start:4px}
+#ordRoot .sps{min-height:40px;border-radius:10px;padding:4px 8px;font-size:14px;max-width:100%}
+#ordRoot .chg{background:#FFEDD5;color:#9A3412;border-radius:8px;padding:1px 8px;font-weight:800}
 #ordRoot .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#0F1B2D;color:#fff;padding:10px 18px;border-radius:12px;z-index:80;font-size:14px}
 `;
   document.head.appendChild(s);
@@ -88,6 +96,42 @@ const canEdit = () => ROLE === 'admin' || ROLE === 'buyer';
 const doneRef = () => doc(DB, 'orders', DATE + '_done');
 function toast(t) { const d = document.createElement('div'); d.className = 'toast'; d.textContent = t; document.body.appendChild(d); setTimeout(() => d.remove(), 2000); }
 const nowCairo = () => new Date(Date.now() + 2 * 3600e3).toISOString().slice(11, 16);
+
+function applyOV() {
+  ROWS.forEach(r => {
+    if (r._s0 === undefined) { r._s0 = r.sup; r._n0 = r.need; }
+    const o = OV[r.code] || {};
+    r.sup = o.sup || r._s0;
+    r.need = o.need != null ? o.need : r._n0;
+  });
+}
+// الموردين: الرئيسيين الأول (3 أصناف+ في طلبية النهارده، الأكتر الأول) وبعدين الباقي أبجدي (من آخر شرا ونواقص السوق)
+function supList() {
+  const n = {};
+  ROWS.forEach(r => { if (r._s0 && r._s0 !== 'مورد مش محدد') n[r._s0] = (n[r._s0] || 0) + 1; });
+  const main = Object.keys(n).filter(s => n[s] >= 3).sort((a, b) => n[b] - n[a]);
+  const rest = new Set();
+  ROWS.forEach(r => { [r._s0, r.lsup].forEach(s => { if (s && s !== 'مورد مش محدد' && !main.includes(s)) rest.add(s); }); });
+  MARKET.forEach(m => { if (m.ls && !main.includes(m.ls)) rest.add(m.ls); });
+  Object.values(OV).forEach(o => { if (o.sup && !main.includes(o.sup)) rest.add(o.sup); });
+  return [main, [...rest].filter(s => !/outting|doctor anas|دكتور انس/i.test(s)).sort((a, b) => a.localeCompare(b, 'ar'))];
+}
+async function setOV(code, patch) {
+  if (!canEdit()) return;
+  const k = String(code), r = ROWS.find(x => String(x.code) === k);
+  if (!r) return;
+  const o = { ...(OV[k] || {}), ...patch, by: WHO, at: nowCairo() };
+  if (o.sup === r._s0) delete o.sup;
+  if (o.need === r._n0) delete o.need;
+  const was = OV[k];
+  if (o.sup == null && o.need == null) delete OV[k]; else OV[k] = o;
+  applyOV(); render();
+  if (LOCAL) return;
+  try {
+    if (!OV[k]) await updateDoc(doneRef(), { ['ov.' + k]: deleteField() });
+    else await setDoc(doneRef(), { ov: { [k]: OV[k] } }, { merge: true });
+  } catch (e) { if (was) OV[k] = was; else delete OV[k]; applyOV(); render(); toast('متحفظش: ' + (e.code || e.message)); }
+}
 
 async function tick(code) {
   if (!canEdit()) return;
@@ -107,7 +151,8 @@ async function tick(code) {
 // الأصناف اللي عليها صح دلوقتي ومختلفة عن آخر حفظ
 function unsaved() {
   const s = (SAVED && SAVED.items) || {}, d = Object.keys(DONE);
-  return d.filter(k => !s[k]).length + Object.keys(s).filter(k => !DONE[k]).length;
+  const changed = d.filter(k => { const r = s[k], x = ROWS.find(y => String(y.code) === k); return r && x && (r.need !== x.need || r.sup !== x.sup); });
+  return d.filter(k => !s[k]).length + Object.keys(s).filter(k => !DONE[k]).length + changed.length;
 }
 
 async function saveOrder() {
@@ -149,7 +194,9 @@ async function loadDate(d) {
   RECV = null; RECV_TO = '';
   if (SHOW_RECV) try { const r = await getDoc(doc(DB, 'orders', d + '_recv')); if (r.exists()) { RECV = JSON.parse(r.data().d || '{}'); RECV_TO = r.data().to || ''; } } catch (e) {}
   if (UNSUB) UNSUB();
-  UNSUB = onSnapshot(doneRef(), s => { DONE = (s.exists() && s.data().t) || {}; SAVED = (s.exists() && s.data().saved) || null; render(); }, () => render());
+  OV = {}; applyOV();
+  UNSUB = onSnapshot(doneRef(), s => { DONE = (s.exists() && s.data().t) || {}; SAVED = (s.exists() && s.data().saved) || null;
+    OV = (s.exists() && s.data().ov) || {}; applyOV(); render(); }, () => render());
   return true;
 }
 const shiftDay = (d, k) => { const x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + k); return x.toISOString().slice(0, 10); };
@@ -176,7 +223,7 @@ async function exportXl(done) {
     const aoa = [[`طلبية النواقص ${DATE.split('-').reverse().join('/')} — ${title} — ${rows.length} صنف`], [], head, ...rows.map(r => {
       const D = DONE[r.code], R = recvOf(r);
       const note = [r.up ? 'السعر زاد' : '', r.sea ? 'صيفي — بمعدل آخر 30 يوم' : '', r.moved || '',
-        r.kept ? 'اتعلّم عليه قبل التحديث' : '', r.pend ? `اتطلب امبارح ولسه موصلش ${String(Math.round(r.pend * 100) / 100)} علبة${r.pend_sup ? ' من ' + r.pend_sup : ''}` : ''].filter(Boolean).join(' · ');
+        r.kept ? 'اتعلّم عليه قبل التحديث' : '', r.sup !== r._s0 ? `المورد اتغير من ${r._s0}` : '', r.need !== r._n0 ? `الكمية اتغيرت من ${r._n0}` : '', r.pend ? `اتطلب امبارح ولسه موصلش ${String(Math.round(r.pend * 100) / 100)} علبة${r.pend_sup ? ' من ' + r.pend_sup : ''}` : ''].filter(Boolean).join(' · ');
       return [r.sup, r.code, r.name, r.abc, r.stock, r.need, r.sd ?? '', r.last || '', r.lsup || '', r.ld ?? '', note,
         ...(done ? [D.by || '', D.at || ''] : []), ...(RECV ? [R ? (R.st === 'extra' ? 'وصل من غير علامة' : RC[R.st]) + (R.q > 0 ? ' ' + Math.round(R.q * 100) / 100 + ' من ' + R.sups.join('، ') : '') : ''] : [])];
     })];
@@ -273,6 +320,24 @@ function render() {
   ROOT.querySelectorAll('[data-day]').forEach(b => b.onclick = async () => { if (await loadDate(shiftDay(DATE, +b.dataset.day))) render(); });
   ROOT.querySelectorAll('[data-g]').forEach(h => h.onclick = () => { const k = h.dataset.g; ST.open[k] = ST.open[k] === false; render(); });
   ROOT.querySelectorAll('[data-code]').forEach(b => b.onclick = () => tick(+b.dataset.code));
+  ROOT.querySelectorAll('[data-sp]').forEach(b => b.onclick = () => { SPOPEN = +b.dataset.sp; render(); });
+  ROOT.querySelectorAll('[data-spx]').forEach(b => b.onclick = () => { SPOPEN = null; render(); });
+  ROOT.querySelectorAll('[data-sps]').forEach(s => s.onchange = () => {
+    let v = s.value; if (!v) return;
+    if (v === '__new') { v = (prompt('اسم المورد:') || '').trim(); if (!v) return; }
+    SPOPEN = null; setOV(+s.dataset.sps, { sup: v });
+  });
+  ROOT.querySelectorAll('[data-nq]').forEach(i => i.onchange = () => {
+    const v = Math.max(0, Math.round(+i.value || 0)); setOV(+i.dataset.nq, { need: v });
+  });
+}
+
+function supSelect(r) {
+  const [main, rest] = supList(), opt = s => `<option value="${esc(s)}" ${s === r.sup ? 'selected' : ''}>${esc(s)}${s === r._s0 ? ' (المقترح)' : ''}</option>`;
+  return `<select class="sps" data-sps="${r.code}"><option value="">— اختار المورد —</option>
+    <optgroup label="الموردين الرئيسيين">${main.map(opt).join('')}</optgroup>
+    <optgroup label="موردين تانيين">${rest.map(opt).join('')}</optgroup>
+    <option value="__new">✏️ مورد مش في القايمة…</option></select> <button class="spb" data-spx="1">إلغاء</button>`;
 }
 
 function row(r) {
@@ -283,7 +348,8 @@ function row(r) {
     <button class="chk ${D ? 'on' : ''}" data-code="${r.code}" ${canEdit() ? '' : 'disabled'} aria-label="تم الطلب">${D ? '✓' : ''}</button>
     <div><div class="nm">${esc(r.name)}</div>
       <div class="mt"><span class="abc ${r.abc}">${r.abc}</span>كود ${r.code} · الرصيد <span class="${r.oos ? 'oos' : ''}">${esc(r.stock)}</span>
-        · خصم المورد ده <b class="sd">${P(r.sd)}%</b>
+        ${r.sup === r._s0 ? ` · خصم المورد ده <b class="sd">${P(r.sd)}%</b>` : ` · <span class="chg">🔄 اتطلب من ${esc(r.sup)} بدل ${esc(r._s0)} (خصمه كان ${P(r.sd)}%)</span>`}
+        ${canEdit() ? (SPOPEN === r.code ? supSelect(r) : ` <button class="spb" data-sp="${r.code}">🔄 غيّر المورد</button>`) : ''}
         ${r.lsup ? `<br>آخر شرا ${esc(r.last)} من <span class="${r.gap != null ? 'yel' : ''}">${esc(r.lsup)} ${P(r.ld)}%</span>${r.gap != null ? ` <span class="yel">أقل بـ ${P(r.gap)}</span>` : ''}` : ''}
         ${r.up ? ' · <span class="up">⚠ السعر زاد</span>' : ''}${r.sea ? ' · <span class="sea">☀️ صيفي — بمعدل آخر 30 يوم</span>' : ''}
         ${r.pend ? `<br><span class="pend">⏳ اتطلب امبارح ولسه موصلش ${String(Math.round(r.pend * 100) / 100)} علبة${r.pend_sup ? ' من ' + esc(r.pend_sup) : ''} — ${r.need ? `اتخصموا: كان ${r.need0} بقى ${r.need}` : 'مستنيين يوصل، متطلبوش تاني'}</span>` : ''}
@@ -291,7 +357,8 @@ function row(r) {
         ${r.pend_sib ? `<br><span class="sib">🔁 وصل بدله: ${r.pend_sib.map(s => esc(s[0]) + ' (' + String(Math.round(s[1] * 100) / 100) + ' علبة)').join('، ')} — اتأكد إن ده المقصود</span>` : ''}
         ${sibLine(r.sib)}
         ${D ? `<br><span class="by">✔ اتطلب${D.by ? ' — ' + esc(D.by) : ''}${D.at ? ' الساعة ' + esc(D.at) : ''}</span>` : ''}${rc}</div></div>
-    <div class="need"><div class="v">${r.need}</div><div class="l">${r.pend && !r.need ? 'مستني' : 'علبة'}</div></div></div>`;
+    <div class="need">${canEdit() ? `<input class="nq ${r.need !== r._n0 ? 'chgd' : ''}" type="number" min="0" step="1" inputmode="numeric" value="${r.need}" data-nq="${r.code}" aria-label="الكمية">`
+      : `<div class="v">${r.need}</div>`}<div class="l">${r.need !== r._n0 ? `كان ${r._n0}` : r.pend && !r.need ? 'مستني' : 'علبة'}</div></div></div>`;
 }
 
 // ---- البحث بالصنف (24/10، طلب د. يحيى): أي صنف — التصنيف، الرصيد، يكفي كام يوم، آخر شرا، أحسن مورد، وأطلب ولا لأ.
@@ -395,7 +462,7 @@ export async function mountOrder(root, role, who) {
 // تجربة محلية (_crmtest/order.html) — من غير Firebase
 export function mountOrderLocal(root, rows, role = 'admin', recv = null, cat = null, market = null) {
   MARKET = market || []; MDONE = {};
-  LOCAL = true; ROLE = role; WHO = 'تجربة'; ROWS = rows; DATE = LATEST = '2026-10-23'; AT = '14:05'; DONE = {}; SAVED = null;
+  LOCAL = true; ROLE = role; WHO = 'تجربة'; ROWS = rows; DATE = LATEST = '2026-10-23'; AT = '14:05'; DONE = {}; SAVED = null; OV = {}; applyOV();
   RECV = recv; RECV_TO = '2026-10-24 06:00'; css(); root.id = 'ordRoot';
   root.innerHTML = '<div></div><div></div>';
   CAT = cat || []; CAT.forEach(x => x._n = norm(x.n)); CAT_AT = '20/10 الساعة 06:00';
