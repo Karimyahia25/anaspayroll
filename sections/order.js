@@ -77,6 +77,8 @@ function css() {
 #ordRoot .kept{background:#EEF1F5;color:#475467;border-radius:8px;padding:1px 8px;font-weight:700}
 #ordRoot .sib{background:#E0E9FF;color:#2A4FB0;border-radius:8px;padding:1px 8px;font-weight:800}
 #ordRoot .sibs{color:#2A4FB0;font-weight:700}
+#ordRoot .cust{background:#FCE7F3;color:#9D174D;border-radius:8px;padding:1px 8px;font-weight:800}
+#ordRoot .row.cu{border-inline-start:4px solid #DB2777}
 #ordRoot .tabs2 button.mk{border-color:#C2410C;color:#C2410C}#ordRoot .tabs2 button.mk.on{background:#C2410C;color:#fff}
 #ordRoot .mkb label{display:inline-flex;gap:6px;align-items:center;font-weight:700;margin-top:6px}#ordRoot .mkb label input{width:auto;margin:0}
 #ordRoot .mkb{background:#FFF7ED;border:1px solid #FED7AA;color:#7C2D12;line-height:1.8}
@@ -223,7 +225,7 @@ async function exportXl(done) {
     const aoa = [[`طلبية النواقص ${DATE.split('-').reverse().join('/')} — ${title} — ${rows.length} صنف`], [], head, ...rows.map(r => {
       const D = DONE[r.code], R = recvOf(r);
       const note = [r.up ? 'السعر زاد' : '', r.sea ? 'صيفي — بمعدل آخر 30 يوم' : '', r.moved || '',
-        r.kept ? 'اتعلّم عليه قبل التحديث' : '', r.sup !== r._s0 ? `المورد اتغير من ${r._s0}` : '', r.need !== r._n0 ? `الكمية اتغيرت من ${r._n0}` : '', r.pend ? `اتطلب امبارح ولسه موصلش ${String(Math.round(r.pend * 100) / 100)} علبة${r.pend_sup ? ' من ' + r.pend_sup : ''}` : ''].filter(Boolean).join(' · ');
+        r.kept ? 'اتعلّم عليه قبل التحديث' : '', r.cust ? custTxt(r) : '', r.sup !== r._s0 ? `المورد اتغير من ${r._s0}` : '', r.need !== r._n0 ? `الكمية اتغيرت من ${r._n0}` : '', r.pend ? `اتطلب امبارح ولسه موصلش ${String(Math.round(r.pend * 100) / 100)} علبة${r.pend_sup ? ' من ' + r.pend_sup : ''}` : ''].filter(Boolean).join(' · ');
       return [r.sup, r.code, r.name, r.abc, r.stock, r.need, r.sd ?? '', r.last || '', r.lsup || '', r.ld ?? '', note,
         ...(done ? [D.by || '', D.at || ''] : []), ...(RECV ? [R ? (R.st === 'extra' ? 'وصل من غير علامة' : RC[R.st]) + (R.q > 0 ? ' ' + Math.round(R.q * 100) / 100 + ' من ' + R.sups.join('، ') : '') : ''] : [])];
     })];
@@ -286,6 +288,7 @@ function render() {
   ROOT.innerHTML = `
     <div class="ohd"><h2>🛒 طلبية النواقص — ${esc(DATE.split('-').reverse().join('/'))}</h2>
       <div class="s">اتعملت من رصيد السيستم الساعة ${esc(AT)} · اتطلب <b>${done}</b> من ${all} صنف${canEdit() ? ' · علّم على اللي اتطلب، وفي الآخر دوس «حفظ الطلبية»' : ''}</div>
+      ${ROWS.some(r => r.cust) ? `<div class="s">🧍 <b>${ROWS.filter(r => r.cust).length}</b> صنف عليه طلب عميل مستني (من شيت طلبات العملاء) — أول حاجة في كل مورد</div>` : ''}
       <div class="bar"><i style="width:${all ? (100 * done / all).toFixed(1) : 0}%"></i></div>
       ${RECV ? `<div class="rsum">📦 اللي وصل لحد ${esc(RECV_TO.slice(11))} ${esc(RECV_TO.slice(8, 10) + '/' + RECV_TO.slice(5, 7))}${SAVED ? '' : ' <small>(الطلبية متحفظتش — بالعلامات)</small>'}:
         ${Object.keys(RC).map(k => `<span class="rc ${k}">${RC[k]} ${rs[k] || 0}</span>`).join(' ')}${rs.extra ? ` <span class="rc extra">📦 وصل من غير علامة ${rs.extra}</span>` : ''}
@@ -302,7 +305,7 @@ function render() {
       ${SAVED ? `<div class="savedat">آخر حفظ الساعة ${esc(SAVED.at)}${SAVED.by ? ' — ' + esc(SAVED.by) : ''} · ${SAVED.n} صنف</div>` : ''}</div>
     ${ST.sheet === 'market' ? marketHtml() : sups.map((s, i) => {
       const list = g[s], d = list.filter(r => DONE[r.code]).length, cost = list.reduce((a, r) => a + (r.cost || 0), 0);
-      const shown = list.filter(keep);
+      const shown = list.filter(keep).sort((a, b) => !!b.cust - !!a.cust);      // 🧍 طلب العميل الأول في المورد
       const closed = ST.open[s] === false;
       return `<div class="grp"><div class="gh" data-g="${esc(s)}" style="background:${GRP_COLORS[i % GRP_COLORS.length]}">
           <span>🏷️ ${esc(s)} <span class="n">— ${list.length} صنف · حوالي ${N(cost)} ج</span></span>
@@ -340,11 +343,13 @@ function supSelect(r) {
     <option value="__new">✏️ مورد مش في القايمة…</option></select> <button class="spb" data-spx="1">إلغاء</button>`;
 }
 
+// 🧍 طلب عميل (27/10): السيرفر بيقرا شيت طلبات العملاء — صنف عليه طلب مفتوح ومش في الفرع (r.cust)، ولو مكانش في الطلبية بيتضاف (r.cadd)
+const custTxt = r => `${r.cadd ? 'اتضاف علشان ' : ''}طلب عميل: ` + r.cust.map(c => `${c.n}${c.q && c.q !== '1' ? ' (' + c.q + ')' : ''} يوم ${c.t}${c.e ? ' — ' + c.e : ''}`).join('، ');
 function row(r) {
   const D = DONE[r.code], R = recvOf(r), qq = n => String(Math.round(n * 100) / 100);
   const rc = !R ? '' : `<br><span class="rc ${R.st}">${R.st === 'extra' ? '📦 وصل من غير علامة' : RC[R.st]}${R.q > 0 ? ` — ${qq(R.q)}${R.need ? ' من ' + R.need : ''} من ${esc(R.sups.join('، '))}` : ''}</span>`
     + (R.gain == null ? '' : ` <span class="rc ${R.gain >= 0 ? 'ok' : 'none'}">خصم ${P(R.bd)}% بدل ${P(R.sd)}% (${R.gain >= 0 ? '+' : '−'}${N(Math.abs(R.gain))} ج)</span>`);
-  return `<div class="row ${D ? 'ok' : ''}">
+  return `<div class="row ${D ? 'ok' : ''} ${r.cust ? 'cu' : ''}">
     <button class="chk ${D ? 'on' : ''}" data-code="${r.code}" ${canEdit() ? '' : 'disabled'} aria-label="تم الطلب">${D ? '✓' : ''}</button>
     <div><div class="nm">${esc(r.name)}</div>
       <div class="mt"><span class="abc ${r.abc}">${r.abc}</span>كود ${r.code} · الرصيد <span class="${r.oos ? 'oos' : ''}">${esc(r.stock)}</span>
@@ -355,6 +360,7 @@ function row(r) {
         ${r.pend ? `<br><span class="pend">⏳ اتطلب امبارح ولسه موصلش ${String(Math.round(r.pend * 100) / 100)} علبة${r.pend_sup ? ' من ' + esc(r.pend_sup) : ''} — ${r.need ? `اتخصموا: كان ${r.need0} بقى ${r.need}` : 'مستنيين يوصل، متطلبوش تاني'}</span>` : ''}
         ${r.kept ? '<br><span class="kept">📌 اتعلّم عليه قبل تحديث الطلبية — رصيده بقى كويس بعد اللي وصل</span>' : ''}
         ${r.pend_sib ? `<br><span class="sib">🔁 وصل بدله: ${r.pend_sib.map(s => esc(s[0]) + ' (' + String(Math.round(s[1] * 100) / 100) + ' علبة)').join('، ')} — اتأكد إن ده المقصود</span>` : ''}
+        ${r.cust ? `<br><span class="cust">🧍 ${esc(custTxt(r))}${r.cust.some(c => c.m) ? ' · ❓ الاسم في الشيت مش زي السيستم — اتأكد' : ''}</span>` : ''}
         ${sibLine(r.sib)}
         ${D ? `<br><span class="by">✔ اتطلب${D.by ? ' — ' + esc(D.by) : ''}${D.at ? ' الساعة ' + esc(D.at) : ''}</span>` : ''}${rc}</div></div>
     <div class="need">${canEdit() ? `<input class="nq ${r.need !== r._n0 ? 'chgd' : ''}" type="number" min="0" step="1" inputmode="numeric" value="${r.need}" data-nq="${r.code}" aria-label="الكمية">`
