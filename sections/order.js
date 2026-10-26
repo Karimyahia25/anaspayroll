@@ -17,7 +17,10 @@ const SHEETS = [['meds', '💊 الأدوية'], ['supply', '🧴 المستلز
 let LOCAL = false, ROOT, DB, ROLE, WHO, DATE = '', AT = '', ROWS = [], DONE = {}, SAVED = null, SAVING = false, ST = { sheet: 'meds', hide: false, miss: false, exp: false, open: {} }, UNSUB = null,
   RECV = null, RECV_TO = '', LATEST = '', LATEST_AT = '';
 // (25/10، قراره) المقارنة باللي وصل مستخبية لحد ما يعدّي أسبوع طلب — true = ترجع تظهر (السيرفر لسه بيكتب _recv)
-const SHOW_RECV = false;   // RECV = اللي وصل من فواتير الشرا (السيرفر بيكتبه في orders/<التاريخ>_recv)
+const SHOW_RECV = false;
+// نواقص السوق — اسأل عليها (26/10): السيرفر بيكتب orders/market، والنتيجة بتتحفظ في orders/market_done {t: {كود: {res, by, at, d}}}
+let MARKET = [], MDONE = {}, MUNSUB = null;
+const MRES = { none: '❌ مش موجود في السوق', found: '✅ لقيناه واتطلب', stop: '⛔ اتوقف / اتغير كوده' };   // RECV = اللي وصل من فواتير الشرا (السيرفر بيكتبه في orders/<التاريخ>_recv)
 
 function css() {
   if ($('#ordCss')) return;
@@ -71,6 +74,10 @@ function css() {
 #ordRoot .kept{background:#EEF1F5;color:#475467;border-radius:8px;padding:1px 8px;font-weight:700}
 #ordRoot .sib{background:#E0E9FF;color:#2A4FB0;border-radius:8px;padding:1px 8px;font-weight:800}
 #ordRoot .sibs{color:#2A4FB0;font-weight:700}
+#ordRoot .tabs2 button.mk{border-color:#C2410C;color:#C2410C}#ordRoot .tabs2 button.mk.on{background:#C2410C;color:#fff}
+#ordRoot .mkb{background:#FFF7ED;border:1px solid #FED7AA;color:#7C2D12;line-height:1.8}
+#ordRoot .mrow{grid-template-columns:4px 1fr auto}
+#ordRoot .mres{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}#ordRoot .mres button{min-height:40px;border-radius:10px;padding:6px 10px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-weight:700;font-size:12.5px;cursor:pointer}#ordRoot .mres button.on{background:#1F2A44;color:#fff;border-color:#1F2A44}
 #ordRoot .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#0F1B2D;color:#fff;padding:10px 18px;border-radius:12px;z-index:80;font-size:14px}
 `;
   document.head.appendChild(s);
@@ -182,6 +189,36 @@ async function exportXl(done) {
   ST.exp = false; render();
 }
 
+function marketHtml() {
+  const list = MARKET.filter(m => !(ST.hide && MDONE[m.c]));
+  return `<div class="banner mkb">🔍 <b>نواقص السوق — اسأل عليها</b>: رصيدها صفر ومتباعتش خالص آخر 90 يوم، بس كانت بتتباع كويس قبل كده.
+      مش بتدخل الطلبية بكمية — اسأل عليها الموردين مرة في الأسبوع وسجّل النتيجة. مترتبة بقيمة البيع اللي ضايعة في الشهر.</div>
+    <div class="grp">${list.map(m => {
+      const D = MDONE[m.c];
+      return `<div class="row mrow ${D ? 'ok' : ''}"><div></div>
+        <div><div class="nm">${esc(m.n)}</div>
+          <div class="mt">كود ${m.c} · ${m.sh === 'supply' ? 'مستلزمات وتجميل' : 'أدوية'} · كان بيتباع ~${P(m.m)} علبة/شهر (${m.inv} فاتورة) · آخر بيع ${esc(m.last)}
+            ${m.ls ? `<br>آخر شرا ${esc(m.lb)} من <b>${esc(m.ls)}</b>` : ''}
+            ${m.rep ? '<br><span class="sib">🔁 غالباً اتبدّل بكارتة تانية بتتباع</span>' : ''}${sibLine(m.sb)}
+            ${D ? `<br><span class="by">${MRES[D.res] || ''} — ${esc(D.by || '')} ${esc(D.d || '')}</span>` : ''}
+            ${canEdit() ? `<div class="mres">${Object.keys(MRES).map(k => `<button class="${D && D.res === k ? 'on' : ''}" data-mc="${m.c}" data-mr="${k}">${MRES[k]}</button>`).join('')}</div>` : ''}</div></div>
+        <div class="need"><div class="v">${N(m.v)}</div><div class="l">ج/شهر</div></div></div>`;
+    }).join('') || '<div class="banner">مفيش 🎉</div>'}</div>`;
+}
+
+async function markRes(code, res) {
+  if (!canEdit()) return;
+  const k = String(code), was = MDONE[k];
+  if (was && was.res === res) delete MDONE[k];
+  else MDONE[k] = { res, by: WHO, at: nowCairo(), d: new Date().toLocaleDateString('en-GB').slice(0, 5) };
+  render();
+  if (LOCAL) return;
+  try {
+    if (!MDONE[k]) await updateDoc(doc(DB, 'orders', 'market_done'), { ['t.' + k]: deleteField() });
+    else await setDoc(doc(DB, 'orders', 'market_done'), { t: { [k]: MDONE[k] } }, { merge: true });
+  } catch (e) { if (was) MDONE[k] = was; else delete MDONE[k]; render(); toast('متحفظش: ' + (e.code || e.message)); }
+}
+
 function render() {
   const all = ROWS.length, done = ROWS.filter(r => DONE[r.code]).length;
   const rows = ROWS.filter(r => r.sheet === ST.sheet);
@@ -202,6 +239,7 @@ function render() {
         ${gn ? `<br>💰 الخصم (${gn} صنف وصل): <span class="rc ${gain >= 0 ? 'ok' : 'none'}">${gain >= 0 ? 'كسبنا' : 'خسرنا'} ${N(Math.abs(gain))} ج عن المقترح</span> · ${gl} صنف اتشرى بخصم أقل` : ''}</div>` : ''}
       ${LOCAL ? '' : `<div class="nav"><button data-day="-1">‹ طلبية اليوم اللي قبله</button>${DATE < LATEST ? '<button data-day="1">اليوم اللي بعده ›</button>' : ''}</div>`}</div>
     <div class="tabs2">${SHEETS.map(([k, t]) => `<button class="${ST.sheet === k ? 'on' : ''}" data-sh="${k}">${t} <small>(${cntDone(k)}/${cnt(k)})</small></button>`).join('')}
+      ${MARKET.length ? `<button class="mk ${ST.sheet === 'market' ? 'on' : ''}" data-sh="market">🔍 نواقص السوق <small>(${MARKET.filter(m => MDONE[m.c]).length}/${MARKET.length})</small></button>` : ''}
       <label><input type="checkbox" id="ohide" ${ST.hide ? 'checked' : ''}> خبّي اللي اتطلب</label>
       ${RECV ? `<label><input type="checkbox" id="omiss" ${ST.miss ? 'checked' : ''}> اللي موصلش أو فيه مشكلة بس</label>` : ''}
       ${canEdit() ? (() => { const u = unsaved(), ok = SAVED && !u;
@@ -209,7 +247,7 @@ function render() {
       <button class="xbtn" id="oexp">📥 تصدير إكسل</button>
       ${ST.exp ? `<div class="xmenu"><button data-x="1">✔ اللي اتطلب (${done})</button><button data-x="0">✖ اللي متطلبش (${all - done})</button></div>` : ''}
       ${SAVED ? `<div class="savedat">آخر حفظ الساعة ${esc(SAVED.at)}${SAVED.by ? ' — ' + esc(SAVED.by) : ''} · ${SAVED.n} صنف</div>` : ''}</div>
-    ${sups.map((s, i) => {
+    ${ST.sheet === 'market' ? marketHtml() : sups.map((s, i) => {
       const list = g[s], d = list.filter(r => DONE[r.code]).length, cost = list.reduce((a, r) => a + (r.cost || 0), 0);
       const shown = list.filter(keep);
       const closed = ST.open[s] === false;
@@ -218,6 +256,7 @@ function render() {
           <span>${d === list.length ? '<span class="done">✔ خلص</span>' : `<span class="n">${d}/${list.length}</span>`} ${closed ? '▸' : '▾'}</span></div>
         ${closed ? '' : shown.map(row).join('')}</div>`;
     }).join('') || '<div class="banner">مفيش نواقص في القسم ده 🎉</div>'}`;
+  ROOT.querySelectorAll('[data-mr]').forEach(b => b.onclick = () => markRes(+b.dataset.mc, b.dataset.mr));
   ROOT.querySelectorAll('[data-sh]').forEach(b => b.onclick = () => { ST.sheet = b.dataset.sh; render(); });
   if ($('#osave', ROOT)) $('#osave', ROOT).onclick = saveOrder;
   $('#oexp', ROOT).onclick = () => { ST.exp = !ST.exp; render(); };
@@ -334,6 +373,12 @@ export async function mountOrder(root, role, who) {
     if (!L.exists()) { ROOT.innerHTML = '<div class="banner">لسه مفيش طلبية — ابعت للبوت «طلبية» وهتظهر هنا.</div>'; return; }
     LATEST = L.data().date; LATEST_AT = (L.data().at || '') + (L.data().ver ? ' · نسخة ' + L.data().ver : '');
     if (!(await loadDate(LATEST))) ROWS = [];
+    try {                                               // نواقص السوق — لو مش موجودة لسه التبويب مبيظهرش
+      const m = await getDoc(doc(DB, 'orders', 'market'));
+      MARKET = m.exists() ? JSON.parse(m.data().d || '[]') : [];
+      if (MUNSUB) MUNSUB();
+      MUNSUB = onSnapshot(doc(DB, 'orders', 'market_done'), s => { MDONE = (s.exists() && s.data().t) || {}; render(); }, () => {});
+    } catch (e) {}
   } catch (e) {
     ROOT.innerHTML = `<div class="banner bad">مقدرتش أقرا الطلبية: ${esc(e.code || e.message)}${e.code === 'permission-denied' ? ' — حط قواعد Firebase الجديدة الأول' : ''}</div>`; return;
   }
@@ -341,7 +386,8 @@ export async function mountOrder(root, role, who) {
 }
 
 // تجربة محلية (_crmtest/order.html) — من غير Firebase
-export function mountOrderLocal(root, rows, role = 'admin', recv = null, cat = null) {
+export function mountOrderLocal(root, rows, role = 'admin', recv = null, cat = null, market = null) {
+  MARKET = market || []; MDONE = {};
   LOCAL = true; ROLE = role; WHO = 'تجربة'; ROWS = rows; DATE = LATEST = '2026-10-23'; AT = '14:05'; DONE = {}; SAVED = null;
   RECV = recv; RECV_TO = '2026-10-24 06:00'; css(); root.id = 'ordRoot';
   root.innerHTML = '<div></div><div></div>';
