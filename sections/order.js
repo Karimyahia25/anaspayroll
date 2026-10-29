@@ -23,6 +23,10 @@ let MARKET = [], MDONE = {}, MUNSUB = null;
 // تعديل المورد والكمية لكل صنف (26/10، طلبه — موردين أجل ونقدي): orders/<التاريخ>_done.ov {كود: {sup?, need?, by, at}}.
 // الأصل محفوظ في r._s0 / r._n0، والتعديل بيتطبق على r.sup / r.need ← التجميع والحفظ والإكسل بياخدوه لوحدهم.
 let OV = {}, SPOPEN = null;
+// تحديث الطلبية من الصفحة (29/10، طلبه): الزرار بيكتب orders/refresh_req_done، والسيرفر (المراقب) بيحسب الطلبية من الرصيد دلوقتي
+// ويكتب orders/refresh_status {req, state, at}. العلامات والتعديلات محفوظة (merge_order على السيرفر) — مفيش حاجة بتضيع.
+let RSTAT = null, MYREQ = null, MYREQ_T = 0, RUNSEEN = '', RUNUNSUB = null;
+const RF_WAIT = 4 * 60 * 1000;      // لو السيرفر مردّش في 4 دقايق: الزرار يرجع ونقول جرّب تاني أو ابعت «طلبية» للبوت
 const MRES = { none: '❌ مش موجود في السوق', found: '✅ لقيناه واتطلب', stop: '⛔ اتوقف / اتغير كوده' };   // RECV = اللي وصل من فواتير الشرا (السيرفر بيكتبه في orders/<التاريخ>_recv)
 
 function css() {
@@ -89,6 +93,9 @@ function css() {
 #ordRoot .spb{min-height:34px;border-radius:10px;padding:4px 10px;border:1px solid #FDBA74;background:#FFEDD5;color:#9A3412;font-weight:700;font-size:12px;cursor:pointer;margin-inline-start:4px}
 #ordRoot .sps{min-height:40px;border-radius:10px;padding:4px 8px;font-size:14px;max-width:100%;background:#FFF7ED;border:2px solid #FDBA74;color:#7C2D12;font-weight:700}
 #ordRoot .chg{background:#FFEDD5;color:#9A3412;border-radius:8px;padding:1px 8px;font-weight:800}
+#ordRoot .rf{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px}
+#ordRoot .rfb{min-height:48px;border-radius:14px;padding:8px 18px;border:0;background:#fff;color:#0A6B60;font-weight:800;font-size:16px;cursor:pointer;box-shadow:var(--shadow)}#ordRoot .rfb[disabled]{opacity:.7;cursor:default}
+#ordRoot .rft{font-size:13px;opacity:.95;line-height:1.7;flex:1;min-width:200px}
 #ordRoot .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#0F1B2D;color:#fff;padding:10px 18px;border-radius:12px;z-index:80;font-size:14px}
 `;
   document.head.appendChild(s);
@@ -98,6 +105,66 @@ const canEdit = () => ROLE === 'admin' || ROLE === 'buyer';
 const doneRef = () => doc(DB, 'orders', DATE + '_done');
 function toast(t) { const d = document.createElement('div'); d.className = 'toast'; d.textContent = t; document.body.appendChild(d); setTimeout(() => d.remove(), 2000); }
 const nowCairo = () => new Date(Date.now() + 2 * 3600e3).toISOString().slice(11, 16);
+
+const rfWaited = () => !!MYREQ && Date.now() - MYREQ_T >= RF_WAIT;
+const rfMine = () => !!(MYREQ && RSTAT && RSTAT.req === MYREQ);
+const rfBusy = () => !!MYREQ && !rfWaited() && !(rfMine() && ['done', 'error', 'expired'].includes(RSTAT.state));
+function rfText() {
+  const s = RSTAT;
+  if (rfMine()) {
+    if (s.state === 'running') return '⚙️ السيرفر بيحسب الطلبية من الرصيد دلوقتي… (حوالي دقيقة)';
+    if (s.state === 'done') return `✅ اتحدّثت الساعة ${esc(s.at)}`;
+    if (s.state === 'error') return '⚠️ التحديث فشل — جرّب تاني أو ابعت «طلبية» للبوت';
+    if (s.state === 'expired') return '⚠️ الطلب كان قديم — دوس تاني';
+  }
+  if (MYREQ) return rfWaited() ? '⚠️ السيرفر مردّش — جرّب تاني بعد شوية، أو ابعت «طلبية» للبوت' : '⏳ الطلب وصل للسيرفر — هيبدأ خلال ثواني (التحديث بياخد حوالي دقيقتين)';
+  if (s && s.state === 'running') return `⚙️ ${esc(s.by || 'حد')} بيحدّث الطلبية دلوقتي…`;
+  if (s && s.state === 'done') return `آخر تحديث بالزرار الساعة ${esc(s.at)}${s.by ? ' — ' + esc(s.by) : ''}`;
+  return '';
+}
+async function requestRefresh() {
+  if (!canEdit() || rfBusy()) return;
+  const id = String(Date.now());
+  MYREQ = id; MYREQ_T = Date.now();
+  if (LOCAL) {                                              // تجربة محلية: نحاكي السيرفر
+    RSTAT = { req: id, state: 'queued' }; render();
+    setTimeout(() => { RSTAT = { req: id, state: 'running', at: nowCairo() }; render(); }, 800);
+    setTimeout(() => { RSTAT = { req: id, state: 'done', at: nowCairo(), by: WHO }; toast('✅ الطلبية اتحدّثت'); render(); }, 2200);
+    return;
+  }
+  try {
+    await setDoc(doc(DB, 'orders', 'refresh_req_done'), { id, by: WHO, at: nowCairo() });
+    RSTAT = { req: id, state: 'queued' }; render();
+    toast('الطلب اتبعت للسيرفر — هيتحدّث خلال دقيقتين تقريباً');
+    setTimeout(render, RF_WAIT + 500);                     // يرجّع الزرار لو السيرفر مردّش
+  } catch (e) { MYREQ = null; toast('مقدرتش أبعت الطلب: ' + (e.code || e.message)); render(); }
+}
+// أي حد (أنا أو زميل) لما التحديث يخلص: نعيد تحميل الطلبية من غير ما نقفل الصفحة (ولو بتتفرج على يوم قديم منخطفكش)
+async function reloadLatest() {
+  try {
+    const wasLatest = DATE === LATEST;
+    const L = await getDoc(doc(DB, 'orders', 'latest'));
+    if (!L.exists()) return;
+    LATEST = L.data().date; LATEST_AT = (L.data().at || '') + (L.data().ver ? ' · نسخة ' + L.data().ver : '');
+    if (!wasLatest) { render(); return; }
+    if (await loadDate(LATEST)) {
+      try { const m = await getDoc(doc(DB, 'orders', 'market')); MARKET = m.exists() ? JSON.parse(m.data().d || '[]') : MARKET; } catch (e) {}
+      CAT = null; CAT_LOADING = null;                       // البحث بالصنف يتحمّل من جديد
+      toast('✅ الطلبية اتحدّثت'); render();
+    }
+  } catch (e) { toast('الطلبية اتحدّثت — اقفل الصفحة وافتحها تاني: ' + (e.code || e.message)); }
+}
+function watchRefresh() {
+  if (RUNUNSUB) RUNUNSUB();
+  let first = true;
+  RUNUNSUB = onSnapshot(doc(DB, 'orders', 'refresh_status'), s => {
+    RSTAT = s.exists() ? s.data() : RSTAT;
+    const done = RSTAT && RSTAT.state === 'done' ? RSTAT.req : '';
+    const fresh = !first && done && done !== RUNSEEN;
+    first = false; if (done) RUNSEEN = done;
+    if (fresh) reloadLatest(); else render();
+  }, () => {});
+}
 
 function applyOV() {
   ROWS.forEach(r => {
@@ -293,6 +360,8 @@ function render() {
       ${RECV ? `<div class="rsum">📦 اللي وصل لحد ${esc(RECV_TO.slice(11))} ${esc(RECV_TO.slice(8, 10) + '/' + RECV_TO.slice(5, 7))}${SAVED ? '' : ' <small>(الطلبية متحفظتش — بالعلامات)</small>'}:
         ${Object.keys(RC).map(k => `<span class="rc ${k}">${RC[k]} ${rs[k] || 0}</span>`).join(' ')}${rs.extra ? ` <span class="rc extra">📦 وصل من غير علامة ${rs.extra}</span>` : ''}
         ${gn ? `<br>💰 الخصم (${gn} صنف وصل): <span class="rc ${gain >= 0 ? 'ok' : 'none'}">${gain >= 0 ? 'كسبنا' : 'خسرنا'} ${N(Math.abs(gain))} ج عن المقترح</span> · ${gl} صنف اتشرى بخصم أقل` : ''}</div>` : ''}
+      ${canEdit() && DATE === LATEST ? `<div class="rf"><button class="rfb" id="orf" ${rfBusy() ? 'disabled' : ''}>${rfBusy() ? '⏳ بيتحدّث…' : '🔄 حدّث الطلبية دلوقتي'}</button>
+        <span class="rft">${rfText() || 'لو حاجة اتباعت أو نقصت: دوس يحسبها من الرصيد الحالي — علاماتك وتعديلاتك مش بتضيع'}</span></div>` : ''}
       ${LOCAL ? '' : `<div class="nav"><button data-day="-1">‹ طلبية اليوم اللي قبله</button>${DATE < LATEST ? '<button data-day="1">اليوم اللي بعده ›</button>' : ''}</div>`}</div>
     <div class="tabs2">${SHEETS.map(([k, t]) => `<button class="${ST.sheet === k ? 'on' : ''}" data-sh="${k}">${t} <small>(${cntDone(k)}/${cnt(k)})</small></button>`).join('')}
       ${MARKET.length ? `<button class="mk ${ST.sheet === 'market' ? 'on' : ''}" data-sh="market">🔍 نواقص السوق <small>(${MARKET.filter(m => MDONE[m.c] && !(m.rep && m.rep.length)).length}/${MARKET.filter(m => !(m.rep && m.rep.length)).length})</small></button>` : ''}
@@ -317,6 +386,7 @@ function render() {
   ROOT.querySelectorAll('[data-sh]').forEach(b => b.onclick = () => { ST.sheet = b.dataset.sh; render(); });
   if ($('#osave', ROOT)) $('#osave', ROOT).onclick = saveOrder;
   $('#oexp', ROOT).onclick = () => { ST.exp = !ST.exp; render(); };
+  if ($('#orf', ROOT)) $('#orf', ROOT).onclick = requestRefresh;
   ROOT.querySelectorAll('[data-x]').forEach(b => b.onclick = () => exportXl(b.dataset.x === '1'));
   $('#ohide', ROOT).onchange = e => { ST.hide = e.target.checked; render(); };
   if ($('#omiss', ROOT)) $('#omiss', ROOT).onchange = e => { ST.miss = e.target.checked; render(); };
@@ -453,6 +523,7 @@ export async function mountOrder(root, role, who) {
     if (!L.exists()) { ROOT.innerHTML = '<div class="banner">لسه مفيش طلبية — ابعت للبوت «طلبية» وهتظهر هنا.</div>'; return; }
     LATEST = L.data().date; LATEST_AT = (L.data().at || '') + (L.data().ver ? ' · نسخة ' + L.data().ver : '');
     if (!(await loadDate(LATEST))) ROWS = [];
+    watchRefresh();
     try {                                               // نواقص السوق — لو مش موجودة لسه التبويب مبيظهرش
       const m = await getDoc(doc(DB, 'orders', 'market'));
       MARKET = m.exists() ? JSON.parse(m.data().d || '[]') : [];
