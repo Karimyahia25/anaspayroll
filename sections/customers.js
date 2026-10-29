@@ -156,7 +156,12 @@ function shell() {
   <div id="cbody"></div>`;
 }
 function kpis() {
-  if (ROLE === 'emp') { $('#ckpi', ROOT).innerHTML = ''; $('#cmeta', ROOT).textContent = `حط اسمك على العميل اللي هتكلمه — بيختفي من قوايم زمايلك ${CLAIM_DAYS} يوم.`; return; }
+  if (ROLE === 'emp') {                                   // عدّاد الموظف: تسجيلاته هو بس (آخر 7 أيام)
+    const R = results(7, LOG.filter(x => x.byName === MY.name)), ok = R.recs.filter(x => x.result === 'تم').length;
+    $('#ckpi', ROOT).innerHTML = `
+      <div><div class="l">تواصلك — آخر 7 أيام</div><div class="v">${N(R.recs.length)}</div><div class="l">اتكلمت مع ${N(ok)}</div></div>
+      <div style="border-color:#1B7F3B"><div class="l">اشتروا بعد ما كلّمتهم</div><div class="v">${N(R.won.length)}</div><div class="l">${M(R.rev)}</div></div>`;
+    $('#cmeta', ROOT).textContent = `حط اسمك على العميل اللي هتكلمه — بيختفي من قوايم زمايلك ${CLAIM_DAYS} يوم.`; return; }
   const n = META.n || {}, v = META.value || {}, wk = results(7);
   $('#ckpi', ROOT).innerHTML = `
     <div><div class="l">عملاء متابعين</div><div class="v">${N(META.tracked)}</div></div>
@@ -170,7 +175,8 @@ function bar() {
   if (ROLE === 'emp') {
     const n = myCards().filter(c => !contactedRecently(c)).length;
     $('#cbar', ROOT).innerHTML = `<button class="${ST.tab === 'mine' ? 'on' : ''}" data-tab="mine">👤 عملائي<span class="n">${n}</span></button>`
-      + LISTS.map(([k, t]) => `<button class="${ST.tab === k ? 'on' : ''}" data-tab="${k}">${t}<span class="n">${cnt(k)}</span></button>`).join('');
+      + LISTS.map(([k, t]) => `<button class="${ST.tab === k ? 'on' : ''}" data-tab="${k}">${t}<span class="n">${cnt(k)}</span></button>`).join('')
+      + `<button class="${ST.tab === 'find' ? 'on' : ''}" data-tab="find">🔎 بحث بصنف</button>`;
     $('#cbar', ROOT).querySelectorAll('button').forEach(b => b.onclick = () => { ST.tab = b.dataset.tab; ST.shown = 40; render(); });
     return;
   }
@@ -264,8 +270,8 @@ async function record(id, result, btn) {
   try { await saveLog(rec); toast('اتسجّل: ' + result); render(); }
   catch (e) { btn.disabled = false; toast('متسجلش: ' + (e.code || e.message)); }
 }
-function results(days) {
-  const from = addDays(today(), -days), recs = LOG.filter(x => x.day >= from);
+function results(days, src = LOG) {
+  const from = addDays(today(), -days), recs = src.filter(x => x.day >= from);
   const won = [], seen = new Set();
   for (const r of recs.filter(x => x.result === 'تم').sort((a, b) => a.day.localeCompare(b.day))) {
     if (seen.has(r.cust)) continue; const w = boughtAfter(r); if (w) { won.push({ ...r, w }); seen.add(r.cust); }

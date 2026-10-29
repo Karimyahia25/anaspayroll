@@ -880,7 +880,7 @@ async function crmDevStart(name){
   try { sessionStorage.setItem('crmWho', name); } catch(e){}
   $('cdPick').classList.add('hide'); $('myCustRoot').classList.remove('hide');
   $('cdWho').innerHTML = `شغال باسم <b>${esc(name)}</b> · <a href="#" onclick="crmDevSwitch();return false">مش انت؟ غيّر الاسم</a>`;
-  try { const m = await import('./sections/customers.js?v=12'); await m.mountEmployee($('myCustRoot'), ME.uid, name, true); }
+  try { const m = await import('./sections/customers.js?v=13'); await m.mountEmployee($('myCustRoot'), ME.uid, name, true); }
   catch (e) { $('myCustRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل العملاء: ${esc(e.code || e.message)}</div>`; }
 }
 window.crmDevSwitch = () => { try { sessionStorage.removeItem('crmWho'); } catch(e){} renderCrmDev(); };
@@ -1090,7 +1090,7 @@ async function openMyCustomers(){
   if (MYCUST_ON) return; MYCUST_ON = true;
   let nm_ = '';
   try { const x = await getDoc(doc(db, 'staff', ME.uid)); if (x.exists()) nm_ = x.data().name || ''; } catch(e){}
-  try { const m = await import('./sections/customers.js?v=12'); await m.mountEmployee($('myCustRoot'), ME.uid, nm_); }
+  try { const m = await import('./sections/customers.js?v=13'); await m.mountEmployee($('myCustRoot'), ME.uid, nm_); }
   catch (e) { MYCUST_ON = false; $('myCustRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل عملائك: ${esc(e.code || e.message)}</div>`; }
 }
 window.etab = n => { if (n === 6) otMine(); if (n === 7) cashEmp(); if (n === 8) openMyCustomers(); [1,2,3,4,5,6,7,8].forEach(i => {
@@ -2429,7 +2429,7 @@ let CRM_ON = false;
 async function openCustomers(){
   if (CRM_ON) return; CRM_ON = true;
   if (ROLE === 'admin') crmAcct();
-  try { const m = await import('./sections/customers.js?v=12'); await m.mountCustomers($('crmRoot'), ROLE); }
+  try { const m = await import('./sections/customers.js?v=13'); await m.mountCustomers($('crmRoot'), ROLE); }
   catch (e) { CRM_ON = false; $('crmRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل قسم العملاء: ${esc(e.code || e.message)}</div>`; }
 }
 
