@@ -398,8 +398,9 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="emp" class="hide"></div>
 <div id="adm" class="hide"></div>
 <div id="buyer" class="hide"></div>
+<div id="crmdev" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-27-B</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-29-A</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -793,7 +794,7 @@ function buildKPI(people, sales, items, W0){
 /* ================= قفل الجلسة بعد سكون ================= */
 const IDLE_MIN = 15;
 let idleTimer = null;
-const NO_IDLE = ['cashier', 'buyer'];   // (27/10، طلبه) الكاشير وشاشة الطلبية مبيقفلوش لوحدهم خالص
+const NO_IDLE = ['cashier', 'buyer', 'crmdev'];   // (27/10، طلبه) الكاشير وشاشة الطلبية مبيقفلوش لوحدهم خالص
 function idleReset(){
   clearTimeout(idleTimer);
   if (!ME || !ROLE || NO_IDLE.includes(ROLE)) return;
@@ -825,7 +826,7 @@ window.doOut = () => signOut(auth);
 
 onAuthStateChanged(auth, async user => {
   $('boot').classList.add('hide');
-  ['login','emp','adm','buyer'].forEach(x => $(x).classList.add('hide'));
+  ['login','emp','adm','buyer','crmdev'].forEach(x => $(x).classList.add('hide'));
   if (!user) {
     clearTimeout(idleTimer); $('p').value = '';
     let msg = '';
@@ -846,13 +847,43 @@ onAuthStateChanged(auth, async user => {
   if (ROLE === 'emp'){
     try { if ((await getDoc(doc(db, 'buyers', user.uid))).exists()) { ROLE = 'buyer'; } } catch(e){}
   }
+  if (ROLE === 'emp'){
+    try { if ((await getDoc(doc(db, 'crmdevs', user.uid))).exists()) ROLE = 'crmdev'; } catch(e){}
+  }
   idleReset();                                   // بعد ما الدور اتعرف — قبل كده الكاشير كان بيتقفل بعد 15 دقيقة
   DASH = { periods: [], staff: [], rows: [], period: null };
   if (ROLE === 'admin' || ROLE === 'viewer') { $('adm').classList.remove('hide'); renderAdmin(); }
   else if (ROLE === 'cashier') { $('emp').classList.remove('hide'); await renderStation(); }
   else if (ROLE === 'buyer') { renderBuyer(); }
+  else if (ROLE === 'crmdev') { renderCrmDev(); }
   else { $('emp').classList.remove('hide'); await renderEmp(); }
 });
+
+/* ================= جهاز متابعة العملاء المشترك (29/10): الموظف بيختار اسمه بس ================= */
+async function renderCrmDev(){
+  const b = $('crmdev'); b.classList.remove('hide');
+  b.innerHTML = `<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div><h2 style="margin:0">📞 متابعة العملاء</h2><p class="sub" id="cdWho" style="margin:2px 0 0"></p></div><button class="ghost sm" onclick="doOut()">خروج</button></div>
+    <div id="cdPick" class="card"><p class="sub">جاري تحميل الأسماء…</p></div><div id="myCustRoot" class="hide"></div>`;
+  let list = [];
+  try {
+    const snap = await getDocs(collection(db, 'staff'));
+    snap.forEach(d => { const v = d.data(); if (v.name && v.code && v.active !== false && !NO_CLOSE_CODES.includes(String(v.code)) && !NO_CLOSE_NAME.test(v.name)) list.push(v.name); });
+    list.sort((x, y) => String(x).localeCompare(String(y), 'ar'));
+  } catch (e) { $('cdPick').innerHTML = `<p class="err">مقدرتش أقرا أسماء الموظفين: ${esc(e.code || e.message)}${e.code === 'permission-denied' ? ' — حط قواعد Firebase الجديدة الأول' : ''}</p>`; return; }
+  let saved = ''; try { saved = sessionStorage.getItem('crmWho') || ''; } catch(e){}
+  if (saved && list.includes(saved)) return crmDevStart(saved);
+  $('cdPick').innerHTML = `<h3 style="margin:0 0 10px">انت مين؟</h3><div style="display:flex;flex-wrap:wrap;gap:8px">${
+    list.map(n => `<button class="sm" data-who="${esc(n)}" style="min-height:48px;min-width:110px">${esc(n)}</button>`).join('') || '<p class="sub">مفيش موظفين في القايمة.</p>'}</div>`;
+  $('cdPick').querySelectorAll('[data-who]').forEach(x => x.onclick = () => crmDevStart(x.dataset.who));
+}
+async function crmDevStart(name){
+  try { sessionStorage.setItem('crmWho', name); } catch(e){}
+  $('cdPick').classList.add('hide'); $('myCustRoot').classList.remove('hide');
+  $('cdWho').innerHTML = `شغال باسم <b>${esc(name)}</b> · <a href="#" onclick="crmDevSwitch();return false">مش انت؟ غيّر الاسم</a>`;
+  try { const m = await import('./sections/customers.js?v=12'); await m.mountEmployee($('myCustRoot'), ME.uid, name, true); }
+  catch (e) { $('myCustRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل العملاء: ${esc(e.code || e.message)}</div>`; }
+}
+window.crmDevSwitch = () => { try { sessionStorage.removeItem('crmWho'); } catch(e){} renderCrmDev(); };
 
 /* ================= مسؤول المشتريات: طلبية النواقص بس ================= */
 async function renderBuyer(){
@@ -1059,7 +1090,7 @@ async function openMyCustomers(){
   if (MYCUST_ON) return; MYCUST_ON = true;
   let nm_ = '';
   try { const x = await getDoc(doc(db, 'staff', ME.uid)); if (x.exists()) nm_ = x.data().name || ''; } catch(e){}
-  try { const m = await import('./sections/customers.js?v=11'); await m.mountEmployee($('myCustRoot'), ME.uid, nm_); }
+  try { const m = await import('./sections/customers.js?v=12'); await m.mountEmployee($('myCustRoot'), ME.uid, nm_); }
   catch (e) { MYCUST_ON = false; $('myCustRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل عملائك: ${esc(e.code || e.message)}</div>`; }
 }
 window.etab = n => { if (n === 6) otMine(); if (n === 7) cashEmp(); if (n === 8) openMyCustomers(); [1,2,3,4,5,6,7,8].forEach(i => {
@@ -2341,7 +2372,7 @@ function renderAdmin(){
   <div id="ap6" class="card hide"><h2>الأذونات</h2><div id="pmBox"></div></div>
   <div id="ap7" class="card hide"><h2>الخزنة وتقفيل الشيفتات</h2><div id="cashAdm"></div></div>
   <div id="ap8" class="hide"><div id="stockRoot"></div></div>
-  <div id="ap9" class="hide"><div id="crmRoot"></div></div>
+  <div id="ap9" class="hide"><div id="crmAcct"></div><div id="crmRoot"></div></div>
   <div id="ap10" class="hide"><div id="orderRoot"></div></div>
   ${isAdm ? `
   <div id="ap1" class="card hide">${adminUploadUI()}</div>
@@ -2361,10 +2392,44 @@ async function openInventory(){
   catch (e) { INV_ON = false; $('stockRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل قسم المخزون: ${esc(e.code || e.message)}</div>`; }
 }
 
+// حساب جهاز متابعة العملاء المشترك (crm) — بيتعمل من هنا (أدمن)، زي حساب الكاشير
+async function crmAcct(){
+  const b = $('crmAcct'); if (!b) return;
+  let n = 0;
+  try { n = (await getDocs(collection(db, 'crmdevs'))).size; }
+  catch (e) { b.innerHTML = `<p class="err">حساب متابعة العملاء: ${esc(e.code || e.message)}${e.code === 'permission-denied' ? ' — حط قواعد Firebase الجديدة الأول' : ''}</p>`; return; }
+  b.innerHTML = n
+    ? `<div class="banner" style="margin-bottom:12px">حساب جهاز المتابعة موجود ✔ — الدخول بـ <b>crm</b> والرقم السري بتاعه، والموظف بيختار اسمه. لتغيير الرقم السري: Firebase Console ← Authentication ← crm@${DOMAIN} ← Reset password.</div>`
+    : `<div class="card" style="margin-bottom:12px"><b>حساب جهاز متابعة العملاء</b>
+        <p class="sub">حساب واحد للجهاز، اسم الدخول <b>crm</b>. الموظف بيختار اسمه ويتابع العملاء. مبيشوفش مرتبات ولا مبيعات.</p>
+        <label for="crPass">الرقم السري للحساب (٦ على الأقل)</label><input id="crPass" type="text" autocomplete="off">
+        <button class="sm" style="margin-top:10px" onclick="crmAcctMake()">إنشاء الحساب</button><div class="err" id="crMsg"></div></div>`;
+}
+let CR_APP = null;
+window.crmAcctMake = async () => {
+  const pw = $('crPass').value, m = $('crMsg'); m.style.color = 'var(--red)';
+  if (!pw || pw.length < 6) { m.textContent = 'الرقم السري ٦ حروف أو أرقام على الأقل'; return; }
+  try {
+    if (!CR_APP) CR_APP = initializeApp(CFG, 'crmAcct');
+    const a2 = getAuth(CR_APP);
+    const cr = await createUserWithEmailAndPassword(a2, `crm@${DOMAIN}`, pw);
+    const uid = cr.user.uid; await signOut(a2);
+    await setDoc(doc(db, 'crmdevs', uid), { username: 'crm', at: serverTimestamp() });
+    crmAcct();
+  } catch (e) {
+    m.textContent = e.code === 'auth/email-already-in-use'
+      ? `الحساب crm@${DOMAIN} متعمل قبل كده. امسحه من Firebase Console ← Authentication وجرّب تاني.`
+      : e.code === 'auth/admin-restricted-operation'
+      ? 'التسجيل مقفول من Firebase (Prevent new sign-ups). افتحه مؤقتاً: Firebase Console ← Authentication ← Settings ← User actions ← علّم Enable create (sign-up) ← Save، وبعدين اعمل الحساب تاني، واقفله بعدها.'
+      : 'مشكلة: ' + (e.code || e.message);
+  }
+};
+
 let CRM_ON = false;
 async function openCustomers(){
   if (CRM_ON) return; CRM_ON = true;
-  try { const m = await import('./sections/customers.js?v=11'); await m.mountCustomers($('crmRoot'), ROLE); }
+  if (ROLE === 'admin') crmAcct();
+  try { const m = await import('./sections/customers.js?v=12'); await m.mountCustomers($('crmRoot'), ROLE); }
   catch (e) { CRM_ON = false; $('crmRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل قسم العملاء: ${esc(e.code || e.message)}</div>`; }
 }
 

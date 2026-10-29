@@ -96,7 +96,7 @@ async function load() {
   META = JSON.parse(m.data().d); const n = m.data().chunks; CARDS = [];
   for (let i = 0; i < n; i++) { const c = await getDoc(doc(DB, 'crm', 'list_' + i)); if (c.exists()) CARDS.push(...JSON.parse(c.data().d)); }
   const v = await getDoc(doc(DB, 'crm', 'visits')); VIS = v.exists() ? JSON.parse(v.data().d) : {};
-  LOG = ROLE === 'emp'                                     // الموظف بيقرا تسجيلاته هو بس (القواعد)
+  LOG = ROLE === 'emp' && !MY.dev                          // الموظف بيقرا تسجيلاته هو بس (القواعد) — الجهاز المشترك بيقرا الكل
     ? (await getDocs(query(collection(DB, 'crm_log'), where('by', '==', MY.uid)))).docs.map(d => ({ _id: d.id, ...d.data() }))
     : (await getDocs(collection(DB, 'crm_log'))).docs.map(d => ({ _id: d.id, ...d.data() }));
   CLAIM = {}; (await getDocs(collection(DB, 'crm_claim'))).docs.forEach(d => { CLAIM[d.id] = d.data(); });
@@ -107,7 +107,9 @@ function owner(id) {
   const c = CLAIM[id];
   return c && c.at >= addDays(today(), -CLAIM_DAYS) ? c : null;
 }
-const mine = id => { const o = owner(id); return !!o && o.uid === MY.uid; };
+// الجهاز المشترك (crm): uid واحد للكل فالملكية بالاسم؛ حساب الموظف الفردي بالـ uid
+const isMe = o => !!o && (MY.dev ? o.name === MY.name : o.uid === MY.uid);
+const mine = id => isMe(owner(id));
 const SNAP = ['id', 'name', 'phones', 'status', 'grp', 'items', 'due', 'late', 'visit', 'leak', 'monthly', 'deliv', 'area', 'msg'];
 async function claim(id) {
   const c = CARDS.find(x => x.id === id), snap = {}; SNAP.forEach(k => snap[k] = c[k]);
@@ -188,7 +190,7 @@ function filtered() {
 }
 function card(c) {
   const g = GRP[c.grp[0]] || GRP.med, L = logsOf(c.id)[0], won = L && boughtAfter(L), edit = ROLE === 'admin' || ROLE === 'emp';
-  const ow = owner(c.id), me = ROLE === 'emp' && !!ow && ow.uid === MY.uid;
+  const ow = owner(c.id), me = ROLE === 'emp' && isMe(ow);
   const when = c.status === 'قرّب' ? (c.late === 0 ? '⏰ محتاج يشتري النهارده' : `⏰ محتاج يشتري بعد ${days(-c.late)}`)
              : c.status === 'اتأخر' ? `⚠️ كان المفروض يشتري من ${days(c.late)}` : `💔 مجاش الصيدلية من ${days(c.visit || c.late)}`;
   const seen = c.visit == null ? '' : c.visit === 0 ? '🛒 جه الصيدلية النهارده' : `🛒 آخر مرة جه الصيدلية: من ${days(c.visit)}`;
@@ -405,8 +407,8 @@ export async function mountCustomers(root, role) {
   shell(); render();
 }
 /* ---------- الموظف: نفس القوايم من حسابه + «عملائي» ---------- */
-export async function mountEmployee(root, uid, name) {
-  ROOT = root; ROLE = 'emp'; DB = getFirestore(getApp()); LOCAL = null; MY = { uid, name }; css(); root.id = 'crmRoot';
+export async function mountEmployee(root, uid, name, dev = false) {
+  ROOT = root; ROLE = 'emp'; DB = getFirestore(getApp()); LOCAL = null; MY = { uid, name, dev }; css(); root.id = 'crmRoot';
   root.innerHTML = '<div class="card"><p class="sub">جاري تحميل العملاء…</p></div>';
   let ok = false;
   try { ok = await load(); } catch (e) {
