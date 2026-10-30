@@ -400,7 +400,7 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="buyer" class="hide"></div>
 <div id="crmdev" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-30-B</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-30-C</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -1919,7 +1919,7 @@ async function cashMine(){
       <td class="num"><b>${ms(c => c.cashToSafe)}</b></td><td class="num"><b>${ms(c => c.visa)}</b></td><td class="num"><b>${ms(c => c.voda)}</b></td>
       <td class="num"><b>${ms(c => c.insta)}</b></td><td class="num"><b>${ms(c => c.expTotal)}</b></td><td class="num"><b>${ms(cTotal)}</b></td>
       <td>${varTag(r2(MON.reduce((a, c) => a + cVar(c), 0)), 1e9)}</td><td class="num"><b>${pen ? M2(pen) + ' ج' : '—'}</b></td><td></td></tr>` : '';
-    box.innerHTML = `      ${pen && !station ? `<div class="banner bad">خصومات الخزنة عليك الشهر ده: ${M2(pen)} ج — بتتخصم من المرتب.</div>` : ''}
+    box.innerHTML = `      ${pen && !station && CASH_TO_PAYROLL ? `<div class="banner bad">خصومات الخزنة عليك الشهر ده: ${M2(pen)} ج — بتتخصم من المرتب.</div>` : ''}
       <div class="scroll"><table><tr><th>اليوم</th><th>التقفيلة</th><th>نقدي</th><th>فيزا</th><th>فودافون</th><th>إنستاباي</th>
         <th>مصاريف</th><th>إجمالي الشيفت</th><th>السيستم</th><th>الخصم</th><th>الحالة</th></tr>
       ${monRow}
@@ -2255,6 +2255,8 @@ window.cashExport = () => {
 
 /* ---------- ربط خصومات الخزنة بالمرتب ---------- */
 // بيتحسب وقت النشر من التقفيلات اللي يومها التشغيلي جوه دورة المرتب
+// قرار د. يحيى 30/10: عجز الخزنة مش بيتخصم من المرتب لحد إشعار تاني (true = يرجع الخصم)
+const CASH_TO_PAYROLL = false;
 let CASHP = null;
 const isoLocal = d => `${d.getFullYear()}-${d2(d.getMonth() + 1)}-${d2(d.getDate())}`;
 const cashKey = P => P && P.ps && P.pe ? isoLocal(P.ps) + '|' + isoLocal(P.pe) : '';
@@ -2262,6 +2264,7 @@ function loadCashPen(P){
   const key = cashKey(P);
   if (CASHP && CASHP.key === key) return CASHP.p;
   const C = CASHP = { key, map: {}, loading: true, err: '' };
+  if (!CASH_TO_PAYROLL){ C.loading = false; return (C.p = Promise.resolve()); }
   if (!key){ C.loading = false; C.err = 'تواريخ الدورة مش موجودة في ملف المرتبات'; return (C.p = Promise.resolve()); }
   const [a, b] = key.split('|');
   C.p = getDocs(query(collection(db, 'closings'), where('bizDate', '>=', a), where('bizDate', '<=', b)))
@@ -2525,7 +2528,7 @@ function payPanel(rows){
     <td class="num">${+r.lateDed ? F(r.lateDed) : '—'}</td>
     <td class="num">${+r.absPen ? F(r.absPen) : '—'}</td>
     <td class="num">${+r.adminPen ? F(r.adminPen) : '—'}</td>
-    <td class="num">${F(r.totalDed)}</td><td class="num">${F((+r.bonus||0) - (+r.pushAuto||0))}</td>
+    <td class="num">${F((+r.totalDed||0) + (+r.cashPen||0))}</td><td class="num">${F((+r.bonus||0) - (+r.pushAuto||0))}</td>
     <td class="num">${+r.pushAuto ? '+ ' + F(r.pushAuto) : '—'}</td>
     <td class="num">${+r.adv ? '− ' + F(r.adv) : '—'}</td>
     <td class="num"><b>${F(r.net)}</b></td>
