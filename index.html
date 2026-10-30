@@ -400,7 +400,7 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="buyer" class="hide"></div>
 <div id="crmdev" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-30-A</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-30-B</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -2920,6 +2920,13 @@ window.publish = async () => {
     catch (e) { msg.style.color = 'var(--warn)';
       msg.textContent = `مقدرتش أكتب كشف ${p.name}: ${e.code}`; btn.disabled = false; return; }
     done++;
+  }
+
+  // أي كشف قديم في نفس الشهر لموظف اتشال من الشيت يتمسح (الموظف ميشوفهوش والأدمن كمان)
+  const keep = new Set(P.people.map(p => map[String(p.code).trim()]).filter(Boolean));
+  for (const sub of ['employees', 'private']){
+    try { (await getDocs(collection(db, 'payslips', P.period, sub))).forEach(d => {
+      if (!keep.has(d.id)) deleteDoc(d.ref).catch(() => {}); }); } catch(e){}
   }
 
   try {
