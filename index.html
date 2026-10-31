@@ -400,7 +400,7 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="buyer" class="hide"></div>
 <div id="crmdev" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-30-C</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-31-A</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -1535,6 +1535,97 @@ window.pmNo = async id => { const r = prompt('سبب الرفض؟'); if (r === n
   try { await updateDoc(doc(db, 'permits', id), { status: 'مرفوض', rejectReason: r || '' }); pmAdmin(); }
   catch (e) { alert('مشكلة: ' + (e.code || e.message)); } };
 
+/* ================= المسحوبات (31/10) ================= */
+// المدير بيسجّل السلفة هنا، ووقت النشر بتتخصم لوحدها من كشف الشهر (بتاريخها جوه الدورة) — من غير شيت المسحوبات في الإكسيل
+const ADV = { month: '', staff: [], list: [], loans: [] };
+async function advAdmin(){
+  const box = $('advBox'); if (!box) return;
+  if (!ADV.month) ADV.month = isoLocal(new Date()).slice(0, 7);
+  box.innerHTML = '<p class="sub">جاري التحميل…</p>';
+  const m = ADV.month, a = m + '-01', b = m + '-31';
+  try {
+    if (!ADV.staff.length){ const ss = await getDocs(collection(db, 'staff'));
+      ss.forEach(d => { const v = d.data(); if (v.code != null) ADV.staff.push({ code: String(v.code).trim(), name: v.name || '' }); });
+      ADV.staff.sort((x, y) => (+x.code || 0) - (+y.code || 0)); }
+    ADV.list = []; (await getDocs(query(collection(db, 'advances'), where('date', '>=', a), where('date', '<=', b))))
+      .forEach(d => ADV.list.push({ id: d.id, ...d.data() }));
+    ADV.list.sort((x, y) => x.date < y.date ? 1 : x.date > y.date ? -1 : 0);
+  } catch (e) { box.innerHTML = `<p class="err">مشكلة: ${esc(e.code || e.message)}${e.code === 'permission-denied' ? ' — حط قواعد Firebase الجديدة الأول (بلوك advances)' : ''}</p>`; return; }
+  // السلف اللي الكاشير صرفها من الدرج في التقفيلات — تتسجل بدوسة
+  ADV.loans = [];
+  try { (await getDocs(query(collection(db, 'closings'), where('bizDate', '>=', a), where('bizDate', '<=', b)))).forEach(d => {
+      const c = d.data(); if (isVoid(c)) return;
+      (c.expenses || []).forEach((x, i) => { if (x.type === 'سلفة لموظف') ADV.loans.push({ key: d.id + '#' + i, date: c.bizDate, desc: x.desc || '', amount: +x.amount || 0, by: c.name || '' }); }); });
+  } catch (e) {}
+  const done = new Set(ADV.list.map(x => x.src).filter(Boolean));
+  const isAdm = ROLE === 'admin';
+  const per = {}; ADV.list.forEach(x => { const k = x.code; per[k] = per[k] || { name: x.name, amt: 0, n: 0 }; per[k].amt += +x.amount || 0; per[k].n++; });
+  const tot = ADV.list.reduce((s, x) => s + (+x.amount || 0), 0);
+  const opts = ADV.staff.map(x => `<option value="${esc(x.code)}">${esc(x.name)} (${esc(x.code)})</option>`).join('');
+  const pend = ADV.loans.filter(x => !done.has(x.key));
+  box.innerHTML = `
+    <label for="advMonth">الشهر</label><input id="advMonth" type="month" value="${m}" onchange="ADVmonth(this.value)" style="max-width:220px">
+    ${statTiles([{ label: 'إجمالي المسحوبات', value: F(tot) + ' ج' }, { label: 'عدد الموظفين', value: Object.keys(per).length },
+      { label: 'سلف من الخزنة مستنية تتسجل', value: pend.length, hi: isAdm && pend.length > 0 }])}
+    ${isAdm ? `<div class="card" style="margin-top:14px"><b>تسجيل سلفة / مسحوبات</b>
+      <label for="advEmp">الموظف</label><select id="advEmp"><option value="">اختار الموظف</option>${opts}</select>
+      <label for="advAmt">المبلغ (ج)</label><input id="advAmt" type="number" min="1" step="1" inputmode="decimal">
+      <label for="advDate">التاريخ</label><input id="advDate" type="date" value="${isoLocal(new Date())}">
+      <label for="advNote">البيان (اختياري)</label><input id="advNote" type="text" placeholder="مثلاً: سلفة، مسحوبات بضاعة">
+      <input type="hidden" id="advSrc" value="">
+      <button class="sm" style="margin-top:10px" onclick="advAdd()">تسجيل</button><div class="err" id="advMsg"></div></div>` : ''}
+    ${pend.length && isAdm ? `<h2 style="margin-top:18px">سلف اتصرفت من الخزنة ولسه متسجلتش</h2>
+      <div class="scroll"><table><tr><th>اليوم</th><th>البيان (من الكاشير)</th><th>المبلغ</th><th>قفلها</th><th></th></tr>
+      ${pend.map(x => `<tr><td>${esc(dLabel(x.date))}</td><td style="white-space:normal">${esc(x.desc)}</td><td class="num">${M2(x.amount)}</td>
+        <td>${esc(x.by)}</td><td><button class="sm" onclick="advFrom('${esc(x.key)}')">سجّلها</button></td></tr>`).join('')}</table></div>
+      <div class="note">دوس "سجّلها" ← اختار الموظف فوق ← تسجيل. السلفة اللي اتسجلت بتختفي من هنا.</div>` : ''}
+    ${Object.keys(per).length ? `<h2 style="margin-top:18px">لكل موظف</h2><div class="scroll"><table><tr><th>الموظف</th><th>عدد</th><th>الإجمالي</th></tr>
+      ${Object.entries(per).sort((x, y) => y[1].amt - x[1].amt).map(([k, v]) => `<tr><td>${esc(v.name)} (${esc(k)})</td><td class="num">${v.n}</td><td class="num"><b>${M2(v.amt)}</b></td></tr>`).join('')}</table></div>` : ''}
+    <h2 style="margin-top:18px">كل المسحوبات</h2>
+    ${ADV.list.length ? `<div class="scroll"><table><tr><th>اليوم</th><th>الموظف</th><th>المبلغ</th><th>البيان</th>${isAdm ? '<th></th>' : ''}</tr>
+      ${ADV.list.map(x => `<tr><td>${esc(dLabel(x.date))}</td><td>${esc(x.name)} (${esc(x.code)})</td><td class="num">${M2(x.amount)}</td>
+        <td style="white-space:normal">${esc(x.note || '')}</td>${isAdm ? `<td><button class="sm ghost" onclick="advDel('${x.id}')">مسح</button></td>` : ''}</tr>`).join('')}</table></div>`
+      : '<p class="sub">مفيش مسحوبات متسجلة الشهر ده.</p>'}
+    <div class="note">المسحوبات بتتخصم لوحدها من كشف الموظف وقت "اعتماد ونشر" (كل اللي تاريخها جوه فترة الكشف)، وبتظهر له في سطر "مسحوبات آجلة".
+      <b>متكتبهاش تاني في شيت المسحوبات في الإكسيل</b> وإلا هتتخصم مرتين.</div>`;
+}
+window.ADVmonth = v => { ADV.month = v || ADV.month; advAdmin(); };
+window.advFrom = key => { const x = ADV.loans.find(y => y.key === key); if (!x) return;
+  $('advAmt').value = x.amount; $('advDate').value = x.date; $('advNote').value = 'سلفة من الخزنة — ' + x.desc; $('advSrc').value = key;
+  $('advEmp').focus(); $('advEmp').scrollIntoView({ block: 'center' }); };
+window.advAdd = async () => {
+  const msg = $('advMsg'); msg.style.color = 'var(--red)';
+  const code = $('advEmp').value, amount = r2($('advAmt').value), date = $('advDate').value;
+  if (!code) { msg.textContent = 'اختار الموظف'; return; }
+  if (!(amount > 0)) { msg.textContent = 'اكتب المبلغ'; return; }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { msg.textContent = 'اختار التاريخ'; return; }
+  const st = ADV.staff.find(x => x.code === code) || {};
+  const rec = { code, name: st.name || '', amount, date, note: $('advNote').value.trim(), by: ME.uid, at: serverTimestamp() };
+  if ($('advSrc').value) rec.src = $('advSrc').value;
+  try { await addDoc(collection(db, 'advances'), rec); ADV.month = date.slice(0, 7); ADVP = null; advAdmin(); }
+  catch (e) { msg.textContent = 'مشكلة: ' + (e.code || e.message); }
+};
+window.advDel = async id => { const x = ADV.list.find(y => y.id === id); if (!x) return;
+  if (!confirm(`مسح ${M2(x.amount)} ج من مسحوبات ${x.name}؟`)) return;
+  try { await deleteDoc(doc(db, 'advances', id)); ADVP = null; advAdmin(); } catch (e) { alert('مشكلة: ' + (e.code || e.message)); } };
+
+// وقت النشر: مسحوبات الموقع اللي تاريخها جوه الدورة
+let ADVP = null;
+function loadAdvPen(P){
+  const key = cashKey(P);
+  if (ADVP && ADVP.key === key) return ADVP.p;
+  const C = ADVP = { key, map: {}, loading: true, err: '' };
+  if (!key){ C.loading = false; C.err = 'تواريخ الدورة مش موجودة في ملف المرتبات'; return (C.p = Promise.resolve()); }
+  const [a, b] = key.split('|');
+  C.p = getDocs(query(collection(db, 'advances'), where('date', '>=', a), where('date', '<=', b)))
+    .then(snap => snap.forEach(d => { const v = d.data(), k = String(v.code).trim(), m = C.map[k] = C.map[k] || { amt: 0, n: 0 };
+      m.amt = r2(m.amt + (+v.amount || 0)); m.n++; }))
+    .catch(e => { C.err = e.code || e.message; })
+    .finally(() => { C.loading = false; });
+  return C.p;
+}
+const advSite = code => (ADVP && !ADVP.loading && ADVP.map[String(code).trim()]) || { amt: 0, n: 0 };
+
 /* ================= تقفيل الخزنة ================= */
 // القواعد (3/10): الأرضية 500 ج بتفضل في الدرج ومش داخلة في التقفيل.
 // السماح ±20 ج على الفرق اللي السيستم طلّعه، واللي فوقه (عجز أو زيادة) بيتخصم من اللي قفل.
@@ -2370,6 +2461,7 @@ function renderAdmin(){
     <button id="at5" onclick="atab(5)">الوقت الإضافي</button>
     <button id="at6" onclick="atab(6)">الأذونات</button>
     <button id="at7" onclick="atab(7)">الخزنة</button>
+    <button id="at11" onclick="atab(11)">المسحوبات</button>
     <button id="at8" onclick="atab(8)">المخزون</button>
     <button id="at9" onclick="atab(9)">العملاء</button>
     <button id="at10" onclick="atab(10)">🛒 الطلبية</button>
@@ -2382,6 +2474,7 @@ function renderAdmin(){
   <div id="ap5" class="card hide"><h2>الوقت الإضافي</h2><div id="otBox"></div></div>
   <div id="ap6" class="card hide"><h2>الأذونات</h2><div id="pmBox"></div></div>
   <div id="ap7" class="card hide"><h2>الخزنة وتقفيل الشيفتات</h2><div id="cashAdm"></div></div>
+  <div id="ap11" class="card hide"><h2>مسحوبات الموظفين</h2><div id="advBox"></div></div>
   <div id="ap8" class="hide"><div id="stockRoot"></div></div>
   <div id="ap9" class="hide"><div id="crmAcct"></div><div id="crmRoot"></div></div>
   <div id="ap10" class="hide"><div id="orderRoot"></div></div>
@@ -2452,11 +2545,11 @@ async function openOrder(){
 }
 
 window.atab = n => {
-  [0,4,5,6,7,8,9,10,1,2,3].forEach(i => { const p = $('ap'+i), t = $('at'+i);
+  [0,4,5,6,7,11,8,9,10,1,2,3].forEach(i => { const p = $('ap'+i), t = $('at'+i);
     if (p) p.classList.toggle('hide', i !== n); if (t) t.classList.toggle('on', i === n); });
   $('perBox').style.display = (n === 0 || n === 4) ? '' : 'none';
   if ((n === 0 || n === 4) && !DASH.periods.length) loadDash();
-  if (n === 2) loadStaff(); if (n === 3) loadQ(); if (n === 5) otAdmin(); if (n === 6) pmAdmin(); if (n === 7) cashAdmin(); if (n === 8) openInventory(); if (n === 9) openCustomers(); if (n === 10) openOrder();
+  if (n === 2) loadStaff(); if (n === 3) loadQ(); if (n === 5) otAdmin(); if (n === 6) pmAdmin(); if (n === 7) cashAdmin(); if (n === 11) advAdmin(); if (n === 8) openInventory(); if (n === 9) openCustomers(); if (n === 10) openOrder();
 };
 
 async function loadDash(force){
@@ -2750,6 +2843,7 @@ function showPreview(){
   if (!PARSED) return;
   const P = PARSED;
   if (!CASHP || CASHP.key !== cashKey(P)) loadCashPen(P).then(() => { if (PARSED === P) showPreview(); });
+  if (!ADVP || ADVP.key !== cashKey(P)) loadAdvPen(P).then(() => { if (PARSED === P) showPreview(); });
   const bad = P.people.filter(p => !p.rate), flag = P.people.filter(p => p.flags > 0);
   const left = P.people.filter(p => String(p.status || '').includes('ترك'));
   let w = '';
@@ -2763,17 +2857,20 @@ function showPreview(){
   if (!ITEMS) w += `<div class="banner">ملف المبيعات بالأصناف مش مرفوع — عمولة البوشينج مش هتتضاف للكشوف.</div>`;
   if (CASHP && CASHP.loading) w += `<div class="banner">جاري حساب خصومات الخزنة من التقفيلات…</div>`;
   else if (CASHP && CASHP.err) w += `<div class="banner bad">مقدرتش أقرا تقفيلات الخزنة (${esc(CASHP.err)}) — خصومات الخزنة مش هتتضاف.</div>`;
+  if (ADVP && ADVP.err) w += `<div class="banner bad">مقدرتش أقرا مسحوبات الموقع (${esc(ADVP.err)}) — مش هتتخصم.</div>`;
+  const advDup = P.people.filter(p => +p.adv && advSite(p.code).amt);
+  if (advDup.length) w += `<div class="banner bad">⚠ مسحوبات في الإكسيل وفي الموقع مع بعض لـ: ${advDup.map(x => esc(x.name)).join('، ')} — اتأكد إنها مش متكررة.</div>`;
   const hid = P.people.filter(p => p.noPublish);
   if (hid.length) w += `<div class="banner">${hid.map(x => esc(x.name)).join('، ')} — كشفه مش هيتنشر (مش هيشوفه على الموقع)، وأرقامه داخلة في إجماليات الفرع.</div>`;
 
-  const rows = P.people.map(p => { const c = autoComm(p.code), k = cashPen(p.code);
+  const rows = P.people.map(p => { const c = autoComm(p.code), k = cashPen(p.code), av = advSite(p.code).amt;
     return `<tr><td>${p.code}</td><td>${esc(p.name)}</td>
     <td class="num">${+p.basic ? F(p.basic) : '—'}</td><td class="num">${F(p.hours)}</td><td class="num">${F(p.wage)}</td><td class="num">${p.lates||0}</td>
     <td class="num">${F(p.totalDed)}</td><td class="num">${F(p.net)}</td>
-    <td class="num">${c ? '+ ' + F(c) : '—'}</td><td class="num">${k.pen ? '− ' + M2(k.pen) : '—'}</td>
-    <td class="num"><b>${F((+p.net||0) + c - k.pen)}</b></td>
+    <td class="num">${c ? '+ ' + F(c) : '—'}</td><td class="num">${k.pen ? '− ' + M2(k.pen) : '—'}</td><td class="num">${av ? '− ' + M2(av) : '—'}</td>
+    <td class="num"><b>${F((+p.net||0) + c - k.pen - av)}</b></td>
     <td>${p.flags ? `<span class="tag late">${p.flags}</span>` : '—'}</td></tr>`; }).join('');
-  const tot = P.people.reduce((a,p)=>a+(+p.net||0)+autoComm(p.code)-cashPen(p.code).pen,0);
+  const tot = P.people.reduce((a,p)=>a+(+p.net||0)+autoComm(p.code)-cashPen(p.code).pen-advSite(p.code).amt,0);
 
   $('preview').innerHTML = `
     <h2 style="margin-top:18px">٢. راجع قبل النشر</h2>
@@ -2781,9 +2878,9 @@ function showPreview(){
     ${w}
     <div class="scroll"><table>
       <tr><th>الكود</th><th>الاسم</th><th>الأساسي</th><th>ساعات</th><th>أجر</th><th>تأخيرات</th><th>خصومات</th>
-      <th>صافي الإكسيل</th><th>عمولة بوشينج</th><th>خصم الخزنة</th><th>الصافي النهائي</th><th>مراجعة</th></tr>
+      <th>صافي الإكسيل</th><th>عمولة بوشينج</th><th>خصم الخزنة</th><th>مسحوبات الموقع</th><th>الصافي النهائي</th><th>مراجعة</th></tr>
       ${rows}</table></div>
-    <div class="note">الصافي النهائي = صافي الإكسيل + عمولة البوشينج المحسوبة تلقائياً من ملف المبيعات − خصم الخزنة (العجز أو الزيادة فوق ±${CASH.TOL} ج في التقفيلات اللي يومها جوه الدورة). ده اللي هيتنشر للموظف.</div>
+    <div class="note">الصافي النهائي = صافي الإكسيل + عمولة البوشينج المحسوبة تلقائياً من ملف المبيعات − المسحوبات المتسجلة في تبويب المسحوبات (اللي تاريخها جوه الدورة). ده اللي هيتنشر للموظف.</div>
     ${KPI ? kpiBlock() : '<div class="note">ارفع تقرير الفواتير عشان تظهر مؤشرات المبيعات.</div>'}
     <h2 style="margin-top:18px">٣. اعتماد ونشر</h2>
     <label style="display:flex;gap:10px;align-items:center;font-weight:600">
@@ -2847,6 +2944,8 @@ window.publish = async () => {
   const partial = !!($('pubPartial') && $('pubPartial').checked);
   const through = P.pe ? `${fmtDate(P.pe)}/${P.pe.getFullYear()}` : '';
   await loadCashPen(P);
+  await loadAdvPen(P);
+  if (ADVP.err && !confirm(`مقدرتش أقرا مسحوبات الموقع (${ADVP.err}) — مش هتتخصم من الكشوف. تكمل النشر؟`)) { btn.disabled = false; return; }
   if (CASHP.err && !confirm(`مقدرتش أقرا تقفيلات الخزنة (${CASHP.err}) — خصومات الخزنة مش هتتضاف للكشوف. تكمل النشر؟`)) {
     btn.disabled = false; return; }
 
@@ -2899,6 +2998,9 @@ window.publish = async () => {
     const cp = cashPen(code);
     rec.cashPen = cp.pen; rec.cashN = cp.n;
     if (cp.pen) rec.net = Math.round(((+rec.net || 0) - cp.pen) * 100) / 100;
+    const av = advSite(code);
+    rec.advExcel = +p.adv || 0; rec.advSite = av.amt; rec.advN = av.n;
+    if (av.amt){ rec.adv = r2((+p.adv || 0) + av.amt); rec.net = Math.round(((+rec.net || 0) - av.amt) * 100) / 100; }
     if (KPI){
       const k = KPI.rows.find(x => String(x.code) === code);
       if (k){ const rank = KPI.rows.filter(x => x.include).findIndex(x => String(x.code) === code);
