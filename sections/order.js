@@ -96,6 +96,33 @@ function css() {
 #ordRoot .rf{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px}
 #ordRoot .rfb{min-height:48px;border-radius:14px;padding:8px 18px;border:0;background:#fff;color:#0A6B60;font-weight:800;font-size:16px;cursor:pointer;box-shadow:var(--shadow)}#ordRoot .rfb[disabled]{opacity:.7;cursor:default}
 #ordRoot .rft{font-size:13px;opacity:.95;line-height:1.7;flex:1;min-width:200px}
+#ordRoot .barw{display:flex;align-items:center;gap:10px;margin-top:10px}#ordRoot .barw .bar{flex:1;margin-top:0;height:14px;position:relative;overflow:visible}
+#ordRoot .barw b{font:800 14px Alexandria,sans-serif;min-width:40px;text-align:start}
+#ordRoot .bar i{background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.28) 0 8px,rgba(255,255,255,0) 8px 16px);background-size:22px 22px;animation:ordStripe 1.1s linear infinite;transition:width .6s cubic-bezier(.2,.8,.2,1)}
+#ordRoot .bar i{position:relative}#ordRoot .bar i::after{content:'🛒';position:absolute;top:-8px;left:-6px;font-size:16px;filter:drop-shadow(0 1px 1px rgba(0,0,0,.3))}
+@keyframes ordStripe{to{background-position:22px 0}}
+@keyframes ordEnt{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+#ordRoot .grp.ent{animation:ordEnt .45s ease-out backwards}
+@keyframes ordPop{0%{transform:scale(.7)}55%{transform:scale(1.28)}100%{transform:scale(1)}}
+#ordRoot .chk.pop{animation:ordPop .42s cubic-bezier(.3,1.6,.5,1)}
+@keyframes ordFlash{0%{background:#FFF1B8}100%{background:color-mix(in srgb,#1B7F3B 13%,var(--card))}}
+#ordRoot .row.just{animation:ordFlash 1s ease-out}
+#ordRoot .chk{transition:transform .12s,background .2s,border-color .2s}#ordRoot .chk:not([disabled]):hover{transform:scale(1.08);border-color:#0E9AA7}
+#ordRoot .row{transition:background .25s}#ordRoot .row:hover{background:color-mix(in srgb,#0E9AA7 5%,var(--card))}
+#ordRoot .gh .done{animation:ordPulse 1.8s ease-in-out infinite}
+@keyframes ordPulse{50%{transform:scale(1.08);box-shadow:0 0 0 5px rgba(27,127,59,.18)}}
+#ordRoot .spin{display:inline-block;animation:ordSpin 1s linear infinite}@keyframes ordSpin{to{transform:rotate(360deg)}}
+#ordRoot .rfb:not([disabled]):hover{transform:translateY(-2px)}#ordRoot .rfb{transition:transform .15s}
+#ordRoot .fxt{min-height:40px;border-radius:12px;padding:4px 12px;border:1px solid rgba(255,255,255,.55);background:rgba(255,255,255,.18);color:#fff;font-weight:700;font-size:13px;cursor:pointer}
+#ordFx{position:fixed;inset:0;pointer-events:none;z-index:95;overflow:hidden}
+#ordFx .fxb{position:absolute;transform:translate(-50%,0);background:#fff;color:#0A6B60;border:2px solid #0E9AA7;border-radius:22px;padding:7px 15px;font:800 14.5px/1.4 Alexandria,'IBM Plex Sans Arabic',sans-serif;white-space:nowrap;box-shadow:0 6px 18px rgba(14,154,167,.28)}
+#ordFx .fxb::after{content:'';position:absolute;bottom:-8px;left:50%;margin-left:-7px;border:7px solid transparent;border-top-color:#0E9AA7;border-bottom:0}
+#ordFx .fxb.big{background:linear-gradient(135deg,#FFE79A,#FFC83D);color:#1F2A44;border-color:#F4A900;font-size:16px;padding:10px 20px;box-shadow:0 8px 24px rgba(244,169,0,.4)}
+#ordFx .fxb.big::after{border-top-color:#F4A900}
+#ordFx .fxd,#ordFx .fxs{position:absolute;border-radius:50%;background:rgba(14,154,167,.25);border:1.5px solid #0E9AA7}
+#ordFx .fxd{background:#7FD6CC;border:0}
+#ordFx .fxc{position:absolute;border-radius:2px}
+@media (prefers-reduced-motion:reduce){#ordRoot *,#ordFx *{animation:none!important;transition:none!important}}
 #ordRoot .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#0F1B2D;color:#fff;padding:10px 18px;border-radius:12px;z-index:80;font-size:14px}
 `;
   document.head.appendChild(s);
@@ -166,6 +193,126 @@ function watchRefresh() {
   }, () => {});
 }
 
+// ===================== مؤثرات وروح الصفحة (31/10، طلبه) =====================
+// صوت خفيف (WebAudio من غير ملفات) + بابل تشجيع بتفرقع برزاز خفيف + كومبو + احتفال لما مورد/قسم/الطلبية كلها تخلص.
+// كله على طبقة fixed برا الصفحة (#ordFx) علشان إعادة الرسم ما تقتلهوش، وبيقف مع prefers-reduced-motion. زرار 🔔 في الصفحة بيقفل/يفتح.
+// المؤثرات بتشتغل لدوسة اللي قدامك بس — مش لما زميل يعلّم من موبايله.
+let FX_ON = true, LASTTICK = null, ANIM_IN = true, LAST_POP = 0, COMBO = { n: 0, t: 0 }, ACTX = null;
+try { FX_ON = localStorage.getItem('ord_fx') !== '0'; } catch (e) {}
+const REDUCED = () => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } };
+const PICK = a => a[Math.floor(Math.random() * a.length)];
+const CHEERS = ['عاش يا بطل 👏', 'كمّل كده! 💪', 'ولا غلطة 🎯', 'شغل نضيف ✨', 'ربنا يفتحها عليك 🌿', 'واحدة وراها واحدة 🚀', 'تمام التمام ✔️', 'إنت جامد! 🔥', 'يلا يلا قربنا 🏁', 'بالسرعة دي هنخلّص بدري ⚡'];
+const FX_COLORS = ['#0E9AA7', '#FFC83D', '#E4572E', '#1F2A44', '#7FD6CC'];
+
+function fxLayer() {
+  let l = document.getElementById('ordFx');
+  if (!l) { l = document.createElement('div'); l.id = 'ordFx'; document.body.appendChild(l); }
+  return l;
+}
+function tone(freq, t0, dur, vol, type = 'sine', slideTo = null) {
+  if (!ACTX) return;
+  const o = ACTX.createOscillator(), g = ACTX.createGain(), t = ACTX.currentTime + t0;
+  o.type = type; o.frequency.setValueAtTime(freq, t);
+  if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(ACTX.destination); o.start(t); o.stop(t + dur + 0.02);
+}
+function sound(kind) {
+  if (!FX_ON) return;
+  try {
+    ACTX = ACTX || new (window.AudioContext || window.webkitAudioContext)();
+    if (ACTX.state === 'suspended') ACTX.resume();
+    if (kind === 'pop') { tone(480, 0, 0.09, 0.09, 'sine', 900); tone(1250, 0.05, 0.05, 0.03, 'triangle'); }
+    else if (kind === 'off') tone(520, 0, 0.08, 0.05, 'sine', 330);
+    else if (kind === 'chime') { tone(784, 0, 0.14, 0.08); tone(1175, 0.11, 0.22, 0.08); }
+    else if (kind === 'fan') [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, i * 0.1, 0.26, 0.085, 'triangle'));
+  } catch (e) {}
+}
+// بابل بتطلع فوق الصنف، تكبر وتفرقع برزاز
+function say(text, x, y, big) {
+  if (!FX_ON || REDUCED()) return;
+  const l = fxLayer(), el = document.createElement('div'), W = innerWidth;
+  el.className = 'fxb' + (big ? ' big' : ''); el.textContent = text;
+  const cx = Math.min(Math.max(x, 110), W - 110), cy = Math.max(70, y - 46);
+  el.style.left = cx + 'px'; el.style.top = cy + 'px'; l.appendChild(el);
+  const D = big ? 2800 : 1800;
+  const a = el.animate([
+    { transform: 'translate(-50%,0) scale(.35)', opacity: 0 },
+    { transform: 'translate(-50%,-8px) scale(1.08)', opacity: 1, offset: .16 },
+    { transform: 'translate(-50%,-30px) scale(1)', opacity: 1, offset: .72 },
+    { transform: 'translate(-50%,-44px) scale(1.28)', opacity: 0 }], { duration: D, easing: 'ease-out' });
+  a.onfinish = () => el.remove();
+  setTimeout(() => splash(cx, cy - 44, big ? 12 : 7), D * .72);
+}
+function splash(x, y, n) {                                    // رزاز البابل لما تفرقع
+  const l = fxLayer();
+  for (let i = 0; i < n; i++) {
+    const d = document.createElement('i'), ang = (Math.PI * 2 * i) / n + Math.random() * .5, r = 22 + Math.random() * 26, s = 4 + Math.random() * 5;
+    d.className = 'fxd'; d.style.cssText = `left:${x}px;top:${y}px;width:${s}px;height:${s}px`; l.appendChild(d);
+    d.animate([{ transform: 'translate(-50%,-50%) scale(1)', opacity: .9 },
+      { transform: `translate(calc(-50% + ${Math.cos(ang) * r}px),calc(-50% + ${Math.sin(ang) * r}px)) scale(.3)`, opacity: 0 }],
+      { duration: 480 + Math.random() * 220, easing: 'ease-out' }).onfinish = () => d.remove();
+  }
+}
+function spray(x, y, n) {                                     // فقاقيع صغيرة بتطلع من المربع
+  if (!FX_ON || REDUCED()) return;
+  const l = fxLayer();
+  for (let i = 0; i < n; i++) {
+    const b = document.createElement('i'), s = 6 + Math.random() * 9, dx = (Math.random() - .5) * 70;
+    b.className = 'fxs'; b.style.cssText = `left:${x}px;top:${y}px;width:${s}px;height:${s}px`; l.appendChild(b);
+    b.animate([{ transform: 'translate(-50%,-50%) scale(.4)', opacity: 0 },
+      { transform: `translate(calc(-50% + ${dx * .4}px),-${22 + Math.random() * 20}px) scale(1)`, opacity: .85, offset: .3 },
+      { transform: `translate(calc(-50% + ${dx}px),-${60 + Math.random() * 50}px) scale(.9)`, opacity: 0 }],
+      { duration: 800 + Math.random() * 600, delay: i * 40, easing: 'ease-out', fill: 'backwards' }).onfinish = () => b.remove();
+  }
+}
+function confetti() {
+  if (!FX_ON || REDUCED()) return;
+  const l = fxLayer();
+  for (let i = 0; i < 46; i++) {
+    const c = document.createElement('i'), s = 6 + Math.random() * 6;
+    c.className = 'fxc'; c.style.cssText = `left:${Math.random() * 100}%;top:-12px;width:${s}px;height:${s * (Math.random() > .5 ? 1 : 1.8)}px;background:${PICK(FX_COLORS)}`; l.appendChild(c);
+    c.animate([{ transform: 'translateY(0) rotate(0)', opacity: 1 },
+      { transform: `translate(${(Math.random() - .5) * 120}px,${innerHeight + 30}px) rotate(${360 + Math.random() * 540}deg)`, opacity: .9 }],
+      { duration: 1800 + Math.random() * 1400, delay: Math.random() * 500, easing: 'cubic-bezier(.2,.6,.3,1)' }).onfinish = () => c.remove();
+  }
+}
+// بتتنده بعد كل دوسة «تم الطلب» (من اللي قدامك بس)
+function cheer(k) {
+  const r = ROWS.find(x => String(x.code) === k), b = document.querySelector(`[data-code="${k}"]`);
+  if (!r) return;
+  const rc = b ? b.getBoundingClientRect() : { left: innerWidth / 2, top: innerHeight / 2, width: 0, height: 0 }, x = rc.left + rc.width / 2, y = rc.top + rc.height / 2;
+  const all = ROWS.length, done = ROWS.filter(z => DONE[z.code]).length, pct = n => Math.floor(100 * n / all);
+  const mile = [100, 75, 50, 25].find(m => pct(done) >= m && pct(done - 1) < m);
+  const grpDone = ROWS.filter(z => z.sheet === r.sheet && z.sup === r.sup).every(z => DONE[z.code]);
+  const sheetDone = ROWS.filter(z => z.sheet === r.sheet).every(z => DONE[z.code]);
+  const now = Date.now(); COMBO = { n: now - COMBO.t < 25000 ? COMBO.n + 1 : 1, t: now };
+  spray(x, y, 8);
+  if (done === all) { sound('fan'); say('الطلبية كلها خلصت! تسلم إيدك 🎉', x, y, true); confetti(); return; }
+  if (sheetDone) { sound('fan'); say(r.sheet === 'meds' ? 'الأدوية كلها خلصت 💊🎉' : 'المستلزمات خلصت 🧴🎉', x, y, true); confetti(); return; }
+  if (mile) { sound('chime'); say({ 25: 'ربع الطلبية خلص 🎈', 50: 'نص الطلبية! كمّل 🔥', 75: 'فاضل شوية صغيرين 🏃' }[mile], x, y, true); return; }
+  if (grpDone) { sound('chime'); say(`خلصنا ${r.sup} ✔️🎉`, x, y, true); return; }
+  sound('pop');
+  if (COMBO.n >= 3 && [3, 5, 8, 12, 16, 20].includes(COMBO.n)) say(`🔥 كومبو ×${COMBO.n}`, x, y, false);
+  else if (Math.random() < .5) say(PICK(CHEERS), x, y, false);
+}
+// بوب أب ترحيب لما طلبية الأدوية تتفتح (مرة كل 10 دقايق على الأكتر)
+function welcomePop() {
+  if (!FX_ON || REDUCED() || !canEdit() || ST.sheet !== 'meds' || Date.now() - LAST_POP < 600000) return;
+  const left = ROWS.filter(r => r.sheet === 'meds' && !DONE[r.code]).length;
+  if (!left) return;
+  LAST_POP = Date.now();
+  setTimeout(() => {
+    const h = new Date(Date.now() + 2 * 3600e3).getUTCHours(), hi = h < 12 ? 'صباح الخير' : h < 18 ? 'نهارك سعيد' : 'مساء الخير';
+    say(`${hi} 👋 فاضل ${left} صنف دوا — يلا نخلّصهم 💪`, innerWidth / 2, 330, true);
+    sound('chime');
+  }, 900);
+}
+function toggleFx() {
+  FX_ON = !FX_ON; try { localStorage.setItem('ord_fx', FX_ON ? '1' : '0'); } catch (e) {}
+  if (FX_ON) sound('chime'); render();
+}
+
 function applyOV() {
   ROWS.forEach(r => {
     if (r._s0 === undefined) { r._s0 = r.sup; r._n0 = r.need; }
@@ -206,7 +353,9 @@ async function tick(code) {
   if (!canEdit()) return;
   const k = String(code), was = !!DONE[k];
   if (was) delete DONE[k]; else DONE[k] = { by: WHO, at: nowCairo() };      // يبان فوراً، والحفظ في الخلفية
+  LASTTICK = was ? null : k;
   render();
+  if (was) sound('off'); else { cheer(k); setTimeout(() => { if (LASTTICK === k) LASTTICK = null; }, 1300); }
   if (LOCAL) return;
   try {
     if (was) await updateDoc(doneRef(), { ['t.' + k]: deleteField() });
@@ -258,7 +407,7 @@ function recvOf(r) {
 async function loadDate(d) {
   const o = await getDoc(doc(DB, 'orders', d));
   if (!o.exists()) { toast('مفيش طلبية يوم ' + d.split('-').reverse().join('/')); return false; }
-  DATE = d; ROWS = JSON.parse(o.data().d || '[]');
+  DATE = d; ROWS = JSON.parse(o.data().d || '[]'); ANIM_IN = true;
   AT = d === LATEST ? LATEST_AT : String(o.data().at || '').slice(11);
   RECV = null; RECV_TO = '';
   if (SHOW_RECV) try { const r = await getDoc(doc(DB, 'orders', d + '_recv')); if (r.exists()) { RECV = JSON.parse(r.data().d || '{}'); RECV_TO = r.data().to || ''; } } catch (e) {}
@@ -344,6 +493,7 @@ async function markRes(code, res) {
 function render() {
   const all = ROWS.length, done = ROWS.filter(r => DONE[r.code]).length;
   const rows = ROWS.filter(r => r.sheet === ST.sheet);
+  const animIn = ANIM_IN; ANIM_IN = false;
   const rs = {}; let gain = 0, gn = 0, gl = 0;
   ROWS.forEach(r => { const x = recvOf(r); if (!x) return; rs[x.st] = (rs[x.st] || 0) + 1; if (x.gain != null) { gain += x.gain; gn++; if (x.gain < 0) gl++; } });
   const keep = r => !(ST.hide && DONE[r.code]) && !(ST.miss && !['none', 'part', 'other'].includes((recvOf(r) || {}).st));
@@ -356,11 +506,12 @@ function render() {
     <div class="ohd"><h2>🛒 طلبية النواقص — ${esc(DATE.split('-').reverse().join('/'))}</h2>
       <div class="s">اتعملت من رصيد السيستم الساعة ${esc(AT)} · اتطلب <b>${done}</b> من ${all} صنف${canEdit() ? ' · علّم على اللي اتطلب، وفي الآخر دوس «حفظ الطلبية»' : ''}</div>
       ${ROWS.some(r => r.cust) ? `<div class="s">🧍 <b>${ROWS.filter(r => r.cust).length}</b> صنف عليه طلب عميل مستني (من شيت طلبات العملاء) — أول حاجة في كل مورد</div>` : ''}
-      <div class="bar"><i style="width:${all ? (100 * done / all).toFixed(1) : 0}%"></i></div>
+      <div class="barw"><div class="bar"><i style="width:${all ? (100 * done / all).toFixed(1) : 0}%"></i></div><b>${all ? Math.round(100 * done / all) : 0}%</b></div>
       ${RECV ? `<div class="rsum">📦 اللي وصل لحد ${esc(RECV_TO.slice(11))} ${esc(RECV_TO.slice(8, 10) + '/' + RECV_TO.slice(5, 7))}${SAVED ? '' : ' <small>(الطلبية متحفظتش — بالعلامات)</small>'}:
         ${Object.keys(RC).map(k => `<span class="rc ${k}">${RC[k]} ${rs[k] || 0}</span>`).join(' ')}${rs.extra ? ` <span class="rc extra">📦 وصل من غير علامة ${rs.extra}</span>` : ''}
         ${gn ? `<br>💰 الخصم (${gn} صنف وصل): <span class="rc ${gain >= 0 ? 'ok' : 'none'}">${gain >= 0 ? 'كسبنا' : 'خسرنا'} ${N(Math.abs(gain))} ج عن المقترح</span> · ${gl} صنف اتشرى بخصم أقل` : ''}</div>` : ''}
-      ${canEdit() && DATE === LATEST ? `<div class="rf"><button class="rfb" id="orf" ${rfBusy() ? 'disabled' : ''}>${rfBusy() ? '⏳ بيتحدّث…' : '🔄 حدّث الطلبية دلوقتي'}</button>
+      ${canEdit() && DATE === LATEST ? `<div class="rf"><button class="rfb" id="orf" ${rfBusy() ? 'disabled' : ''}>${rfBusy() ? '<span class="spin">🔄</span> بيتحدّث…' : '🔄 حدّث الطلبية دلوقتي'}</button>
+        <button class="fxt" id="ofx" title="صوت وتشجيع">${FX_ON ? '🔔 مؤثرات' : '🔕 مؤثرات'}</button>
         <span class="rft">${rfText() || 'لو حاجة اتباعت أو نقصت: دوس يحسبها من الرصيد الحالي — علاماتك وتعديلاتك مش بتضيع'}</span></div>` : ''}
       ${LOCAL ? '' : `<div class="nav"><button data-day="-1">‹ طلبية اليوم اللي قبله</button>${DATE < LATEST ? '<button data-day="1">اليوم اللي بعده ›</button>' : ''}</div>`}</div>
     <div class="tabs2">${SHEETS.map(([k, t]) => `<button class="${ST.sheet === k ? 'on' : ''}" data-sh="${k}">${t} <small>(${cntDone(k)}/${cnt(k)})</small></button>`).join('')}
@@ -376,17 +527,19 @@ function render() {
       const list = g[s], d = list.filter(r => DONE[r.code]).length, cost = list.reduce((a, r) => a + (r.cost || 0), 0);
       const shown = list.filter(keep).sort((a, b) => !!b.cust - !!a.cust);      // 🧍 طلب العميل الأول في المورد
       const closed = ST.open[s] === false;
-      return `<div class="grp"><div class="gh" data-g="${esc(s)}" style="background:${GRP_COLORS[i % GRP_COLORS.length]}">
+      return `<div class="grp ${animIn ? 'ent' : ''}" style="animation-delay:${Math.min(i, 8) * 70}ms"><div class="gh" data-g="${esc(s)}" style="background:${GRP_COLORS[i % GRP_COLORS.length]}">
           <span>🏷️ ${esc(s)} <span class="n">— ${list.length} صنف · حوالي ${N(cost)} ج</span></span>
           <span>${d === list.length ? '<span class="done">✔ خلص</span>' : `<span class="n">${d}/${list.length}</span>`} ${closed ? '▸' : '▾'}</span></div>
         ${closed ? '' : shown.map(row).join('')}</div>`;
     }).join('') || '<div class="banner">مفيش نواقص في القسم ده 🎉</div>'}`;
   ROOT.querySelectorAll('[data-mr]').forEach(b => b.onclick = () => markRes(+b.dataset.mc, b.dataset.mr));
   if ($('#mgone', ROOT)) $('#mgone', ROOT).onchange = e => { ST.mgone = e.target.checked; render(); };
-  ROOT.querySelectorAll('[data-sh]').forEach(b => b.onclick = () => { ST.sheet = b.dataset.sh; render(); });
+  ROOT.querySelectorAll('[data-sh]').forEach(b => b.onclick = () => { ST.sheet = b.dataset.sh; ANIM_IN = true; render(); });
   if ($('#osave', ROOT)) $('#osave', ROOT).onclick = saveOrder;
   $('#oexp', ROOT).onclick = () => { ST.exp = !ST.exp; render(); };
   if ($('#orf', ROOT)) $('#orf', ROOT).onclick = requestRefresh;
+  if ($('#ofx', ROOT)) $('#ofx', ROOT).onclick = toggleFx;
+  welcomePop();
   ROOT.querySelectorAll('[data-x]').forEach(b => b.onclick = () => exportXl(b.dataset.x === '1'));
   $('#ohide', ROOT).onchange = e => { ST.hide = e.target.checked; render(); };
   if ($('#omiss', ROOT)) $('#omiss', ROOT).onchange = e => { ST.miss = e.target.checked; render(); };
@@ -419,8 +572,8 @@ function row(r) {
   const D = DONE[r.code], R = recvOf(r), qq = n => String(Math.round(n * 100) / 100);
   const rc = !R ? '' : `<br><span class="rc ${R.st}">${R.st === 'extra' ? '📦 وصل من غير علامة' : RC[R.st]}${R.q > 0 ? ` — ${qq(R.q)}${R.need ? ' من ' + R.need : ''} من ${esc(R.sups.join('، '))}` : ''}</span>`
     + (R.gain == null ? '' : ` <span class="rc ${R.gain >= 0 ? 'ok' : 'none'}">خصم ${P(R.bd)}% بدل ${P(R.sd)}% (${R.gain >= 0 ? '+' : '−'}${N(Math.abs(R.gain))} ج)</span>`);
-  return `<div class="row ${D ? 'ok' : ''} ${r.cust ? 'cu' : ''}">
-    <button class="chk ${D ? 'on' : ''}" data-code="${r.code}" ${canEdit() ? '' : 'disabled'} aria-label="تم الطلب">${D ? '✓' : ''}</button>
+  return `<div class="row ${D ? 'ok' : ''} ${r.cust ? 'cu' : ''} ${LASTTICK === String(r.code) ? 'just' : ''}">
+    <button class="chk ${D ? 'on' : ''} ${LASTTICK === String(r.code) ? 'pop' : ''}" data-code="${r.code}" ${canEdit() ? '' : 'disabled'} aria-label="تم الطلب">${D ? '✓' : ''}</button>
     <div><div class="nm">${esc(r.name)}</div>
       <div class="mt"><span class="abc ${r.abc}">${r.abc}</span>كود ${r.code} · الرصيد <span class="${r.oos ? 'oos' : ''}">${esc(r.stock)}</span>
         ${r.sup === r._s0 ? ` · خصم المورد ده <b class="sd">${P(r.sd)}%</b>` : ` · <span class="chg">🔄 اتطلب من ${esc(r.sup)} بدل ${esc(r._s0)} (خصمه كان ${P(r.sd)}%)</span>`}
