@@ -400,7 +400,7 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="buyer" class="hide"></div>
 <div id="crmdev" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-10-31-A</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-11-01-A</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -2964,7 +2964,11 @@ window.publish = async () => {
     const code = String(p.code).trim();
     msg.textContent = `جاري النشر… ${done}/${P.people.length}`;
     let uid = map[code];
-    if (!uid){
+    // (1/11) موظف ملوش حساب وكشفه مش هيتنشر (ساب الشغل) = سطر في الإجماليات بس، من غير ما نعمله حساب دخول
+    const noAcct = !uid && p.noPublish;
+    if (noAcct) uid = 'nouser_' + code;
+    if (noAcct) map[code] = uid;                 // علشان تنظيف الكشوف القديمة ميمسحوش
+    else if (!uid){
       try {
         if (!sec) { sec = initializeApp(CFG, 'sec'); secAuth = getAuth(sec); }
         const cr = await createUserWithEmailAndPassword(secAuth, emailFor(code), defPass(code));
