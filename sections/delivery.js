@@ -21,6 +21,8 @@ const commOf = o => isOut(o) ? COMM_OUT : 0;
 
 const dayKey = ts => new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo' }).format(new Date(ts));
 const timeStr = ts => ts ? new Intl.DateTimeFormat('ar-EG', { timeZone: 'Africa/Cairo', hour: 'numeric', minute: '2-digit' }).format(new Date(ts)) : '—';
+const opDay = ts => dayKey(ts - 9 * 3600e3);   // (2/11) اليوم التشغيلي 9ص → 9ص (زي الخزنة): الشيفت اللي بيعدّي نص الليل يفضل في يوم واحد
+const dayLbl = ts => { const k = opDay(ts); return `${+k.slice(8)}/${+k.slice(5, 7)}`; };
 const dateStr = ts => { const [y, m, d] = dayKey(ts).split('-'); return `${+d}/${+m}`; };
 const dur = ms => { if (ms == null || isNaN(ms)) return '—'; const s = Math.max(0, Math.round(ms / 1000)); const m = Math.floor(s / 60); return m >= 60 ? `${Math.floor(m / 60)}س ${m % 60}د` : `${m}:${String(s % 60).padStart(2, '0')}`; };
 const durMin = ms => (ms == null || isNaN(ms)) ? '—' : Math.round(ms / MIN) + ' د';
@@ -219,8 +221,8 @@ const done = () => ORDERS.filter(o => o.status === 'COMPLETED' && o.endTime);
 const drvList = () => { const s = new Set(DRIVERS.map(d => d.name)); ORDERS.forEach(o => o.driverName && s.add(o.driverName)); return [...s]; };
 
 function periodRange() {
-  const now = Date.now(), t = dayKey(now), ms = 864e5;
-  const dk = k => k, back = n => dayKey(now - n * ms);
+  const now = Date.now(), t = opDay(now), ms = 864e5;
+  const back = n => opDay(now - n * ms);
   switch (ST.period) {
     case 'today': return [t, t];
     case 'yest': return [back(1), back(1)];
@@ -232,7 +234,7 @@ function periodRange() {
 }
 function filtered() {
   const [a, b] = periodRange();
-  return done().filter(o => { const k = dayKey(o.endTime); return k >= a && k <= b && (!ST.driver || o.driverName === ST.driver) && (!ST.zone || (o.zone || ZONES[0]) === ST.zone); });
+  return done().filter(o => { const k = opDay(o.endTime); return k >= a && k <= b && (!ST.driver || o.driverName === ST.driver) && (!ST.zone || (o.zone || ZONES[0]) === ST.zone); });
 }
 
 function driverStats(list, bm) {
@@ -315,23 +317,23 @@ function liveHtml(act) {
 
 // عمولة الدليفري باليوم (طلبه 2/11): الأوردرات اللي اتسلّمت خارج المعمورة في اليوم ده × 5 ج، لكل مندوب
 function commHtml() {
-  const day = ST.cday || dayKey(Date.now()), per = new Map();
+  const day = ST.cday || opDay(Date.now()), per = new Map();
   drvList().forEach(n => per.set(n, 0));
-  done().forEach(o => { if (isOut(o) && dayKey(o.endTime) === day) per.set(o.driverName, (per.get(o.driverName) || 0) + 1); });
+  done().forEach(o => { if (isOut(o) && opDay(o.endTime) === day) per.set(o.driverName, (per.get(o.driverName) || 0) + 1); });
   const rows = [...per.entries()].sort((a, b) => b[1] - a[1]), tot = rows.reduce((s, r) => s + r[1], 0);
-  return `<div class="cmm"><div class="lhead" style="border:0;margin-bottom:8px"><h2>💰 عمولة الدليفري — يوم ${day.slice(8)}/${day.slice(5, 7)}</h2>
+  return `<div class="cmm"><div class="lhead" style="border:0;margin-bottom:8px"><h2>💰 عمولة الدليفري — يوم ${+day.slice(8)}/${+day.slice(5, 7)} <small style="font-size:12px;color:#64748b;font-weight:600">(من 9 ص لـ 9 ص)</small></h2>
     <div class="cd"><label for="cDay">اليوم:</label><input type="date" id="cDay" value="${day}"></div></div>
   <div class="tw" style="margin:0"><table><tr><th class="l">المندوب</th><th>أوردرات خارج المعمورة اتسلّمت</th><th>العمولة (${COMM_OUT} ج للأوردر)</th></tr>
   ${rows.map(([n, c]) => `<tr><td class="l"><b style="color:#1e293b;font-size:14px">${esc(nm(n))}</b></td><td>${c}</td><td><b>${M(c * COMM_OUT)}</b></td></tr>`).join('') || '<tr><td colspan="3" class="empty">مفيش مناديب</td></tr>'}
   ${rows.length > 1 ? `<tr><td class="l"><b style="color:#1e293b">الإجمالي</b></td><td><b style="color:#1e293b">${tot}</b></td><td><b>${M(tot * COMM_OUT)}</b></td></tr>` : ''}</table></div>
-  <p class="hint">بتتحسب على الأوردرات اللي اتضغط عليها «تسليم» خارج المعمورة في اليوم ده (بتوقيت القاهرة). الأوردر الشغال لسه ملوش عمولة لحد ما يتسلّم.</p></div>`;
+  <p class="hint">بتتحسب على الأوردرات اللي اتضغط عليها «تسليم» خارج المعمورة في اليوم ده. اليوم بيبدأ 9 الصبح وبيخلص 9 الصبح اللي بعده، فالشيفت اللي بيعدّي نص الليل عمولته كلها في يوم واحد. الأوردر الشغال لسه ملوش عمولة لحد ما يتسلّم.</p></div>`;
 }
 
 function statsHtml() {
   const list = filtered(), bm = batchMap(done(), Date.now()), ds = driverStats(list, bm);
   const tot = list.length, ms = list.reduce((s, o) => s + orderMs(o, bm.get(o.id)), 0), late = list.filter(o => orderMs(o, bm.get(o.id)) > PROMISE).length;
   const val = list.reduce((s, o) => s + (o.orderValue || 0), 0), out = list.filter(o => o.zone === 'خارج المعمورة');
-  const days = {}; list.forEach(o => { const k = dayKey(o.endTime); (days[k] = days[k] || []).push(o); });
+  const days = {}; list.forEach(o => { const k = opDay(o.endTime); (days[k] = days[k] || []).push(o); });
   return `${filterBar()}
   <div class="dk"><div><div class="l">أوردرات اتسلّمت</div><div class="v">${N(tot)}</div></div>
     <div><div class="l">متوسط الوقت للأوردر</div><div class="v">${tot ? durMin(ms / tot) : '—'}</div></div>
@@ -341,22 +343,25 @@ function statsHtml() {
     <div style="border-inline-start-color:#f59e0b"><div class="l">عمولة الدليفري</div><div class="v">${M(out.length * COMM_OUT)}</div><div class="l">${COMM_OUT} ج × ${N(out.length)} أوردر</div></div></div>
   <h3 class="sec">الطيارين</h3><div class="tw"><table><tr><th class="l">الطيار</th><th>أوردرات</th><th>متوسط الوقت</th><th>&lt;10</th><th>10–15</th><th>15–20</th><th>20–30</th><th>&gt;30</th><th>خارج المعمورة</th><th>عمولة الدليفري</th><th>القيمة</th></tr>
   ${ds.map(d => `<tr><td class="l"><b>${esc(nm(d.n))}</b></td><td>${d.c}</td><td>${d.c ? durMin(d.ms / d.c) : '—'}</td>${d.b.map((x, i) => `<td ${i === 4 && x ? 'style="color:#C0392B;font-weight:800"' : ''}>${x}</td>`).join('')}<td>${d.out}${d.out ? ` (${M(d.outVal)})` : ''}</td><td><b style="color:#b45309">${M(d.out * COMM_OUT)}</b></td><td>${M(d.val)}</td></tr>`).join('') || '<tr><td colspan="11" class="empty">مفيش بيانات في الفترة دي</td></tr>'}</table></div>
+  <h3 class="sec">🏆 ترتيب المناديب (الأسرع)</h3><div class="tw"><table><tr><th>#</th><th class="l">المندوب</th><th>أوردرات</th><th>متوسط الوقت</th><th>أكتر من 30 د</th><th>نسبة التأخير</th></tr>
+  ${ds.filter(d => d.c).sort((a, b) => a.ms / a.c - b.ms / b.c).map((d, i) => `<tr><td>${['🥇', '🥈', '🥉'][i] || i + 1}</td><td class="l"><b>${esc(nm(d.n))}</b></td><td>${d.c}</td><td><b>${durMin(d.ms / d.c)}</b></td><td>${d.b[4]}</td><td ${d.b[4] ? 'style="color:#dc2626;font-weight:800"' : ''}>${Math.round(d.b[4] / d.c * 100)}%</td></tr>`).join('') || '<tr><td colspan="6" class="empty">مفيش بيانات في الفترة دي</td></tr>'}</table></div>
   <h3 class="sec">يوم بيوم</h3><div class="tw"><table><tr><th class="l">اليوم</th><th>أوردرات</th><th>متوسط الوقت</th><th>&gt;30 د</th><th>خارج المعمورة</th><th>عمولة الدليفري</th><th>القيمة</th></tr>
   ${Object.keys(days).sort().reverse().map(k => { const a = days[k], t = a.reduce((s, o) => s + orderMs(o, bm.get(o.id)), 0); return `<tr><td class="l">${k.slice(8)}/${k.slice(5, 7)}</td><td>${a.length}</td><td>${durMin(t / a.length)}</td><td>${a.filter(o => orderMs(o, bm.get(o.id)) > PROMISE).length}</td><td>${a.filter(isOut).length}</td><td><b style="color:#b45309">${M(a.filter(isOut).length * COMM_OUT)}</b></td><td>${M(a.reduce((s, o) => s + (o.orderValue || 0), 0))}</td></tr>`; }).join('') || '<tr><td colspan="7" class="empty">—</td></tr>'}</table></div>
-  <button class="ghost" data-xl>📥 تنزيل إكسل (السجل + الطيارين)</button>`;
+  <div class="ctl"><button class="ghost" data-xl>📥 تنزيل إكسل (السجل + الطيارين)</button><button class="ghost" data-rep>📋 نسخ تقرير للواتساب</button></div>`;
 }
 
 function logHtml() {
   const list = filtered().sort((a, b) => b.endTime - a.endTime), bm = batchMap(done(), Date.now()), shown = list.slice(0, ST.shown);
-  return `${filterBar()}<div class="tw"><table><tr><th class="l">التاريخ</th><th>خرج</th><th>وصل</th><th>الوقت</th><th class="l">الطيار</th><th class="l">العميل</th><th>المنطقة</th><th>عمولة</th><th>القيمة</th><th>الدفع</th><th class="l">سجّله</th>${isAdm() ? '<th></th>' : ''}</tr>
+  return `${filterBar()}<div class="tw"><table><tr><th class="l">اليوم</th><th>خرج</th><th>وصل</th><th>الوقت</th><th class="l">الطيار</th><th class="l">العميل</th><th>المنطقة</th><th>عمولة</th><th>القيمة</th><th>الدفع</th><th class="l">سجّله</th>${isAdm() ? '<th></th>' : ''}</tr>
   ${shown.map(o => { const b = bm.get(o.id), t = orderMs(o, b), late = t > PROMISE;
-    return `<tr class="${late ? 'late' : ''}"><td class="l">${dateStr(o.endTime)}</td><td>${timeStr(o.startTime)}</td><td>${timeStr(o.endTime)}</td><td><b>${durMin(t)}</b>${b && b.batch ? ` <span class="tag b">طلعة ${b.size}</span>` : ''}</td><td class="l">${esc(nm(o.driverName))}</td><td class="l">${esc(o.customerName || '—')}${o.notes ? ' 📝' : ''}</td><td>${isOut(o) ? '<span class="tag o">خارج المعمورة</span>' : '<span class="tag i">داخل المعمورة</span>'}</td><td>${isOut(o) ? M(COMM_OUT) : '—'}</td><td>${M(o.orderValue)}</td><td>${o.isVisa ? 'فيزا' : o.isVodafoneCash ? 'فودافون' : 'كاش'}</td><td class="l">${esc(nm(o.employeeName) || '—')}</td>${isAdm() ? `<td><button class="ghost sm" data-ed="${o.id}">✏️</button> <button class="ghost sm" data-rc="${o.id}">🧾</button> <button class="ghost sm" data-rm="${o.id}">🗑️</button></td>` : ''}</tr>`; }).join('') || `<tr><td colspan="12" class="empty">مفيش أوردرات في الفترة دي</td></tr>`}</table></div>
+    return `<tr class="${late ? 'late' : ''}"><td class="l">${dayLbl(o.endTime)}</td><td>${timeStr(o.startTime)}</td><td>${timeStr(o.endTime)}</td><td><b>${durMin(t)}</b>${b && b.batch ? ` <span class="tag b">طلعة ${b.size}</span>` : ''}</td><td class="l">${esc(nm(o.driverName))}</td><td class="l">${esc(o.customerName || '—')}${o.notes ? ' 📝' : ''}</td><td>${isOut(o) ? '<span class="tag o">خارج المعمورة</span>' : '<span class="tag i">داخل المعمورة</span>'}</td><td>${isOut(o) ? M(COMM_OUT) : '—'}</td><td>${M(o.orderValue)}</td><td>${o.isVisa ? 'فيزا' : o.isVodafoneCash ? 'فودافون' : 'كاش'}</td><td class="l">${esc(nm(o.employeeName) || '—')}</td>${isAdm() ? `<td><button class="ghost sm" data-ed="${o.id}">✏️</button> <button class="ghost sm" data-rc="${o.id}">🧾</button> <button class="ghost sm" data-rm="${o.id}">🗑️</button></td>` : ''}</tr>`; }).join('') || `<tr><td colspan="12" class="empty">مفيش أوردرات في الفترة دي</td></tr>`}</table></div>
   ${list.length > ST.shown ? `<button class="ghost" data-more>عرض المزيد (${list.length - ST.shown})</button>` : ''}<p class="sub">${N(list.length)} أوردر في الفترة · الصف الأحمر = أكتر من 30 دقيقة.</p>`;
 }
 
 function filterBar() {
   const P = [['today', 'النهارده'], ['yest', 'إمبارح'], ['7', 'آخر 7 أيام'], ['month', 'الشهر ده'], ['all', 'الكل'], ['custom', 'من – إلى']];
   return `<div class="ctl chips">${P.map(p => `<button class="chip ${ST.period === p[0] ? 'on' : ''}" data-p="${p[0]}">${p[1]}</button>`).join('')}</div>
+  <p class="sub" style="margin:0 0 8px">اليوم = من 9 الصبح لـ 9 الصبح اللي بعده.</p>
   <div class="ctl">${ST.period === 'custom' ? `<input type="date" id="fFrom" value="${ST.from}"><input type="date" id="fTo" value="${ST.to}">` : ''}
     <select id="fDrv"><option value="">كل الطيارين</option>${drvList().map(d => `<option ${ST.driver === d ? 'selected' : ''}>${esc(d)}</option>`).join('')}</select>
     <select id="fZone"><option value="">كل المناطق</option>${ZONES.map(z => `<option ${ST.zone === z ? 'selected' : ''}>${esc(z)}</option>`).join('')}</select></div>`;
@@ -369,6 +374,7 @@ function bind() {
   const cd = $('#cDay', ROOT); if (cd) cd.onchange = () => { ST.cday = cd.value; render(); };
   const more = $('[data-more]', ROOT); if (more) more.onclick = () => { ST.shown += 100; render(); };
   const xl = $('[data-xl]', ROOT); if (xl) xl.onclick = exportXl;
+  const rp = $('[data-rep]', ROOT); if (rp) rp.onclick = copyReport;
   ROOT.querySelectorAll('[data-fin]').forEach(b => b.onclick = () => finish(b.dataset.fin));
   ROOT.querySelectorAll('[data-rc]').forEach(b => b.onclick = () => receipt(b.dataset.rc));
   ROOT.querySelectorAll('[data-ed]').forEach(b => b.onclick = () => { EDIT = b.dataset.ed; ST.view = 'live'; render(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
@@ -440,18 +446,28 @@ function receipt(id) {
   w.document.close();
 }
 
+function copyReport() {
+  const list = filtered(), bm = batchMap(done(), Date.now()), ds = driverStats(list, bm).filter(d => d.c), [a, b] = periodRange();
+  const tot = list.length, ms = list.reduce((x, o) => x + orderMs(o, bm.get(o.id)), 0), late = list.filter(o => orderMs(o, bm.get(o.id)) > PROMISE).length;
+  const lbl = k => `${+k.slice(8)}/${+k.slice(5, 7)}`, per = a === b ? `يوم ${lbl(a)}` : `من ${a < '0001' ? 'البداية' : lbl(a)} لـ ${b > '9998' ? 'النهاردة' : lbl(b)}`;
+  const t = [`📋 تقرير الدليفري — ${per} (9ص–9ص)`, `✅ اتسلّم ${tot} أوردر · متوسط الوقت ${tot ? durMin(ms / tot) : '—'} · أكتر من 30 دقيقة: ${late}`, `💵 قيمة الأوردرات: ${M(list.reduce((x, o) => x + (o.orderValue || 0), 0))}`, '',
+    '🛵 المناديب:', ...ds.map(d => `• ${nm(d.n)}: ${d.c} أوردر (${d.out} خارج المعمورة) · متوسط ${durMin(d.ms / d.c)} · عمولة ${M(d.out * COMM_OUT)}`),
+    '', `💰 إجمالي عمولة الدليفري: ${M(list.filter(isOut).length * COMM_OUT)}`].join('\n');
+  (navigator.clipboard ? navigator.clipboard.writeText(t).then(() => toast('اتنسخ — الصقه في الواتساب ✔')) : Promise.reject()).catch(() => prompt('انسخ التقرير:', t));
+}
+
 function exportXl() {
   if (!window.XLSX) { toast('مكتبة الإكسل مش محملة'); return; }
   const list = filtered().sort((a, b) => a.endTime - b.endTime), bm = batchMap(done(), Date.now());
-  const log = [['التاريخ', 'خرج', 'وصل', 'وقت الأوردر (دقيقة)', 'طلعة مجمعة (عدد)', 'الطيار', 'العميل', 'المنطقة', 'القيمة', 'الفكة', 'الدفع', 'عمولة الدليفري', 'سجّله', 'ملاحظات']]
-    .concat(list.map(o => { const b = bm.get(o.id); return [dayKey(o.endTime), timeStr(o.startTime), timeStr(o.endTime), +(orderMs(o, b) / MIN).toFixed(1), b && b.batch ? b.size : 1, o.driverName, o.customerName, o.zone || ZONES[0], o.orderValue, o.changeGiven, o.isVisa ? 'فيزا' : o.isVodafoneCash ? 'فودافون كاش' : 'كاش', commOf(o), o.employeeName, o.notes]; }));
+  const log = [['اليوم التشغيلي (9ص–9ص)', 'خرج', 'وصل', 'وقت الأوردر (دقيقة)', 'طلعة مجمعة (عدد)', 'الطيار', 'العميل', 'المنطقة', 'القيمة', 'الفكة', 'الدفع', 'عمولة الدليفري', 'سجّله', 'ملاحظات']]
+    .concat(list.map(o => { const b = bm.get(o.id); return [opDay(o.endTime), timeStr(o.startTime), timeStr(o.endTime), +(orderMs(o, b) / MIN).toFixed(1), b && b.batch ? b.size : 1, o.driverName, o.customerName, o.zone || ZONES[0], o.orderValue, o.changeGiven, o.isVisa ? 'فيزا' : o.isVodafoneCash ? 'فودافون كاش' : 'كاش', commOf(o), o.employeeName, o.notes]; }));
   const drv = [['الطيار', 'أوردرات', 'متوسط الوقت (دقيقة)', 'أقل من 10', '10–15', '15–20', '20–30', 'أكتر من 30', 'خارج المعمورة (عدد)', 'خارج المعمورة (قيمة)', 'عمولة الدليفري', 'القيمة']]
     .concat(driverStats(list, bm).map(d => [d.n, d.c, d.c ? +(d.ms / d.c / MIN).toFixed(1) : 0, ...d.b, d.out, d.outVal, d.out * COMM_OUT, d.val]));
   const how = [['طريقة الحساب'], ['وقت الأوردر = وقت الوصول − وقت الخروج.'], ['الطلعة المجمعة: أوردرات نفس الطيار بينها 5 دقايق أو أقل = طلعة واحدة، ونصيب كل أوردر = وقت الطلعة ÷ عدد الأوردرات.'],
-    ['مثال: طيار خرج بأوردرين الساعة 3:00 و3:02 ورجع 3:40 → وقت الطلعة 40 دقيقة ÷ 2 = 20 دقيقة لكل أوردر.'], ['"أكتر من 30" = الأوردر اللي عدّى وعد التوصيل (30 دقيقة).'], ['عمولة الدليفري = ' + COMM_OUT + ' ج × عدد الأوردرات اللي اتسلّمت خارج المعمورة. مثال: مندوب سلّم 8 أوردرات خارج المعمورة في اليوم = 8 × ' + COMM_OUT + ' = ' + (8 * COMM_OUT) + ' ج.'], ['الفترة: ' + periodRange().join(' → ')]];
+    ['مثال: طيار خرج بأوردرين الساعة 3:00 و3:02 ورجع 3:40 → وقت الطلعة 40 دقيقة ÷ 2 = 20 دقيقة لكل أوردر.'], ['"أكتر من 30" = الأوردر اللي عدّى وعد التوصيل (30 دقيقة).'], ['عمولة الدليفري = ' + COMM_OUT + ' ج × عدد الأوردرات اللي اتسلّمت خارج المعمورة. مثال: مندوب سلّم 8 أوردرات خارج المعمورة في اليوم = 8 × ' + COMM_OUT + ' = ' + (8 * COMM_OUT) + ' ج.'], ['الفترة: ' + periodRange().join(' → ')], ['اليوم التشغيلي بيبدأ 9 الصبح وبيخلص 9 الصبح اللي بعده.']];
   const wb = XLSX.utils.book_new();
   [['طريقة الحساب', how], ['الطيارين', drv], ['السجل', log]].forEach(([n, r]) => XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(r), n));
-  XLSX.writeFile(wb, `دليفري_${dayKey(Date.now())}.xlsx`);
+  XLSX.writeFile(wb, `دليفري_${opDay(Date.now())}.xlsx`);
 }
 
 /* ---------- تايمر ---------- */
