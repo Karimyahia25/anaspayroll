@@ -400,7 +400,7 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="buyer" class="hide"></div>
 <div id="crmdev" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-11-01-A</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-11-01-B</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -2592,6 +2592,9 @@ async function loadPeriod(pid){
     try { const h = await getDoc(doc(db, 'payslips', pid, 'private', s.uid));
       if (h.exists()) rows.push({ ...h.data(), hidden: true }); } catch(e){}
   }
+  // موظفين من غير حساب (ساب الشغل — سطر في الإجماليات بس): كشوفهم في private بـ id يبدأ بـ nouser_
+  try { (await getDocs(collection(db, 'payslips', pid, 'private'))).forEach(d => {
+      if (d.id.startsWith('nouser_')) rows.push({ ...d.data(), hidden: true }); }); } catch(e){}
   rows.sort((a,b) => (+a.code||0) - (+b.code||0));
   DASH.rows = rows;
   $('ap0').innerHTML = payPanel(rows);
