@@ -400,7 +400,7 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="buyer" class="hide"></div>
 <div id="crmdev" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-11-01-D</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-11-01-E</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -1868,11 +1868,15 @@ const NO_CLOSE_CODES = ['79', '82', '84', '85', '47', '80', '81'];
 const NO_CLOSE_NAME = /youssef|yousef|يوسف/i;
 const STATION_ORDER = [['76', 'ا عبدربه'], ['19', 'د اسراء'], ['63', 'د عادل'], ['70', 'ا آيـه'],
   ['38', 'ا إيمان'], ['9', 'ا احمد علي'], ['78', 'ا العربي'], ['72', 'ا جمال']];
+window.stTab = n => { [0,1].forEach(i => { $('stP'+i).classList.toggle('hide', i !== n); $('stT'+i).classList.toggle('on', i === n); });
+  if (n === 1) { DEL_ON = false; openDelivery($('delRootC'), 'cashier'); } };
 async function renderStation(){
   $('emp').innerHTML = `<div class="card"><div class="hdr"><div><h1>تقفيل الخزنة</h1>
 </div>
       <button class="ghost sm" onclick="doOut()">خروج</button></div></div>
-    <div class="card"><div id="cashBox"><p class="sub">جاري التحميل…</p></div></div>`;
+    <div class="tabs"><button id="stT0" class="on" onclick="stTab(0)">تقفيل الخزنة</button><button id="stT1" onclick="stTab(1)">🛵 الدليفري</button></div>
+    <div id="stP0" class="card"><div id="cashBox"><p class="sub">جاري التحميل…</p></div></div>
+    <div id="stP1" class="hide"><div id="delRootC"></div></div>`;
   try {
     const snap = await getDocs(collection(db, 'staff'));
     STAFFL = []; snap.forEach(d => { const v = d.data();
@@ -2500,6 +2504,7 @@ function renderAdmin(){
     <button id="at8" onclick="atab(8)">المخزون</button>
     <button id="at9" onclick="atab(9)">العملاء</button>
     <button id="at10" onclick="atab(10)">🛒 الطلبية</button>
+    <button id="at12" onclick="atab(12)">🛵 الدليفري</button>
     ${isAdm ? `<button id="at1" onclick="atab(1)">نشر كشف جديد</button>
     <button id="at2" onclick="atab(2)">الموظفين</button>
     <button id="at3" onclick="atab(3)">الاستفسارات</button>` : ''}
@@ -2513,6 +2518,7 @@ function renderAdmin(){
   <div id="ap8" class="hide"><div id="stockRoot"></div></div>
   <div id="ap9" class="hide"><div id="crmAcct"></div><div id="crmRoot"></div></div>
   <div id="ap10" class="hide"><div id="orderRoot"></div></div>
+  <div id="ap12" class="hide"><div id="delRoot"></div></div>
   ${isAdm ? `
   <div id="ap1" class="card hide">${adminUploadUI()}</div>
   <div id="ap2" class="card hide"><h2>الموظفين وحساباتهم</h2><div id="staffBox"><p class="sub">جاري التحميل…</p></div></div>
@@ -2522,6 +2528,7 @@ function renderAdmin(){
   if (new URLSearchParams(location.search).get('tab') === 'stock') atab(8);
   if (new URLSearchParams(location.search).get('tab') === 'customers') atab(9);
   if (new URLSearchParams(location.search).get('tab') === 'order') atab(10);
+  if (new URLSearchParams(location.search).get('tab') === 'delivery') atab(12);
 }
 
 let INV_ON = false;
@@ -2572,6 +2579,13 @@ async function openCustomers(){
   catch (e) { CRM_ON = false; $('crmRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل قسم العملاء: ${esc(e.code || e.message)}</div>`; }
 }
 
+let DEL_ON = false;
+async function openDelivery(root, role){
+  if (DEL_ON) return; DEL_ON = true;
+  try { const m = await import('./sections/delivery.js?v=1'); await m.mountDelivery(root || $('delRoot'), role || ROLE); }
+  catch (e) { DEL_ON = false; (root || $('delRoot')).innerHTML = `<div class="banner bad">مقدرتش أحمّل قسم الدليفري: ${esc(e.code || e.message)}</div>`; }
+}
+
 let ORD_ON = false;
 async function openOrder(){
   if (ORD_ON) return; ORD_ON = true;
@@ -2580,11 +2594,11 @@ async function openOrder(){
 }
 
 window.atab = n => {
-  [0,4,5,6,7,11,8,9,10,1,2,3].forEach(i => { const p = $('ap'+i), t = $('at'+i);
+  [0,4,5,6,7,11,8,9,10,12,1,2,3].forEach(i => { const p = $('ap'+i), t = $('at'+i);
     if (p) p.classList.toggle('hide', i !== n); if (t) t.classList.toggle('on', i === n); });
   $('perBox').style.display = (n === 0 || n === 4) ? '' : 'none';
   if ((n === 0 || n === 4) && !DASH.periods.length) loadDash();
-  if (n === 2) loadStaff(); if (n === 3) loadQ(); if (n === 5) otAdmin(); if (n === 6) pmAdmin(); if (n === 7) cashAdmin(); if (n === 11) advAdmin(); if (n === 8) openInventory(); if (n === 9) openCustomers(); if (n === 10) openOrder();
+  if (n === 2) loadStaff(); if (n === 3) loadQ(); if (n === 5) otAdmin(); if (n === 6) pmAdmin(); if (n === 7) cashAdmin(); if (n === 11) advAdmin(); if (n === 8) openInventory(); if (n === 9) openCustomers(); if (n === 10) openOrder(); if (n === 12) openDelivery();
 };
 
 async function loadDash(force){
