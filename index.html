@@ -399,8 +399,9 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="adm" class="hide"></div>
 <div id="buyer" class="hide"></div>
 <div id="crmdev" class="hide"></div>
+<div id="delivery" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-11-01-E</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-11-01-F</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -803,7 +804,7 @@ function buildKPI(people, sales, items, W0){
 /* ================= قفل الجلسة بعد سكون ================= */
 const IDLE_MIN = 15;
 let idleTimer = null;
-const NO_IDLE = ['cashier', 'buyer', 'crmdev'];   // (27/10، طلبه) الكاشير وشاشة الطلبية مبيقفلوش لوحدهم خالص
+const NO_IDLE = ['cashier', 'buyer', 'crmdev', 'delivery'];   // (27/10، طلبه) الكاشير وشاشة الطلبية مبيقفلوش لوحدهم خالص
 function idleReset(){
   clearTimeout(idleTimer);
   if (!ME || !ROLE || NO_IDLE.includes(ROLE)) return;
@@ -835,7 +836,7 @@ window.doOut = () => signOut(auth);
 
 onAuthStateChanged(auth, async user => {
   $('boot').classList.add('hide');
-  ['login','emp','adm','buyer','crmdev'].forEach(x => $(x).classList.add('hide'));
+  ['login','emp','adm','buyer','crmdev','delivery'].forEach(x => $(x).classList.add('hide'));
   if (!user) {
     clearTimeout(idleTimer); $('p').value = '';
     let msg = '';
@@ -859,16 +860,27 @@ onAuthStateChanged(auth, async user => {
   if (ROLE === 'emp'){
     try { if ((await getDoc(doc(db, 'crmdevs', user.uid))).exists()) ROLE = 'crmdev'; } catch(e){}
   }
+  if (ROLE === 'emp'){
+    try { if ((await getDoc(doc(db, 'deliverydevs', user.uid))).exists()) ROLE = 'delivery'; } catch(e){}
+  }
   idleReset();                                   // بعد ما الدور اتعرف — قبل كده الكاشير كان بيتقفل بعد 15 دقيقة
   DASH = { periods: [], staff: [], rows: [], period: null };
   if (ROLE === 'admin' || ROLE === 'viewer') { $('adm').classList.remove('hide'); renderAdmin(); }
   else if (ROLE === 'cashier') { $('emp').classList.remove('hide'); await renderStation(); }
   else if (ROLE === 'buyer') { renderBuyer(); }
   else if (ROLE === 'crmdev') { renderCrmDev(); }
+  else if (ROLE === 'delivery') { renderDeliveryDev(); }
   else { $('emp').classList.remove('hide'); await renderEmp(); }
 });
 
 /* ================= جهاز متابعة العملاء المشترك (29/10): الموظف بيختار اسمه بس ================= */
+// جهاز الدليفري المشترك (1/11، طلبه): حساب بيدخل على شاشة الدليفري بس، من غير زرار خروج ومن غير قفل تلقائي
+function renderDeliveryDev(){
+  const b = $('delivery'); b.classList.remove('hide');
+  b.innerHTML = `<div class="card"><h2 style="margin:0">🛵 متابعة الدليفري</h2><p class="sub" style="margin:2px 0 0">صيدلية د. أنس نحيلة</p></div><div id="delRootD"></div>`;
+  DEL_ON = false; openDelivery($('delRootD'), 'cashier');
+}
+
 async function renderCrmDev(){
   const b = $('crmdev'); b.classList.remove('hide');
   b.innerHTML = `<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div><h2 style="margin:0">📞 متابعة العملاء</h2><p class="sub" id="cdWho" style="margin:2px 0 0"></p></div><button class="ghost sm" onclick="doOut()">خروج</button></div>
@@ -2518,7 +2530,7 @@ function renderAdmin(){
   <div id="ap8" class="hide"><div id="stockRoot"></div></div>
   <div id="ap9" class="hide"><div id="crmAcct"></div><div id="crmRoot"></div></div>
   <div id="ap10" class="hide"><div id="orderRoot"></div></div>
-  <div id="ap12" class="hide"><div id="delRoot"></div></div>
+  <div id="ap12" class="hide"><div id="delAcct"></div><div id="delRoot"></div></div>
   ${isAdm ? `
   <div id="ap1" class="card hide">${adminUploadUI()}</div>
   <div id="ap2" class="card hide"><h2>الموظفين وحساباتهم</h2><div id="staffBox"><p class="sub">جاري التحميل…</p></div></div>
@@ -2579,9 +2591,43 @@ async function openCustomers(){
   catch (e) { CRM_ON = false; $('crmRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل قسم العملاء: ${esc(e.code || e.message)}</div>`; }
 }
 
+// حساب جهاز الدليفري (deliverydevs) — بيتعمل من هنا (أدمن)، زي حساب الكاشير وحساب متابعة العملاء
+async function delAcct(){
+  const b = $('delAcct'); if (!b) return;
+  let n = 0;
+  try { n = (await getDocs(collection(db, 'deliverydevs'))).size; }
+  catch (e) { b.innerHTML = `<p class="err">حساب الدليفري: ${esc(e.code || e.message)}${e.code === 'permission-denied' ? ' — حط قواعد Firebase الجديدة الأول' : ''}</p>`; return; }
+  b.innerHTML = n
+    ? `<div class="banner" style="margin-bottom:12px">حساب جهاز الدليفري موجود ✔ — الدخول بـ <b>delivery</b> والرقم السري بتاعه، ومبيقفلش لوحده ومفيهوش زرار خروج. لتغيير الرقم السري: Firebase Console ← Authentication.</div>`
+    : `<div class="card" style="margin-bottom:12px"><b>حساب جهاز الدليفري</b>
+        <p class="sub">حساب واحد للجهاز، اسم الدخول <b>delivery</b>. بيفتح على شاشة الدليفري بس (مفيش مرتبات ولا مبيعات)، ومبيعملش خروج.</p>
+        <label for="dvPass">الرقم السري للحساب (٦ على الأقل)</label><input id="dvPass" type="text" autocomplete="off">
+        <button class="sm" style="margin-top:10px" onclick="delAcctMake()">إنشاء الحساب</button><div class="err" id="dvMsg"></div></div>`;
+}
+let DV_APP = null;
+window.delAcctMake = async () => {
+  const pw = $('dvPass').value, m = $('dvMsg'); m.style.color = 'var(--red)';
+  if (!pw || pw.length < 6) { m.textContent = 'الرقم السري ٦ حروف أو أرقام على الأقل'; return; }
+  try {
+    if (!DV_APP) DV_APP = initializeApp(CFG, 'delAcct');
+    const a2 = getAuth(DV_APP);
+    const cr = await createUserWithEmailAndPassword(a2, `delivery@${DOMAIN}`, pw);
+    const uid = cr.user.uid; await signOut(a2);
+    await setDoc(doc(db, 'deliverydevs', uid), { username: 'delivery', at: serverTimestamp() });
+    delAcct();
+  } catch (e) {
+    m.textContent = e.code === 'auth/email-already-in-use'
+      ? `الحساب delivery@${DOMAIN} متعمل قبل كده. امسحه من Firebase Console ← Authentication وجرّب تاني.`
+      : e.code === 'auth/admin-restricted-operation'
+      ? 'التسجيل مقفول من Firebase (Prevent new sign-ups). افتحه مؤقتاً: Firebase Console ← Authentication ← Settings ← User actions ← علّم Enable create (sign-up) ← Save، وبعدين اعمل الحساب تاني، وارجع اقفله.'
+      : 'مشكلة: ' + (e.code || e.message);
+  }
+};
+
 let DEL_ON = false;
 async function openDelivery(root, role){
   if (DEL_ON) return; DEL_ON = true;
+  if (!root && ROLE === 'admin') delAcct();
   try { const m = await import('./sections/delivery.js?v=1'); await m.mountDelivery(root || $('delRoot'), role || ROLE); }
   catch (e) { DEL_ON = false; (root || $('delRoot')).innerHTML = `<div class="banner bad">مقدرتش أحمّل قسم الدليفري: ${esc(e.code || e.message)}</div>`; }
 }
