@@ -400,7 +400,7 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="buyer" class="hide"></div>
 <div id="crmdev" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-11-01-B</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-11-01-C</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -1552,12 +1552,17 @@ async function advAdmin(){
     ADV.list.sort((x, y) => x.date < y.date ? 1 : x.date > y.date ? -1 : 0);
   } catch (e) { box.innerHTML = `<p class="err">مشكلة: ${esc(e.code || e.message)}${e.code === 'permission-denied' ? ' — حط قواعد Firebase الجديدة الأول (بلوك advances)' : ''}</p>`; return; }
   // السلف اللي الكاشير صرفها من الدرج في التقفيلات — تتسجل بدوسة
+  // (1/11) من أول الشهر المختار أو من 45 يوم فاتوا (الأقدم) — علشان سلف آخر الشهر اللي فات تبان في أول الشهر الجديد
   ADV.loans = [];
-  try { (await getDocs(query(collection(db, 'closings'), where('bizDate', '>=', a), where('bizDate', '<=', b)))).forEach(d => {
+  const back = isoLocal(new Date(Date.now() - 45 * 864e5)), la = back < a ? back : a;
+  const done = new Set(ADV.list.map(x => x.src).filter(Boolean));
+  try { if (la < a) (await getDocs(query(collection(db, 'advances'), where('date', '>=', la), where('date', '<', a))))
+      .forEach(d => { const s = d.data().src; if (s) done.add(s); }); } catch (e) {}
+  try { (await getDocs(query(collection(db, 'closings'), where('bizDate', '>=', la), where('bizDate', '<=', b)))).forEach(d => {
       const c = d.data(); if (isVoid(c)) return;
       (c.expenses || []).forEach((x, i) => { if (x.type === 'سلفة لموظف') ADV.loans.push({ key: d.id + '#' + i, date: c.bizDate, desc: x.desc || '', amount: +x.amount || 0, by: c.name || '' }); }); });
   } catch (e) {}
-  const done = new Set(ADV.list.map(x => x.src).filter(Boolean));
+  ADV.loans.sort((x, y) => x.date < y.date ? 1 : -1);
   const isAdm = ROLE === 'admin';
   const per = {}; ADV.list.forEach(x => { const k = x.code; per[k] = per[k] || { name: x.name, amt: 0, n: 0 }; per[k].amt += +x.amount || 0; per[k].n++; });
   const tot = ADV.list.reduce((s, x) => s + (+x.amount || 0), 0);
