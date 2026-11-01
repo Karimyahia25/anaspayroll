@@ -12,7 +12,7 @@ const esc = t => String(t == null ? '' : t).replace(/[&<>"]/g, c => ({ '&': '&am
 const N = n => (n == null || isNaN(n)) ? '—' : Math.round(n).toLocaleString('en-US');
 const M = n => N(n) + ' ج';
 const MIN = 60000, BATCH_GAP = 5 * MIN, LATE_SINGLE = 20 * MIN, LATE_BATCH = 30 * MIN, PROMISE = 30 * MIN;
-const EMPLOYEES = ['عبد ربه', 'اسراء', 'عادل', 'ايه', 'ايمان', 'د*أنس', 'كريم', 'طارق', 'العربي', 'جمال', 'منه', 'احمد السعيد'];
+const EMPLOYEES = ['عبد ربه', 'اسراء', 'عادل', 'ايه', 'ايمان', 'د*أنس', 'كريم', 'طارق', 'العربي'];
 const ZONES = ['داخل المعمورة الشاطئ', 'خارج المعمورة'];
 const DEF_DRIVERS = ['عبدالله', 'عزوز'];
 
@@ -57,51 +57,126 @@ const orderMs = (o, b) => o.endTime ? (b ? b.eff : o.endTime - o.startTime) : nu
 function css() {
   if ($('#delCss')) return;
   const s = document.createElement('style'); s.id = 'delCss';
+  // نفس ألوان وترتيب برنامج جيميناي الأصلي (slate + emerald للداخل، indigo للخارج، أحمر للمتأخر)
   s.textContent = `
-.delwrap .dbar{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:4px 0 12px;padding:8px;border-radius:18px;background:linear-gradient(135deg,#0F1B2D,#0B6B60)}
+.delwrap{color:#1e293b;text-align:right}
+.delwrap .dbar{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:4px 0 14px;padding:4px;border-radius:16px;background:#f1f5f9;border:1px solid #e2e8f0}
 .delwrap .dbar::-webkit-scrollbar{display:none}
-.delwrap .dbar button{flex:0 0 auto;background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.18);border-radius:999px;padding:9px 15px;font-size:13.5px;font-weight:700;min-height:44px}
-.delwrap .dbar button.on{background:#FFC83D;color:#10202E;border-color:transparent}
-.delwrap .dbar .n{display:inline-block;margin-inline-start:6px;background:rgba(0,0,0,.18);border-radius:99px;padding:1px 8px;font-size:12px}
+.delwrap .dbar button{flex:1 0 auto;background:transparent;color:#475569;border:0;border-radius:12px;padding:9px 16px;font-size:14px;font-weight:700;min-height:44px;box-shadow:none}
+.delwrap .dbar button.on{background:#fff;color:#047857;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.delwrap .dbar .n{display:inline-block;margin-inline-start:6px;background:#d1fae5;color:#065f46;border-radius:99px;padding:1px 8px;font-size:12px}
+.delwrap .dlay{display:grid;gap:20px;grid-template-columns:1fr;align-items:start}
+@media(min-width:1024px){.delwrap .dlay{grid-template-columns:5fr 7fr}}
+.delwrap .dform{background:#fff;border-radius:24px;border:1px solid #e2e8f0;padding:24px;box-shadow:0 1px 2px rgba(0,0,0,.05)}
+.delwrap .dform.edit{outline:3px solid #fbbf24}
+.delwrap .dform h3{margin:0 0 16px;padding-bottom:12px;border-bottom:1px solid #e2e8f0;font-size:18px;font-weight:800;color:#1e293b}
+.delwrap .fld{margin-bottom:16px}
+.delwrap .fld>label,.delwrap .lbl{display:block;font-size:14px;font-weight:500;color:#475569;margin:0 0 4px}
+.delwrap .lbl.b{font-weight:700;color:#334155}
+.delwrap .req{color:#ef4444;font-weight:800}
+.delwrap .dform input[type=text],.delwrap .dform input[type=number],.delwrap .dform input:not([type]),.delwrap .dform select{width:100%;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:10px 12px;font-size:15px;color:#1e293b;margin:0;min-height:44px}
+.delwrap .dform input:focus,.delwrap .dform select:focus{outline:2px solid #10b981;border-color:#10b981}
+.delwrap .emp select{font-weight:700}
+.delwrap .row2{display:flex;gap:8px}
+.delwrap .row2 select{flex:1}
+.delwrap .trash{background:#fef2f2;color:#ef4444;border:0;border-radius:12px;padding:0 14px;min-height:44px;font-size:17px;box-shadow:none}
+.delwrap .lnk{background:none;border:0;color:#059669;font-size:12px;font-weight:600;padding:0;min-height:0;box-shadow:none;cursor:pointer}
+.delwrap .zones{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.delwrap .zones button{background:#f8fafc;border:1px solid #e2e8f0;color:#475569;border-radius:16px;padding:12px;text-align:right;display:flex;flex-direction:column;gap:6px;min-height:84px;box-shadow:none;font-weight:400;align-items:stretch}
+.delwrap .zones button b{display:block;font-size:14px;font-weight:900;line-height:1.3}
+.delwrap .zones button small{font-size:10px;color:#64748b;font-weight:500}
+.delwrap .zones button .ic{width:30px;height:30px;border-radius:12px;background:#e2e8f0;color:#64748b;display:flex;align-items:center;justify-content:center;font-size:15px}
+.delwrap .zones button.on.in{background:#ecfdf5;border-color:#10b981;box-shadow:0 0 0 2px rgba(52,211,153,.35);color:#022c22}
+.delwrap .zones button.on.in .ic{background:#059669;color:#fff}
+.delwrap .zones button.on.out{background:#eef2ff;border-color:#6366f1;box-shadow:0 0 0 2px rgba(129,140,248,.35);color:#1e1b4b}
+.delwrap .zones button.on.out .ic{background:#4f46e5;color:#fff}
+.delwrap .g2{display:grid;gap:12px;grid-template-columns:1fr}
+@media(min-width:640px){.delwrap .g2{grid-template-columns:1fr 1fr}}
+.delwrap .pays{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.delwrap .pay{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px;border-radius:16px;border:1px solid #e2e8f0;background:#f8fafc;color:#334155;cursor:pointer;user-select:none;margin:0}
+.delwrap .pay>span{display:flex;align-items:center;gap:8px}
+.delwrap .pay .ic{width:32px;height:32px;border-radius:12px;background:#e2e8f0;color:#64748b;display:flex;align-items:center;justify-content:center;font-size:15px;flex:none;font-style:normal}
+.delwrap .pay b{display:block;font-size:14px;line-height:1.2}
+.delwrap .pay small{font-size:10px;color:#64748b;font-weight:500}
+.delwrap .pay input{width:20px!important;height:20px;min-height:0!important;margin:0;padding:0}
+.delwrap .pay.visa.on{background:#eff6ff;border-color:#3b82f6;box-shadow:0 0 0 1px #60a5fa;color:#172554}
+.delwrap .pay.visa.on .ic{background:#2563eb;color:#fff}
+.delwrap .pay.voda.on{background:#fff1f2;border-color:#f43f5e;box-shadow:0 0 0 1px #fb7185;color:#4c0519}
+.delwrap .pay.voda.on .ic{background:#e11d48;color:#fff}
+.delwrap .go{width:100%;min-height:48px;margin-top:8px;background:#059669;color:#fff;border:0;border-radius:12px;font-size:16px;font-weight:700;box-shadow:0 10px 15px -3px rgba(167,243,208,.9)}
+.delwrap .go.ghost{background:#f1f5f9;color:#475569;box-shadow:none}
+.delwrap .lhead{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:12px;padding-bottom:8px;border-bottom:1px solid #f1f5f9;margin-bottom:16px}
+.delwrap .lhead h2{margin:0;font-size:18px;font-weight:900;color:#1e293b}
+.delwrap .pill{display:inline-block;border-radius:99px;padding:2px 10px;font-size:12px;font-weight:700;background:#d1fae5;color:#065f46;margin-inline-start:8px}
+.delwrap .pill.red{background:#fee2e2;color:#b91c1c;border:1px solid #fecaca}
+.delwrap .sndb{font-size:12px;font-weight:600;border-radius:12px;padding:6px 10px;min-height:0;border:1px solid #a7f3d0;background:#ecfdf5;color:#047857;box-shadow:none}
+.delwrap .sndb.off{background:#f1f5f9;color:#94a3b8;border-color:transparent}
+.delwrap .oc{background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:18px;margin-bottom:16px;box-shadow:0 1px 2px rgba(0,0,0,.05);display:flex;flex-direction:column;gap:12px}
+.delwrap .oc.batch,.delwrap .oc.outz{border:2px solid #c7d2fe}
+.delwrap .oc.late{background:rgba(254,242,242,.85);border:2px solid #f87171;box-shadow:0 0 0 1px #f87171,0 4px 6px rgba(254,202,202,.6)}
+.delwrap .oc .top{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px}
+.delwrap .who{display:flex;gap:12px;align-items:center}
+.delwrap .av{width:44px;height:44px;border-radius:50%;background:#d1fae5;border:2px solid #a7f3d0;display:flex;align-items:center;justify-content:center;font-size:21px;flex:none}
+.delwrap .oc.batch .av,.delwrap .oc.outz .av{background:#eef2ff;border-color:#a5b4fc}
+.delwrap .oc.late .av{background:#fee2e2;border-color:#f87171}
+.delwrap .who h4{margin:0;font-size:16px;font-weight:900;color:#1e293b;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.delwrap .oc.late .who h4{color:#450a0a}
+.delwrap .chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;align-items:center}
+.delwrap .cu{font-size:12px;color:#64748b;font-weight:500}
+.delwrap .bg{font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;border:1px solid}
+.delwrap .bg.emp{color:#065f46;background:#ecfdf5;border-color:#a7f3d0}
+.delwrap .bg.zin{color:#065f46;background:#ecfdf5;border-color:#a7f3d0}
+.delwrap .bg.zout{color:#3730a3;background:#eef2ff;border-color:#c7d2fe}
+.delwrap .bg.bat{color:#3730a3;background:#eef2ff;border-color:#c7d2fe;font-size:12px;padding:4px 10px;border-radius:12px}
+.delwrap .bg.red{background:#dc2626;color:#fff;border-color:#dc2626;font-weight:800}
+.delwrap .tms{display:flex;flex-direction:column;gap:6px;align-items:flex-end}
+.delwrap .bd{display:inline-block;padding:4px 12px;border-radius:99px;font-size:12px;font-weight:700;background:#f1f5f9;color:#334155}
+.delwrap .bd.warn{background:#fef3c7;color:#92400e;border:1px solid #fde68a}
+.delwrap .bd.out{background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe}
+.delwrap .bd.late{background:#dc2626;color:#fff}
+.delwrap .dt{display:flex;gap:8px;font-size:11px;color:#64748b;font-weight:600}
+.delwrap .dt span{background:#f1f5f9;border-radius:6px;padding:2px 8px}
+.delwrap .dgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.delwrap .dgrid>div{background:#f8fafc;border-radius:12px;padding:8px}
+.delwrap .oc.late .dgrid>div{background:rgba(254,226,226,.7);border:1px solid #fecaca}
+.delwrap .dgrid small{display:block;font-size:10px;color:#64748b;font-weight:600;margin-bottom:2px}
+.delwrap .dgrid b{font-size:14px;color:#1e293b}
+.delwrap .oc.late .dgrid b{color:#7f1d1d}
+.delwrap .pb{display:inline-flex;gap:4px;align-items:center;padding:4px 10px;border-radius:8px;font-size:12px;font-weight:900;border:1px solid;margin-inline-end:8px}
+.delwrap .pb.v{background:#dbeafe;color:#1e3a8a;border-color:#bfdbfe}
+.delwrap .pb.f{background:#ffe4e6;color:#881337;border-color:#fecdd3}
+.delwrap .note{background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:10px;font-size:12px;font-weight:600;color:#78350f}
+.delwrap .ftr{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;border-top:1px solid #f1f5f9;padding-top:12px}
+.delwrap .tot{background:#f8fafc;border-radius:12px;padding:8px 14px;text-align:center}
+.delwrap .tot small{display:block;font-size:10px;color:#64748b;font-weight:700}
+.delwrap .tot b{font-size:16px;font-weight:900;color:#047857}
+.delwrap .oc.late .tot b{color:#b91c1c}
+.delwrap .btns{display:flex;flex-wrap:wrap;gap:8px}
+.delwrap .btns button{min-height:42px;border-radius:12px;padding:8px 14px;font-size:13px;font-weight:700;box-shadow:none}
+.delwrap .btns .fin{background:#059669;color:#fff;border:0;box-shadow:0 4px 6px rgba(167,243,208,.9);flex:1 1 90px}
+.delwrap .btns .prn{background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe}
+.delwrap .btns .edt{background:#f1f5f9;color:#334155;border:1px solid #e2e8f0}
+.delwrap .btns .del{background:#f8fafc;color:#64748b;border:1px solid #e2e8f0}
 .delwrap .dk{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin-bottom:12px}
-.delwrap .dk>div{background:var(--card);border-radius:16px;padding:12px 14px;box-shadow:var(--shadow);border-inline-start:4px solid var(--green)}
-.delwrap .dk .l{font-size:12px;color:var(--muted)}.delwrap .dk .v{font-family:Alexandria,sans-serif;font-size:21px;font-weight:700}
-.delwrap .dk .bad{border-inline-start-color:#C0392B}
-.delwrap .dform{background:var(--card);border-radius:18px;padding:14px;box-shadow:var(--shadow);margin-bottom:12px}
-.delwrap .dform.edit{outline:3px solid #FFC83D}
-.delwrap .dform h3{margin:0 0 10px;font-size:16px}
-.delwrap .g2{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}
-.delwrap .seg{display:flex;gap:6px;flex-wrap:wrap}
-.delwrap .seg button,.delwrap .chip{min-height:44px;border-radius:99px;padding:8px 14px;background:var(--card);color:var(--ink);border:1px solid var(--line);font-weight:700;font-size:13.5px}
-.delwrap .seg button.on,.delwrap .chip.on{background:#1F2A44;color:#fff;border-color:#1F2A44}
-.delwrap .pay{display:flex;gap:8px;flex-wrap:wrap}
-.delwrap .pay label{display:inline-flex;gap:6px;align-items:center;min-height:44px;padding:0 12px;border:1px solid var(--line);border-radius:12px;font-weight:700;cursor:pointer}
-.delwrap .pay input{width:auto;margin:0}
-.delwrap .go{min-height:52px;font-size:16.5px;font-weight:800;border-radius:14px;margin-top:12px;width:100%}
-.delwrap .oc{background:var(--card);border-radius:18px;padding:14px;margin-bottom:10px;box-shadow:var(--shadow);border-inline-start:6px solid #0B8577}
-.delwrap .oc.late{border-inline-start-color:#C0392B;background:color-mix(in srgb,#C0392B 9%,var(--card))}
-.delwrap .oc .top{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
-.delwrap .oc h4{margin:0;font-size:16px}
-.delwrap .oc .meta{font-size:12.5px;color:var(--muted);margin-top:4px;line-height:1.8}
-.delwrap .oc .tm{font-family:Alexandria,sans-serif;font-size:26px;font-weight:700;color:#0B6B60;line-height:1}
-.delwrap .oc.late .tm{color:#C0392B}
-.delwrap .oc .tl{font-size:11px;color:var(--muted);text-align:center}
-.delwrap .tag{display:inline-block;border-radius:8px;padding:1px 8px;font-size:12px;font-weight:700;background:#EEF1F5;color:#475467;margin-inline-end:4px}
-.delwrap .tag.b{background:#E0E9FF;color:#2A4FB0}.delwrap .tag.o{background:#FFEDD5;color:#C2410C}.delwrap .tag.r{background:#FDE2E1;color:#A32E1E}.delwrap .tag.g{background:#DCF5E3;color:#1B7F3B}
-.delwrap .acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
-.delwrap .acts button{min-height:44px;border-radius:12px;padding:6px 14px;font-weight:700}
-.delwrap .acts .fin{background:#1B7F3B;color:#fff;flex:1 1 140px;font-size:15px}
-.delwrap .tw{overflow-x:auto;background:var(--card);border-radius:16px;box-shadow:var(--shadow);margin-bottom:12px}
+.delwrap .dk>div{background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:12px 14px;border-inline-start:4px solid #10b981}
+.delwrap .dk .l{font-size:12px;color:#64748b}.delwrap .dk .v{font-size:21px;font-weight:800}
+.delwrap .dk .bad{border-inline-start-color:#dc2626}
+.delwrap .chip,.delwrap .seg button{min-height:40px;border-radius:99px;padding:6px 14px;background:#fff;color:#334155;border:1px solid #e2e8f0;font-weight:700;font-size:13px;box-shadow:none}
+.delwrap .chip.on{background:#059669;color:#fff;border-color:#059669}
+.delwrap .tag{display:inline-block;border-radius:8px;padding:1px 8px;font-size:12px;font-weight:700;background:#f1f5f9;color:#475569;margin-inline-end:4px}
+.delwrap .tag.b{background:#eef2ff;color:#3730a3}.delwrap .tag.o{background:#eef2ff;color:#4338ca}
+.delwrap .tw{overflow-x:auto;background:#fff;border:1px solid #e2e8f0;border-radius:16px;margin-bottom:12px}
 .delwrap table{width:100%;border-collapse:collapse;font-size:13.5px}
-.delwrap th,.delwrap td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:center;white-space:nowrap}
-.delwrap th{background:color-mix(in srgb,var(--green) 10%,var(--card));font-size:12.5px}
+.delwrap th,.delwrap td{padding:9px 10px;border-bottom:1px solid #f1f5f9;text-align:center;white-space:nowrap}
+.delwrap th{background:#f8fafc;font-size:12.5px;color:#475569}
 .delwrap td.l,.delwrap th.l{text-align:start}
-.delwrap tr.late td{background:color-mix(in srgb,#C0392B 8%,var(--card))}
+.delwrap tr.late td{background:#fef2f2}
 .delwrap .ctl{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
 .delwrap .ctl input,.delwrap .ctl select{width:auto;min-width:130px}
-.delwrap .empty{text-align:center;color:var(--muted);padding:26px 10px}
-.delwrap h3.sec{margin:16px 0 8px;font-size:16px}
-.delwrap .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#0F1B2D;color:#fff;padding:10px 18px;border-radius:12px;z-index:80;font-size:14px}
+.delwrap .ctl.chips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}.delwrap .ctl.chips>*{flex:0 0 auto}
+.delwrap .empty{text-align:center;color:#64748b;padding:26px 10px;background:#fff;border:1px dashed #cbd5e1;border-radius:16px}
+.delwrap h3.sec{margin:16px 0 8px;font-size:16px;font-weight:800}
+.delwrap .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#0f172a;color:#fff;padding:10px 18px;border-radius:12px;z-index:80;font-size:14px}
 `;
   document.head.appendChild(s);
 }
@@ -163,49 +238,63 @@ function render() {
   if (seeStats()) tabs.push(['stats', '📊 الطيارين'], ['log', '📋 السجل']);
   if (!tabs.some(t => t[0] === ST.view)) ST.view = 'live';
   ROOT.innerHTML = `<div class="dbar">${tabs.map(t => `<button class="${ST.view === t[0] ? 'on' : ''}" data-v="${t[0]}">${t[1]}${t[2] != null ? `<span class="n">${t[2]}</span>` : ''}</button>`).join('')}
-    <button data-mute title="صوت التنبيه">${ST.mute ? '🔕 الصوت مقفول' : '🔔 الصوت شغال'}</button></div>
+</div>
     ${!READY ? '<p class="sub">جاري التحميل…</p>' : ST.view === 'live' ? liveHtml(act) : ST.view === 'stats' ? statsHtml() : logHtml()}`;
   ROOT.querySelectorAll('[data-v]').forEach(b => b.onclick = () => { ST.view = b.dataset.v; EDIT = null; render(); });
-  ROOT.querySelector('[data-mute]').onclick = () => { ST.mute = !ST.mute; render(); };
+  ROOT.querySelectorAll('[data-mute]').forEach(b => b.onclick = () => { ST.mute = !ST.mute; render(); });
   bind();
 }
 
 function formHtml() {
   const e = EDIT ? ORDERS.find(o => o.id === EDIT) : null, drs = drvList();
-  const zone = e ? (e.zone || ZONES[0]) : (ST.zone_in || ZONES[0]);
+  const zone = e ? (e.zone || ZONES[0]) : ZONES[0];
   const emp = e ? e.employeeName : (localStorage.getItem('del_emp') || '');
-  return `<div class="dform ${e ? 'edit' : ''}" id="dForm"><h3>${e ? '✏️ تعديل الأوردر' : '➕ أوردر جديد'}</h3>
-  <div class="g2">
-    <div><label>الموظف اللي سجّل الأوردر *</label><select id="dEmp"><option value="">— اختار —</option>${EMPLOYEES.map(x => `<option ${x === emp ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></div>
-    <div><label>الطيار *</label><select id="dDrv">${drs.map(x => `<option ${e && e.driverName === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
-      ${isAdm() ? `<div class="seg" style="margin-top:6px"><button type="button" data-adddrv>+ طيار</button><button type="button" data-deldrv>حذف الطيار ده</button></div>` : ''}</div>
-    <div><label>اسم العميل / الرقم</label><input id="dCus" value="${esc(e ? e.customerName : '')}"></div>
-    <div><label>قيمة الأوردر (ج)</label><input id="dVal" type="number" inputmode="decimal" min="0" value="${e ? e.orderValue : ''}"></div>
-    <div><label>الفكة اللي معاه (ج)</label><input id="dChg" type="number" inputmode="decimal" min="0" value="${e ? e.changeGiven : ''}"></div>
-  </div>
-  <label style="margin-top:10px">المنطقة *</label>
-  <div class="seg" id="dZone">${ZONES.map(z => `<button type="button" data-z="${esc(z)}" class="${z === zone ? 'on' : ''}">${esc(z)}</button>`).join('')}</div>
-  <label style="margin-top:10px">الدفع</label>
-  <div class="pay"><label><input type="radio" name="dPay" value="cash" ${!e || (!e.isVisa && !e.isVodafoneCash) ? 'checked' : ''}> كاش</label>
-    <label><input type="radio" name="dPay" value="visa" ${e && e.isVisa ? 'checked' : ''}> فيزا</label>
-    <label><input type="radio" name="dPay" value="voda" ${e && e.isVodafoneCash ? 'checked' : ''}> فودافون كاش</label></div>
-  <label style="margin-top:10px">ملاحظات</label><input id="dNote" value="${esc(e ? e.notes : '')}">
-  <button class="go" id="dGo">${e ? 'حفظ التعديل' : '🛵 ابدأ الأوردر'}</button>
-  ${e ? '<button class="ghost go" id="dCancel" style="margin-top:6px">إلغاء التعديل</button>' : ''}<div class="err" id="dErr"></div></div>`;
+  const dsel = e ? e.driverName : '';
+  return `<div class="dform ${e ? 'edit' : ''}" id="dForm"><h3>${e ? '✏️ تعديل الأوردر' : '🚀 تسجيل طلب جديد'}</h3>
+  <div class="fld emp"><label>الموظف المسئول <span class="req">* (إجباري)</span></label>
+    <select id="dEmp"><option value="">-- اختر الموظف المسئول (إجباري) --</option>${EMPLOYEES.map(x => `<option ${x === emp ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></div>
+  <div class="fld"><div style="display:flex;justify-content:space-between;align-items:center"><label style="margin:0">اسم المندوب</label>${isAdm() ? '<button type="button" class="lnk" data-adddrv>+ إضافة مندوب جديد</button>' : ''}</div>
+    <div class="row2"><select id="dDrv">${drs.length ? '' : '<option value="">لا يوجد مناديب مسجلين</option>'}${drs.map(x => `<option ${dsel === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
+      ${isAdm() ? '<button type="button" class="trash" data-deldrv title="حذف المندوب">🗑</button>' : ''}</div></div>
+  <div class="fld"><label>اسم العميل (اختياري)</label><input id="dCus" placeholder="مثال: محمد أحمد" value="${esc(e ? e.customerName : '')}"></div>
+  <div class="fld"><label class="lbl b">المنطقة والنطاق <span class="req">* (إجباري)</span></label>
+    <div class="zones" id="dZone">
+      <button type="button" data-z="${ZONES[0]}" class="in ${zone === ZONES[0] ? 'on' : ''}"><span class="ic">📍</span><span><b>داخل المعمورة الشاطئ</b><small>نطاق المعمورة الداخلي</small></span></button>
+      <button type="button" data-z="${ZONES[1]}" class="out ${zone === ZONES[1] ? 'on' : ''}"><span class="ic">🧭</span><span><b>خارج المعمورة</b><small>خارج نطاق المعمورة</small></span></button></div></div>
+  <div class="fld g2"><div><label class="lbl">قيمة الطلب</label><input id="dVal" type="number" inputmode="decimal" min="0" step="0.5" placeholder="0.00" value="${e ? e.orderValue : ''}"></div>
+    <div><label class="lbl">فكة إضافية للطلب</label><input id="dChg" type="number" inputmode="decimal" min="0" step="0.5" placeholder="0.00" value="${e && e.changeGiven ? e.changeGiven : ''}"></div></div>
+  <div class="fld"><label class="lbl">طريقة الدفع الخاصة بالطلب</label><div class="pays">
+    <label class="pay visa ${e && e.isVisa ? 'on' : ''}"><span><i class="ic">💳</i><span><b>فيزا</b><small>دفع بالفيزا</small></span></span><input type="checkbox" id="dVisa" ${e && e.isVisa ? 'checked' : ''}></label>
+    <label class="pay voda ${e && e.isVodafoneCash ? 'on' : ''}"><span><i class="ic">📱</i><span><b>فودافون كاش</b><small>محفظة إلكترونية</small></span></span><input type="checkbox" id="dVoda" ${e && e.isVodafoneCash ? 'checked' : ''}></label></div></div>
+  <div class="fld"><label>ملاحظات (للتذكرة)</label><input id="dNote" placeholder="مثال: تسليم عند الباب الخلفي..." value="${esc(e ? e.notes : '')}"></div>
+  <button class="go" id="dGo">${e ? 'حفظ التعديل' : 'بدء التوصيل'}</button>
+  ${e ? '<button class="go ghost" id="dCancel">إلغاء التعديل</button>' : ''}<div class="err" id="dErr"></div></div>`;
 }
 
 function liveHtml(act) {
   const now = Date.now(), bm = batchMap(ORDERS.filter(o => now - o.startTime < 36 * 3600e3), now);
+  const lateN = act.filter(o => { const b = bm.get(o.id) || { th: LATE_SINGLE, start: o.startTime }; return o.zone !== 'خارج المعمورة' && now - b.start >= b.th; }).length;
   const cards = act.map(o => {
-    const b = bm.get(o.id) || { th: LATE_SINGLE, start: o.startTime }, late = now - b.start >= b.th;
-    return `<div class="oc ${late ? 'late' : ''}" data-id="${o.id}" data-start="${o.startTime}" data-bs="${b.start}" data-th="${b.th}">
-      <div class="top"><div><h4>${esc(nm(o.driverName))} ← ${esc(o.customerName || 'عميل')}</h4>
-        <div class="meta"><span class="tag ${o.zone === 'خارج المعمورة' ? 'o' : ''}">${esc(o.zone || ZONES[0])}</span>${b.batch ? `<span class="tag b">طلعة مجمعة ${b.idx}/${b.size}</span>` : ''}${o.isVisa ? '<span class="tag">فيزا</span>' : ''}${o.isVodafoneCash ? '<span class="tag">فودافون كاش</span>' : ''}<br>
-        الأوردر <b>${M(o.orderValue)}</b>${o.changeGiven ? ` · فكة ${M(o.changeGiven)}` : ''} · خرج ${timeStr(o.startTime)}${o.employeeName ? ` · سجّله ${esc(nm(o.employeeName))}` : ''}${o.notes ? `<br>📝 ${esc(o.notes)}` : ''}</div></div>
-        <div><div class="tm" data-tm>${dur(now - o.startTime)}</div><div class="tl">${late ? 'متأخر!' : 'من خروجه'}</div></div></div>
-      ${canWrite() ? `<div class="acts"><button class="fin" data-fin="${o.id}">✅ تم التسليم</button><button class="ghost" data-rc="${o.id}">🧾 إيصال</button><button class="ghost" data-ed="${o.id}">✏️ تعديل</button>${isAdm() ? `<button class="ghost" data-rm="${o.id}">🗑️</button>` : ''}</div>` : ''}</div>`;
+    const b = bm.get(o.id) || { th: LATE_SINGLE, start: o.startTime, batch: false, size: 1, idx: 1 }, out = o.zone === 'خارج المعمورة';
+    const late = !out && now - b.start >= b.th, min = Math.floor((now - o.startTime) / MIN), warn = min >= (b.batch ? 25 : 15);
+    const cls = late ? 'late' : out ? 'outz' : b.batch ? 'batch' : '';
+    return `<div class="oc ${cls}" data-id="${o.id}" data-start="${o.startTime}" data-bs="${b.start}" data-th="${b.th}" data-out="${out ? 1 : 0}" data-batch="${b.batch ? 1 : 0}">
+      ${b.batch ? `<div><span class="bg bat">🔗 طلعة مجمعة (${b.size} أوردرات معاً) · أوردر #${b.idx} من ${b.size}</span> <span class="cu">${out ? 'خارج المعمورة (بدون إنذار)' : 'مهلة الإنذار: 30 دقيقة'}</span></div>` : ''}
+      <div class="top"><div class="who"><div class="av">🛵</div><div>
+        <h4>${esc(nm(o.driverName))}${late ? `<span class="bg red" data-lt>⚠ متأخر (+${b.th / MIN} د)</span>` : '<span data-lt></span>'}</h4>
+        <div class="chips">${o.customerName ? `<span class="cu">👤 ${esc(o.customerName)}</span>` : ''}${o.employeeName ? `<span class="bg emp">الموظف: ${esc(nm(o.employeeName))}</span>` : ''}<span class="bg ${out ? 'zout' : 'zin'}">📍 ${esc(o.zone || ZONES[0])}</span></div></div></div>
+        <div class="tms"><span class="bd ${late ? 'late' : out ? 'out' : warn ? 'warn' : ''}" data-bd>🕒 منذ ${min} د${out ? ' · بدون إنذار' : ''}</span>
+          <div class="dt"><span>📅 ${dateStr(o.startTime)}</span><span>خروج: ${timeStr(o.startTime)}</span></div></div></div>
+      <div class="dgrid"><div><small>قيمة الطلب</small><b>${M(o.orderValue)}</b></div><div><small>فكة للطلب</small><b>${M(o.changeGiven || 0)}</b></div></div>
+      ${(o.isVisa || o.isVodafoneCash) ? `<div>${o.isVisa ? '<span class="pb v">💳 دفع بالفيزا</span>' : ''}${o.isVodafoneCash ? '<span class="pb f">📱 فودافون كاش</span>' : ''}</div>` : ''}
+      ${o.notes ? `<div class="note">ملاحظة: ${esc(o.notes)}</div>` : ''}
+      <div class="ftr"><div class="tot"><small>المبلغ الإجمالي المطلوب</small><b>${M((o.orderValue || 0) + (o.changeGiven || 0))}</b></div>
+      ${canWrite() ? `<div class="btns"><button class="fin" data-fin="${o.id}">✔ تسليم</button><button class="prn" data-rc="${o.id}">🖨 طباعة ريسيت</button><button class="edt" data-ed="${o.id}">✏️ تعديل</button>${isAdm() ? `<button class="del" data-rm="${o.id}">🗑 حذف</button>` : ''}</div>` : ''}</div></div>`;
   }).join('');
-  return `${canWrite() ? formHtml() : ''}<h3 class="sec">الأوردرات الشغالة دلوقتي</h3>${cards || '<div class="empty">مفيش أوردرات شغالة دلوقتي</div>'}`;
+  return `<div class="dlay">${canWrite() ? `<div>${formHtml()}</div>` : ''}
+    <div><div class="lhead"><div><h2 style="display:inline">الأوردرات النشطة حالياً</h2><span class="pill">${act.length} جاري توصيلها</span>${lateN ? `<span class="pill red">⚠ ${lateN} متأخر (تجاوز مهلة التوصيل)</span>` : ''}</div>
+      <button class="sndb ${ST.mute ? 'off' : ''}" data-mute>${ST.mute ? '🔇 الصوت مكتوم' : '🔊 الصوت مفعل'}</button></div>
+      ${cards || '<div class="empty">لا توجد طلبات نشطة حالياً</div>'}</div></div>`;
 }
 
 function statsHtml() {
@@ -254,6 +343,7 @@ function bind() {
   ROOT.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => remove(b.dataset.rm));
   const f = $('#dForm', ROOT); if (!f) return;
   f.querySelectorAll('[data-z]').forEach(b => b.onclick = () => { f.querySelectorAll('[data-z]').forEach(x => x.classList.remove('on')); b.classList.add('on'); });
+  f.querySelectorAll('.pay input').forEach(i => i.onchange = () => i.closest('.pay').classList.toggle('on', i.checked));
   $('#dGo', f).onclick = save;
   const c = $('#dCancel', f); if (c) c.onclick = () => { EDIT = null; render(); };
   const ad = $('[data-adddrv]', f); if (ad) ad.onclick = addDrv;
@@ -262,7 +352,7 @@ function bind() {
 
 async function save() {
   const err = $('#dErr'), g = id => $('#' + id, ROOT), emp = g('dEmp').value, drv = g('dDrv').value;
-  const z = ROOT.querySelector('[data-z].on'), pay = ROOT.querySelector('[name=dPay]:checked').value;
+  const z = ROOT.querySelector('[data-z].on');
   err.textContent = '';
   if (!emp) { err.textContent = 'اختار الموظف اللي سجّل الأوردر'; return; }
   if (!drv) { err.textContent = 'مفيش طيار — ضيف طيار الأول'; return; }
@@ -270,7 +360,7 @@ async function save() {
   const val = parseFloat(g('dVal').value) || 0, chg = parseFloat(g('dChg').value) || 0;
   if (val < 0 || val >= 100000 || chg < 0) { err.textContent = 'راجع القيمة'; return; }
   const data = { driverName: drv, customerName: g('dCus').value.trim(), employeeName: emp, zone: z.dataset.z, orderValue: val, changeGiven: chg,
-    isVisa: pay === 'visa', isVodafoneCash: pay === 'voda', notes: g('dNote').value.trim() };
+    isVisa: g('dVisa').checked, isVodafoneCash: g('dVoda').checked, notes: g('dNote').value.trim() };
   try {
     localStorage.setItem('del_emp', emp);
     if (EDIT) { await updateDoc(doc(DB, 'deliv_orders', EDIT), data); EDIT = null; toast('اتعدّل ✔'); }
@@ -329,9 +419,13 @@ function exportXl() {
 function tick() {
   const now = Date.now();
   ROOT.querySelectorAll('.oc[data-start]').forEach(c => {
-    const late = now - +c.dataset.bs >= +c.dataset.th;
-    const t = c.querySelector('[data-tm]'); if (t) t.textContent = dur(now - +c.dataset.start);
-    if (late !== c.classList.contains('late')) { c.classList.toggle('late', late); const l = c.querySelector('.tl'); if (l) l.textContent = late ? 'متأخر!' : 'من خروجه'; }
+    const out = c.dataset.out === '1', min = Math.floor((now - +c.dataset.start) / MIN);
+    const late = !out && now - +c.dataset.bs >= +c.dataset.th, warn = min >= (c.dataset.batch === '1' ? 25 : 15);
+    const bd = c.querySelector('[data-bd]'); if (bd) { bd.textContent = `🕒 منذ ${min} د${out ? ' · بدون إنذار' : ''}`; bd.className = 'bd ' + (late ? 'late' : out ? 'out' : warn ? 'warn' : ''); }
+    if (late !== c.classList.contains('late')) {
+      c.classList.toggle('late', late);
+      const lt = c.querySelector('[data-lt]'); if (lt) { lt.className = late ? 'bg red' : ''; lt.textContent = late ? `⚠ متأخر (+${+c.dataset.th / MIN} د)` : ''; }
+    }
     if (late && !ALARMED.has(c.dataset.id)) { ALARMED.add(c.dataset.id); beep(1200, 4); }
   });
 }
