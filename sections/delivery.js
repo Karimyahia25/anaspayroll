@@ -15,6 +15,9 @@ const MIN = 60000, BATCH_GAP = 5 * MIN, LATE_SINGLE = 20 * MIN, LATE_BATCH = 30 
 const EMPLOYEES = ['عبد ربه', 'اسراء', 'عادل', 'ايه', 'ايمان', 'د*أنس', 'كريم', 'طارق', 'العربي'];
 const ZONES = ['داخل المعمورة الشاطئ', 'خارج المعمورة'];
 const DEF_DRIVERS = ['عبدالله', 'عزوز'];
+const COMM_OUT = 5;   // (2/11، طلبه) عمولة الدليفري على كل أوردر اتسلّم خارج المعمورة
+const isOut = o => o.zone === 'خارج المعمورة';
+const commOf = o => isOut(o) ? COMM_OUT : 0;
 
 const dayKey = ts => new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo' }).format(new Date(ts));
 const timeStr = ts => ts ? new Intl.DateTimeFormat('ar-EG', { timeZone: 'Africa/Cairo', hour: 'numeric', minute: '2-digit' }).format(new Date(ts)) : '—';
@@ -24,7 +27,8 @@ const durMin = ms => (ms == null || isNaN(ms)) ? '—' : Math.round(ms / MIN) + 
 const nm = n => String(n || '').replace(/\*/g, '').trim();
 
 let ROOT, ROLE, DB, UID, ORDERS = [], DRIVERS = [], READY = 0, BM = new Map(), EDIT = null, UNSUB = [], TICK = null, REFRESH = null;
-let ST = { view: 'live', period: 'today', from: '', to: '', driver: '', zone: '', mute: false, shown: 60 };
+let DR = {};   // مسودة الفورم (علشان التحديث التلقائي ميمسحش اللي اتكتب)
+let ST = { cday: '', view: 'live', period: 'today', from: '', to: '', driver: '', zone: '', mute: false, shown: 60 };
 const ALARMED = new Set();
 
 const canWrite = () => ROLE === 'admin' || ROLE === 'cashier';
@@ -82,14 +86,19 @@ function css() {
 .delwrap .trash{background:#fef2f2;color:#ef4444;border:0;border-radius:12px;padding:0 14px;min-height:44px;font-size:17px;box-shadow:none}
 .delwrap .lnk{background:none;border:0;color:#059669;font-size:12px;font-weight:600;padding:0;min-height:0;box-shadow:none;cursor:pointer}
 .delwrap .zones{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.delwrap .zones button{background:#f8fafc;border:1px solid #e2e8f0;color:#475569;border-radius:16px;padding:12px;text-align:right;display:flex;flex-direction:column;gap:6px;min-height:84px;box-shadow:none;font-weight:400;align-items:stretch}
-.delwrap .zones button b{display:block;font-size:14px;font-weight:900;line-height:1.3}
-.delwrap .zones button small{font-size:10px;color:#64748b;font-weight:500}
-.delwrap .zones button .ic{width:30px;height:30px;border-radius:12px;background:#e2e8f0;color:#64748b;display:flex;align-items:center;justify-content:center;font-size:15px}
-.delwrap .zones button.on.in{background:#ecfdf5;border-color:#10b981;box-shadow:0 0 0 2px rgba(52,211,153,.35);color:#022c22}
-.delwrap .zones button.on.in .ic{background:#059669;color:#fff}
-.delwrap .zones button.on.out{background:#eef2ff;border-color:#6366f1;box-shadow:0 0 0 2px rgba(129,140,248,.35);color:#1e1b4b}
-.delwrap .zones button.on.out .ic{background:#4f46e5;color:#fff}
+.delwrap .zones.miss button{box-shadow:0 0 0 3px #fca5a5}
+.delwrap .zones button{border-radius:16px;padding:14px 12px;text-align:right;display:flex;flex-direction:column;gap:8px;min-height:104px;font-weight:400;align-items:stretch;border-width:2px;border-style:solid;box-shadow:none}
+.delwrap .zones button b{display:block;font-size:17px;font-weight:900;line-height:1.3}
+.delwrap .zones button small{font-size:13px;font-weight:700}
+.delwrap .zones button .ic{width:34px;height:34px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:17px}
+.delwrap .zones button.in{background:#ecfdf5;border-color:#34d399;color:#064e3b}
+.delwrap .zones button.in small{color:#047857}.delwrap .zones button.in .ic{background:#a7f3d0}
+.delwrap .zones button.out{background:#eef2ff;border-color:#818cf8;color:#312e81}
+.delwrap .zones button.out small{color:#4338ca}.delwrap .zones button.out .ic{background:#c7d2fe}
+.delwrap .zones button.on.in{background:#059669;border-color:#047857;color:#fff;box-shadow:0 4px 10px rgba(5,150,105,.35)}
+.delwrap .zones button.on.in small{color:#d1fae5}.delwrap .zones button.on.in .ic{background:#fff}
+.delwrap .zones button.on.out{background:#4f46e5;border-color:#3730a3;color:#fff;box-shadow:0 4px 10px rgba(79,70,229,.35)}
+.delwrap .zones button.on.out small{color:#e0e7ff}.delwrap .zones button.on.out .ic{background:#fff}
 .delwrap .g2{display:grid;gap:12px;grid-template-columns:1fr}
 @media(min-width:640px){.delwrap .g2{grid-template-columns:1fr 1fr}}
 .delwrap .pays{display:grid;grid-template-columns:1fr 1fr;gap:12px}
@@ -112,7 +121,8 @@ function css() {
 .delwrap .sndb{font-size:12px;font-weight:600;border-radius:12px;padding:6px 10px;min-height:0;border:1px solid #a7f3d0;background:#ecfdf5;color:#047857;box-shadow:none}
 .delwrap .sndb.off{background:#f1f5f9;color:#94a3b8;border-color:transparent}
 .delwrap .oc{background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:18px;margin-bottom:16px;box-shadow:0 1px 2px rgba(0,0,0,.05);display:flex;flex-direction:column;gap:12px}
-.delwrap .oc.batch,.delwrap .oc.outz{border:2px solid #c7d2fe}
+.delwrap .oc.batch{border:2px solid #c7d2fe}
+.delwrap .oc.outz{border:2px solid #818cf8}
 .delwrap .oc.late{background:rgba(254,242,242,.85);border:2px solid #f87171;box-shadow:0 0 0 1px #f87171,0 4px 6px rgba(254,202,202,.6)}
 .delwrap .oc .top{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px}
 .delwrap .who{display:flex;gap:12px;align-items:center}
@@ -125,8 +135,9 @@ function css() {
 .delwrap .cu{font-size:12px;color:#64748b;font-weight:500}
 .delwrap .bg{font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;border:1px solid}
 .delwrap .bg.emp{color:#065f46;background:#ecfdf5;border-color:#a7f3d0}
-.delwrap .bg.zin{color:#065f46;background:#ecfdf5;border-color:#a7f3d0}
-.delwrap .bg.zout{color:#3730a3;background:#eef2ff;border-color:#c7d2fe}
+.delwrap .bg.zin{color:#fff;background:#059669;border-color:#047857;font-size:12.5px;padding:3px 10px;font-weight:800}
+.delwrap .bg.zout{color:#fff;background:#4f46e5;border-color:#3730a3;font-size:12.5px;padding:3px 10px;font-weight:800}
+.delwrap .bg.cm{color:#78350f;background:#fef3c7;border-color:#fcd34d;font-size:12.5px;padding:3px 10px;font-weight:800}
 .delwrap .bg.bat{color:#3730a3;background:#eef2ff;border-color:#c7d2fe;font-size:12px;padding:4px 10px;border-radius:12px}
 .delwrap .bg.red{background:#dc2626;color:#fff;border-color:#dc2626;font-weight:800}
 .delwrap .tms{display:flex;flex-direction:column;gap:6px;align-items:flex-end}
@@ -164,7 +175,13 @@ function css() {
 .delwrap .chip,.delwrap .seg button{min-height:40px;border-radius:99px;padding:6px 14px;background:#fff;color:#334155;border:1px solid #e2e8f0;font-weight:700;font-size:13px;box-shadow:none}
 .delwrap .chip.on{background:#059669;color:#fff;border-color:#059669}
 .delwrap .tag{display:inline-block;border-radius:8px;padding:1px 8px;font-size:12px;font-weight:700;background:#f1f5f9;color:#475569;margin-inline-end:4px}
-.delwrap .tag.b{background:#eef2ff;color:#3730a3}.delwrap .tag.o{background:#eef2ff;color:#4338ca}
+.delwrap .tag.b{background:#eef2ff;color:#3730a3}.delwrap .tag.o{background:#4f46e5;color:#fff}.delwrap .tag.i{background:#059669;color:#fff}
+.delwrap .cmm{background:#fff;border:1px solid #fcd34d;border-radius:20px;padding:18px;margin-top:20px;box-shadow:0 1px 2px rgba(0,0,0,.05)}
+.delwrap .cmm h2{margin:0;font-size:18px;font-weight:900}
+.delwrap .cmm .cd{display:flex;gap:8px;align-items:center;font-size:13px;font-weight:700;color:#475569}
+.delwrap .cmm .cd input{width:auto;min-height:40px}
+.delwrap .cmm td b{color:#b45309;font-size:16px}
+.delwrap .cmm .hint{font-size:12px;color:#64748b;margin:8px 0 0}
 .delwrap .tw{overflow-x:auto;background:#fff;border:1px solid #e2e8f0;border-radius:16px;margin-bottom:12px}
 .delwrap table{width:100%;border-collapse:collapse;font-size:13.5px}
 .delwrap th,.delwrap td{padding:9px 10px;border-bottom:1px solid #f1f5f9;text-align:center;white-space:nowrap}
@@ -247,26 +264,25 @@ function render() {
 
 function formHtml() {
   const e = EDIT ? ORDERS.find(o => o.id === EDIT) : null, drs = drvList();
-  const zone = e ? (e.zone || ZONES[0]) : ZONES[0];
-  const emp = e ? e.employeeName : (localStorage.getItem('del_emp') || '');
-  const dsel = e ? e.driverName : '';
+  const d = e ? { emp: e.employeeName || '', drv: e.driverName, cus: e.customerName || '', zone: e.zone || '', val: e.orderValue, chg: e.changeGiven || '', visa: !!e.isVisa, voda: !!e.isVodafoneCash, note: e.notes || '' }
+    : { emp: DR.emp !== undefined ? DR.emp : (localStorage.getItem('del_emp') || ''), drv: DR.drv || '', cus: DR.cus || '', zone: DR.zone || '', val: DR.val || '', chg: DR.chg || '', visa: !!DR.visa, voda: !!DR.voda, note: DR.note || '' };
   return `<div class="dform ${e ? 'edit' : ''}" id="dForm"><h3>${e ? '✏️ تعديل الأوردر' : '🚀 تسجيل طلب جديد'}</h3>
   <div class="fld emp"><label>الموظف المسئول <span class="req">* (إجباري)</span></label>
-    <select id="dEmp"><option value="">-- اختر الموظف المسئول (إجباري) --</option>${EMPLOYEES.map(x => `<option ${x === emp ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></div>
+    <select id="dEmp"><option value="">-- اختر الموظف المسئول (إجباري) --</option>${EMPLOYEES.map(x => `<option ${x === d.emp ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></div>
   <div class="fld"><div style="display:flex;justify-content:space-between;align-items:center"><label style="margin:0">اسم المندوب</label>${isAdm() ? '<button type="button" class="lnk" data-adddrv>+ إضافة مندوب جديد</button>' : ''}</div>
-    <div class="row2"><select id="dDrv">${drs.length ? '' : '<option value="">لا يوجد مناديب مسجلين</option>'}${drs.map(x => `<option ${dsel === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
+    <div class="row2"><select id="dDrv">${drs.length ? '' : '<option value="">لا يوجد مناديب مسجلين</option>'}${drs.map(x => `<option ${d.drv === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
       ${isAdm() ? '<button type="button" class="trash" data-deldrv title="حذف المندوب">🗑</button>' : ''}</div></div>
-  <div class="fld"><label>اسم العميل (اختياري)</label><input id="dCus" placeholder="مثال: محمد أحمد" value="${esc(e ? e.customerName : '')}"></div>
-  <div class="fld"><label class="lbl b">المنطقة والنطاق <span class="req">* (إجباري)</span></label>
+  <div class="fld"><label>اسم العميل (اختياري)</label><input id="dCus" placeholder="مثال: محمد أحمد" value="${esc(d.cus)}"></div>
+  <div class="fld"><label class="lbl b">المنطقة والنطاق <span class="req">* (إجباري — لازم تختار واحدة)</span></label>
     <div class="zones" id="dZone">
-      <button type="button" data-z="${ZONES[0]}" class="in ${zone === ZONES[0] ? 'on' : ''}"><span class="ic">📍</span><span><b>داخل المعمورة الشاطئ</b><small>نطاق المعمورة الداخلي</small></span></button>
-      <button type="button" data-z="${ZONES[1]}" class="out ${zone === ZONES[1] ? 'on' : ''}"><span class="ic">🧭</span><span><b>خارج المعمورة</b><small>خارج نطاق المعمورة</small></span></button></div></div>
-  <div class="fld g2"><div><label class="lbl">قيمة الطلب</label><input id="dVal" type="number" inputmode="decimal" min="0" step="0.5" placeholder="0.00" value="${e ? e.orderValue : ''}"></div>
-    <div><label class="lbl">فكة إضافية للطلب</label><input id="dChg" type="number" inputmode="decimal" min="0" step="0.5" placeholder="0.00" value="${e && e.changeGiven ? e.changeGiven : ''}"></div></div>
+      <button type="button" data-z="${ZONES[0]}" class="in ${d.zone === ZONES[0] ? 'on' : ''}"><span class="ic">📍</span><span><b>داخل المعمورة الشاطئ</b><small>من غير عمولة</small></span></button>
+      <button type="button" data-z="${ZONES[1]}" class="out ${d.zone === ZONES[1] ? 'on' : ''}"><span class="ic">🧭</span><span><b>خارج المعمورة</b><small>عمولة الدليفري ${COMM_OUT} ج</small></span></button></div></div>
+  <div class="fld g2"><div><label class="lbl">قيمة الطلب</label><input id="dVal" type="number" inputmode="decimal" min="0" step="0.5" placeholder="0.00" value="${d.val}"></div>
+    <div><label class="lbl">فكة إضافية للطلب</label><input id="dChg" type="number" inputmode="decimal" min="0" step="0.5" placeholder="0.00" value="${d.chg}"></div></div>
   <div class="fld"><label class="lbl">طريقة الدفع الخاصة بالطلب</label><div class="pays">
-    <label class="pay visa ${e && e.isVisa ? 'on' : ''}"><span><i class="ic">💳</i><span><b>فيزا</b><small>دفع بالفيزا</small></span></span><input type="checkbox" id="dVisa" ${e && e.isVisa ? 'checked' : ''}></label>
-    <label class="pay voda ${e && e.isVodafoneCash ? 'on' : ''}"><span><i class="ic">📱</i><span><b>فودافون كاش</b><small>محفظة إلكترونية</small></span></span><input type="checkbox" id="dVoda" ${e && e.isVodafoneCash ? 'checked' : ''}></label></div></div>
-  <div class="fld"><label>ملاحظات (للتذكرة)</label><input id="dNote" placeholder="مثال: تسليم عند الباب الخلفي..." value="${esc(e ? e.notes : '')}"></div>
+    <label class="pay visa ${d.visa ? 'on' : ''}"><span><i class="ic">💳</i><span><b>فيزا</b><small>دفع بالفيزا</small></span></span><input type="checkbox" id="dVisa" ${d.visa ? 'checked' : ''}></label>
+    <label class="pay voda ${d.voda ? 'on' : ''}"><span><i class="ic">📱</i><span><b>فودافون كاش</b><small>محفظة إلكترونية</small></span></span><input type="checkbox" id="dVoda" ${d.voda ? 'checked' : ''}></label></div></div>
+  <div class="fld"><label>ملاحظات (للتذكرة)</label><input id="dNote" placeholder="مثال: تسليم عند الباب الخلفي..." value="${esc(d.note)}"></div>
   <button class="go" id="dGo">${e ? 'حفظ التعديل' : 'بدء التوصيل'}</button>
   ${e ? '<button class="go ghost" id="dCancel">إلغاء التعديل</button>' : ''}<div class="err" id="dErr"></div></div>`;
 }
@@ -282,7 +298,7 @@ function liveHtml(act) {
       ${b.batch ? `<div><span class="bg bat">🔗 طلعة مجمعة (${b.size} أوردرات معاً) · أوردر #${b.idx} من ${b.size}</span> <span class="cu">${out ? 'خارج المعمورة (بدون إنذار)' : 'مهلة الإنذار: 30 دقيقة'}</span></div>` : ''}
       <div class="top"><div class="who"><div class="av">🛵</div><div>
         <h4>${esc(nm(o.driverName))}${late ? `<span class="bg red" data-lt>⚠ متأخر (+${b.th / MIN} د)</span>` : '<span data-lt></span>'}</h4>
-        <div class="chips">${o.customerName ? `<span class="cu">👤 ${esc(o.customerName)}</span>` : ''}${o.employeeName ? `<span class="bg emp">الموظف: ${esc(nm(o.employeeName))}</span>` : ''}<span class="bg ${out ? 'zout' : 'zin'}">📍 ${esc(o.zone || ZONES[0])}</span></div></div></div>
+        <div class="chips">${o.customerName ? `<span class="cu">👤 ${esc(o.customerName)}</span>` : ''}${o.employeeName ? `<span class="bg emp">الموظف: ${esc(nm(o.employeeName))}</span>` : ''}<span class="bg ${out ? 'zout' : 'zin'}">${out ? '🧭' : '📍'} ${esc(o.zone || ZONES[0])}</span>${out ? `<span class="bg cm">💰 عمولة الدليفري ${COMM_OUT} ج</span>` : ''}</div></div></div>
         <div class="tms"><span class="bd ${late ? 'late' : out ? 'out' : warn ? 'warn' : ''}" data-bd>🕒 منذ ${min} د${out ? ' · بدون إنذار' : ''}</span>
           <div class="dt"><span>📅 ${dateStr(o.startTime)}</span><span>خروج: ${timeStr(o.startTime)}</span></div></div></div>
       <div class="dgrid"><div><small>قيمة الطلب</small><b>${M(o.orderValue)}</b></div><div><small>فكة للطلب</small><b>${M(o.changeGiven || 0)}</b></div></div>
@@ -294,7 +310,21 @@ function liveHtml(act) {
   return `<div class="dlay">${canWrite() ? `<div>${formHtml()}</div>` : ''}
     <div><div class="lhead"><div><h2 style="display:inline">الأوردرات النشطة حالياً</h2><span class="pill">${act.length} جاري توصيلها</span>${lateN ? `<span class="pill red">⚠ ${lateN} متأخر (تجاوز مهلة التوصيل)</span>` : ''}</div>
       <button class="sndb ${ST.mute ? 'off' : ''}" data-mute>${ST.mute ? '🔇 الصوت مكتوم' : '🔊 الصوت مفعل'}</button></div>
-      ${cards || '<div class="empty">لا توجد طلبات نشطة حالياً</div>'}</div></div>`;
+      ${cards || '<div class="empty">لا توجد طلبات نشطة حالياً</div>'}</div></div>${commHtml()}`;
+}
+
+// عمولة الدليفري باليوم (طلبه 2/11): الأوردرات اللي اتسلّمت خارج المعمورة في اليوم ده × 5 ج، لكل مندوب
+function commHtml() {
+  const day = ST.cday || dayKey(Date.now()), per = new Map();
+  drvList().forEach(n => per.set(n, 0));
+  done().forEach(o => { if (isOut(o) && dayKey(o.endTime) === day) per.set(o.driverName, (per.get(o.driverName) || 0) + 1); });
+  const rows = [...per.entries()].sort((a, b) => b[1] - a[1]), tot = rows.reduce((s, r) => s + r[1], 0);
+  return `<div class="cmm"><div class="lhead" style="border:0;margin-bottom:8px"><h2>💰 عمولة الدليفري — يوم ${day.slice(8)}/${day.slice(5, 7)}</h2>
+    <div class="cd"><label for="cDay">اليوم:</label><input type="date" id="cDay" value="${day}"></div></div>
+  <div class="tw" style="margin:0"><table><tr><th class="l">المندوب</th><th>أوردرات خارج المعمورة اتسلّمت</th><th>العمولة (${COMM_OUT} ج للأوردر)</th></tr>
+  ${rows.map(([n, c]) => `<tr><td class="l"><b style="color:#1e293b;font-size:14px">${esc(nm(n))}</b></td><td>${c}</td><td><b>${M(c * COMM_OUT)}</b></td></tr>`).join('') || '<tr><td colspan="3" class="empty">مفيش مناديب</td></tr>'}
+  ${rows.length > 1 ? `<tr><td class="l"><b style="color:#1e293b">الإجمالي</b></td><td><b style="color:#1e293b">${tot}</b></td><td><b>${M(tot * COMM_OUT)}</b></td></tr>` : ''}</table></div>
+  <p class="hint">بتتحسب على الأوردرات اللي اتضغط عليها «تسليم» خارج المعمورة في اليوم ده (بتوقيت القاهرة). الأوردر الشغال لسه ملوش عمولة لحد ما يتسلّم.</p></div>`;
 }
 
 function statsHtml() {
@@ -307,19 +337,20 @@ function statsHtml() {
     <div><div class="l">متوسط الوقت للأوردر</div><div class="v">${tot ? durMin(ms / tot) : '—'}</div></div>
     <div class="${late ? 'bad' : ''}"><div class="l">أكتر من 30 دقيقة</div><div class="v">${N(late)}${tot ? ` <small>(${Math.round(late / tot * 100)}%)</small>` : ''}</div></div>
     <div><div class="l">قيمة الأوردرات</div><div class="v">${M(val)}</div></div>
-    <div><div class="l">خارج المعمورة</div><div class="v">${N(out.length)}</div><div class="l">${M(out.reduce((s, o) => s + (o.orderValue || 0), 0))}</div></div></div>
-  <h3 class="sec">الطيارين</h3><div class="tw"><table><tr><th class="l">الطيار</th><th>أوردرات</th><th>متوسط الوقت</th><th>&lt;10</th><th>10–15</th><th>15–20</th><th>20–30</th><th>&gt;30</th><th>خارج المعمورة</th><th>القيمة</th></tr>
-  ${ds.map(d => `<tr><td class="l"><b>${esc(nm(d.n))}</b></td><td>${d.c}</td><td>${d.c ? durMin(d.ms / d.c) : '—'}</td>${d.b.map((x, i) => `<td ${i === 4 && x ? 'style="color:#C0392B;font-weight:800"' : ''}>${x}</td>`).join('')}<td>${d.out}${d.out ? ` (${M(d.outVal)})` : ''}</td><td>${M(d.val)}</td></tr>`).join('') || '<tr><td colspan="10" class="empty">مفيش بيانات في الفترة دي</td></tr>'}</table></div>
-  <h3 class="sec">يوم بيوم</h3><div class="tw"><table><tr><th class="l">اليوم</th><th>أوردرات</th><th>متوسط الوقت</th><th>&gt;30 د</th><th>القيمة</th></tr>
-  ${Object.keys(days).sort().reverse().map(k => { const a = days[k], t = a.reduce((s, o) => s + orderMs(o, bm.get(o.id)), 0); return `<tr><td class="l">${k.slice(8)}/${k.slice(5, 7)}</td><td>${a.length}</td><td>${durMin(t / a.length)}</td><td>${a.filter(o => orderMs(o, bm.get(o.id)) > PROMISE).length}</td><td>${M(a.reduce((s, o) => s + (o.orderValue || 0), 0))}</td></tr>`; }).join('') || '<tr><td colspan="5" class="empty">—</td></tr>'}</table></div>
+    <div><div class="l">خارج المعمورة</div><div class="v">${N(out.length)}</div><div class="l">${M(out.reduce((s, o) => s + (o.orderValue || 0), 0))}</div></div>
+    <div style="border-inline-start-color:#f59e0b"><div class="l">عمولة الدليفري</div><div class="v">${M(out.length * COMM_OUT)}</div><div class="l">${COMM_OUT} ج × ${N(out.length)} أوردر</div></div></div>
+  <h3 class="sec">الطيارين</h3><div class="tw"><table><tr><th class="l">الطيار</th><th>أوردرات</th><th>متوسط الوقت</th><th>&lt;10</th><th>10–15</th><th>15–20</th><th>20–30</th><th>&gt;30</th><th>خارج المعمورة</th><th>عمولة الدليفري</th><th>القيمة</th></tr>
+  ${ds.map(d => `<tr><td class="l"><b>${esc(nm(d.n))}</b></td><td>${d.c}</td><td>${d.c ? durMin(d.ms / d.c) : '—'}</td>${d.b.map((x, i) => `<td ${i === 4 && x ? 'style="color:#C0392B;font-weight:800"' : ''}>${x}</td>`).join('')}<td>${d.out}${d.out ? ` (${M(d.outVal)})` : ''}</td><td><b style="color:#b45309">${M(d.out * COMM_OUT)}</b></td><td>${M(d.val)}</td></tr>`).join('') || '<tr><td colspan="11" class="empty">مفيش بيانات في الفترة دي</td></tr>'}</table></div>
+  <h3 class="sec">يوم بيوم</h3><div class="tw"><table><tr><th class="l">اليوم</th><th>أوردرات</th><th>متوسط الوقت</th><th>&gt;30 د</th><th>خارج المعمورة</th><th>عمولة الدليفري</th><th>القيمة</th></tr>
+  ${Object.keys(days).sort().reverse().map(k => { const a = days[k], t = a.reduce((s, o) => s + orderMs(o, bm.get(o.id)), 0); return `<tr><td class="l">${k.slice(8)}/${k.slice(5, 7)}</td><td>${a.length}</td><td>${durMin(t / a.length)}</td><td>${a.filter(o => orderMs(o, bm.get(o.id)) > PROMISE).length}</td><td>${a.filter(isOut).length}</td><td><b style="color:#b45309">${M(a.filter(isOut).length * COMM_OUT)}</b></td><td>${M(a.reduce((s, o) => s + (o.orderValue || 0), 0))}</td></tr>`; }).join('') || '<tr><td colspan="7" class="empty">—</td></tr>'}</table></div>
   <button class="ghost" data-xl>📥 تنزيل إكسل (السجل + الطيارين)</button>`;
 }
 
 function logHtml() {
   const list = filtered().sort((a, b) => b.endTime - a.endTime), bm = batchMap(done(), Date.now()), shown = list.slice(0, ST.shown);
-  return `${filterBar()}<div class="tw"><table><tr><th class="l">التاريخ</th><th>خرج</th><th>وصل</th><th>الوقت</th><th class="l">الطيار</th><th class="l">العميل</th><th>المنطقة</th><th>القيمة</th><th>الدفع</th><th class="l">سجّله</th>${isAdm() ? '<th></th>' : ''}</tr>
+  return `${filterBar()}<div class="tw"><table><tr><th class="l">التاريخ</th><th>خرج</th><th>وصل</th><th>الوقت</th><th class="l">الطيار</th><th class="l">العميل</th><th>المنطقة</th><th>عمولة</th><th>القيمة</th><th>الدفع</th><th class="l">سجّله</th>${isAdm() ? '<th></th>' : ''}</tr>
   ${shown.map(o => { const b = bm.get(o.id), t = orderMs(o, b), late = t > PROMISE;
-    return `<tr class="${late ? 'late' : ''}"><td class="l">${dateStr(o.endTime)}</td><td>${timeStr(o.startTime)}</td><td>${timeStr(o.endTime)}</td><td><b>${durMin(t)}</b>${b && b.batch ? ` <span class="tag b">طلعة ${b.size}</span>` : ''}</td><td class="l">${esc(nm(o.driverName))}</td><td class="l">${esc(o.customerName || '—')}${o.notes ? ' 📝' : ''}</td><td>${o.zone === 'خارج المعمورة' ? '<span class="tag o">برا</span>' : 'جوا'}</td><td>${M(o.orderValue)}</td><td>${o.isVisa ? 'فيزا' : o.isVodafoneCash ? 'فودافون' : 'كاش'}</td><td class="l">${esc(nm(o.employeeName) || '—')}</td>${isAdm() ? `<td><button class="ghost sm" data-ed="${o.id}">✏️</button> <button class="ghost sm" data-rc="${o.id}">🧾</button> <button class="ghost sm" data-rm="${o.id}">🗑️</button></td>` : ''}</tr>`; }).join('') || `<tr><td colspan="11" class="empty">مفيش أوردرات في الفترة دي</td></tr>`}</table></div>
+    return `<tr class="${late ? 'late' : ''}"><td class="l">${dateStr(o.endTime)}</td><td>${timeStr(o.startTime)}</td><td>${timeStr(o.endTime)}</td><td><b>${durMin(t)}</b>${b && b.batch ? ` <span class="tag b">طلعة ${b.size}</span>` : ''}</td><td class="l">${esc(nm(o.driverName))}</td><td class="l">${esc(o.customerName || '—')}${o.notes ? ' 📝' : ''}</td><td>${isOut(o) ? '<span class="tag o">خارج المعمورة</span>' : '<span class="tag i">داخل المعمورة</span>'}</td><td>${isOut(o) ? M(COMM_OUT) : '—'}</td><td>${M(o.orderValue)}</td><td>${o.isVisa ? 'فيزا' : o.isVodafoneCash ? 'فودافون' : 'كاش'}</td><td class="l">${esc(nm(o.employeeName) || '—')}</td>${isAdm() ? `<td><button class="ghost sm" data-ed="${o.id}">✏️</button> <button class="ghost sm" data-rc="${o.id}">🧾</button> <button class="ghost sm" data-rm="${o.id}">🗑️</button></td>` : ''}</tr>`; }).join('') || `<tr><td colspan="12" class="empty">مفيش أوردرات في الفترة دي</td></tr>`}</table></div>
   ${list.length > ST.shown ? `<button class="ghost" data-more>عرض المزيد (${list.length - ST.shown})</button>` : ''}<p class="sub">${N(list.length)} أوردر في الفترة · الصف الأحمر = أكتر من 30 دقيقة.</p>`;
 }
 
@@ -335,6 +366,7 @@ function filterBar() {
 function bind() {
   ROOT.querySelectorAll('[data-p]').forEach(b => b.onclick = () => { ST.period = b.dataset.p; ST.shown = 60; render(); });
   [['fFrom', 'from'], ['fTo', 'to'], ['fDrv', 'driver'], ['fZone', 'zone']].forEach(([id, k]) => { const e = $('#' + id, ROOT); if (e) e.onchange = () => { ST[k] = e.value; ST.shown = 60; render(); }; });
+  const cd = $('#cDay', ROOT); if (cd) cd.onchange = () => { ST.cday = cd.value; render(); };
   const more = $('[data-more]', ROOT); if (more) more.onclick = () => { ST.shown += 100; render(); };
   const xl = $('[data-xl]', ROOT); if (xl) xl.onclick = exportXl;
   ROOT.querySelectorAll('[data-fin]').forEach(b => b.onclick = () => finish(b.dataset.fin));
@@ -342,12 +374,19 @@ function bind() {
   ROOT.querySelectorAll('[data-ed]').forEach(b => b.onclick = () => { EDIT = b.dataset.ed; ST.view = 'live'; render(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
   ROOT.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => remove(b.dataset.rm));
   const f = $('#dForm', ROOT); if (!f) return;
-  f.querySelectorAll('[data-z]').forEach(b => b.onclick = () => { f.querySelectorAll('[data-z]').forEach(x => x.classList.remove('on')); b.classList.add('on'); });
+  f.querySelectorAll('[data-z]').forEach(b => b.onclick = () => { f.querySelectorAll('[data-z]').forEach(x => x.classList.remove('on')); b.classList.add('on'); $('#dZone', f).classList.remove('miss'); draft(); });
+  f.addEventListener('input', draft); f.addEventListener('change', draft);
   f.querySelectorAll('.pay input').forEach(i => i.onchange = () => i.closest('.pay').classList.toggle('on', i.checked));
   $('#dGo', f).onclick = save;
   const c = $('#dCancel', f); if (c) c.onclick = () => { EDIT = null; render(); };
   const ad = $('[data-adddrv]', f); if (ad) ad.onclick = addDrv;
   const dd = $('[data-deldrv]', f); if (dd) dd.onclick = delDrv;
+}
+
+function draft() {
+  if (EDIT) return;
+  const g = id => { const e = $('#' + id, ROOT); return e ? e : { value: '', checked: false }; }, z = ROOT.querySelector('[data-z].on');
+  DR = { emp: g('dEmp').value, drv: g('dDrv').value, cus: g('dCus').value, zone: z ? z.dataset.z : '', val: g('dVal').value, chg: g('dChg').value, visa: g('dVisa').checked, voda: g('dVoda').checked, note: g('dNote').value };
 }
 
 async function save() {
@@ -356,7 +395,7 @@ async function save() {
   err.textContent = '';
   if (!emp) { err.textContent = 'اختار الموظف اللي سجّل الأوردر'; return; }
   if (!drv) { err.textContent = 'مفيش طيار — ضيف طيار الأول'; return; }
-  if (!z) { err.textContent = 'اختار المنطقة'; return; }
+  if (!z) { err.textContent = 'لازم تختار المنطقة: داخل المعمورة ولا خارج المعمورة'; $('#dZone', ROOT).classList.add('miss'); $('#dZone', ROOT).scrollIntoView({ block: 'center', behavior: 'smooth' }); return; }
   const val = parseFloat(g('dVal').value) || 0, chg = parseFloat(g('dChg').value) || 0;
   if (val < 0 || val >= 100000 || chg < 0) { err.textContent = 'راجع القيمة'; return; }
   const data = { driverName: drv, customerName: g('dCus').value.trim(), employeeName: emp, zone: z.dataset.z, orderValue: val, changeGiven: chg,
@@ -364,7 +403,7 @@ async function save() {
   try {
     localStorage.setItem('del_emp', emp);
     if (EDIT) { await updateDoc(doc(DB, 'deliv_orders', EDIT), data); EDIT = null; toast('اتعدّل ✔'); }
-    else { const ref = doc(collection(DB, 'deliv_orders')); await setDoc(ref, { ...data, startTime: Date.now(), endTime: null, status: 'PENDING', by: UID }); beep(660, 1); toast('الأوردر بدأ 🛵'); }
+    else { const ref = doc(collection(DB, 'deliv_orders')); await setDoc(ref, { ...data, startTime: Date.now(), endTime: null, status: 'PENDING', by: UID }); beep(660, 1); toast('الأوردر بدأ 🛵'); DR = {}; }
     render();
   } catch (e) { err.textContent = 'مقدرتش أحفظ: ' + (e.code || e.message); }
 }
@@ -404,12 +443,12 @@ function receipt(id) {
 function exportXl() {
   if (!window.XLSX) { toast('مكتبة الإكسل مش محملة'); return; }
   const list = filtered().sort((a, b) => a.endTime - b.endTime), bm = batchMap(done(), Date.now());
-  const log = [['التاريخ', 'خرج', 'وصل', 'وقت الأوردر (دقيقة)', 'طلعة مجمعة (عدد)', 'الطيار', 'العميل', 'المنطقة', 'القيمة', 'الفكة', 'الدفع', 'سجّله', 'ملاحظات']]
-    .concat(list.map(o => { const b = bm.get(o.id); return [dayKey(o.endTime), timeStr(o.startTime), timeStr(o.endTime), +(orderMs(o, b) / MIN).toFixed(1), b && b.batch ? b.size : 1, o.driverName, o.customerName, o.zone || ZONES[0], o.orderValue, o.changeGiven, o.isVisa ? 'فيزا' : o.isVodafoneCash ? 'فودافون كاش' : 'كاش', o.employeeName, o.notes]; }));
-  const drv = [['الطيار', 'أوردرات', 'متوسط الوقت (دقيقة)', 'أقل من 10', '10–15', '15–20', '20–30', 'أكتر من 30', 'خارج المعمورة (عدد)', 'خارج المعمورة (قيمة)', 'القيمة']]
-    .concat(driverStats(list, bm).map(d => [d.n, d.c, d.c ? +(d.ms / d.c / MIN).toFixed(1) : 0, ...d.b, d.out, d.outVal, d.val]));
+  const log = [['التاريخ', 'خرج', 'وصل', 'وقت الأوردر (دقيقة)', 'طلعة مجمعة (عدد)', 'الطيار', 'العميل', 'المنطقة', 'القيمة', 'الفكة', 'الدفع', 'عمولة الدليفري', 'سجّله', 'ملاحظات']]
+    .concat(list.map(o => { const b = bm.get(o.id); return [dayKey(o.endTime), timeStr(o.startTime), timeStr(o.endTime), +(orderMs(o, b) / MIN).toFixed(1), b && b.batch ? b.size : 1, o.driverName, o.customerName, o.zone || ZONES[0], o.orderValue, o.changeGiven, o.isVisa ? 'فيزا' : o.isVodafoneCash ? 'فودافون كاش' : 'كاش', commOf(o), o.employeeName, o.notes]; }));
+  const drv = [['الطيار', 'أوردرات', 'متوسط الوقت (دقيقة)', 'أقل من 10', '10–15', '15–20', '20–30', 'أكتر من 30', 'خارج المعمورة (عدد)', 'خارج المعمورة (قيمة)', 'عمولة الدليفري', 'القيمة']]
+    .concat(driverStats(list, bm).map(d => [d.n, d.c, d.c ? +(d.ms / d.c / MIN).toFixed(1) : 0, ...d.b, d.out, d.outVal, d.out * COMM_OUT, d.val]));
   const how = [['طريقة الحساب'], ['وقت الأوردر = وقت الوصول − وقت الخروج.'], ['الطلعة المجمعة: أوردرات نفس الطيار بينها 5 دقايق أو أقل = طلعة واحدة، ونصيب كل أوردر = وقت الطلعة ÷ عدد الأوردرات.'],
-    ['مثال: طيار خرج بأوردرين الساعة 3:00 و3:02 ورجع 3:40 → وقت الطلعة 40 دقيقة ÷ 2 = 20 دقيقة لكل أوردر.'], ['"أكتر من 30" = الأوردر اللي عدّى وعد التوصيل (30 دقيقة).'], ['الفترة: ' + periodRange().join(' → ')]];
+    ['مثال: طيار خرج بأوردرين الساعة 3:00 و3:02 ورجع 3:40 → وقت الطلعة 40 دقيقة ÷ 2 = 20 دقيقة لكل أوردر.'], ['"أكتر من 30" = الأوردر اللي عدّى وعد التوصيل (30 دقيقة).'], ['عمولة الدليفري = ' + COMM_OUT + ' ج × عدد الأوردرات اللي اتسلّمت خارج المعمورة. مثال: مندوب سلّم 8 أوردرات خارج المعمورة في اليوم = 8 × ' + COMM_OUT + ' = ' + (8 * COMM_OUT) + ' ج.'], ['الفترة: ' + periodRange().join(' → ')]];
   const wb = XLSX.utils.book_new();
   [['طريقة الحساب', how], ['الطيارين', drv], ['السجل', log]].forEach(([n, r]) => XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(r), n));
   XLSX.writeFile(wb, `دليفري_${dayKey(Date.now())}.xlsx`);
