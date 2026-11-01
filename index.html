@@ -400,7 +400,7 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="buyer" class="hide"></div>
 <div id="crmdev" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-11-01-C</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-11-01-D</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -618,7 +618,7 @@ function parseBook(wb){
 const SAL_MAP = {};
 [['كود البيع','id'],['مبيعات؟','kind'],['نوعية البيع','type'],['كود العميل','custCode'],
  ['اسم العميل','cust'],['التاريخ','date'],['الوقت','time'],['المجموع','total'],
- ['الخصم','disc'],['المدفوع','paid'],['اسم البائع','seller'],['الصنف','item']].forEach(([a,k]) => SAL_MAP[norm(a)] = k);
+ ['الخصم','disc'],['المدفوع','paid'],['اسم البائع','seller'],['الصنف','item'],['بعد الخصم','net']].forEach(([a,k]) => SAL_MAP[norm(a)] = k);
 
 const ITM_MAP = {};
 [['الصنف','item'],['الكمية','qty'],['سعر البيع','price'],['المجموع','total'],
@@ -697,7 +697,8 @@ function parseSales(wb, ps, pe, rates){
       hasCust: realCust(o.custCode, o.cust), cust: cNorm(o.cust),
       key: ymd(dt) + '|' + hhmm(o.time) + '|' + cNorm(o.cust), total: 0, seller };
       inv.set(id, x); }
-    const v = nz(o.total); x.total += v;
+    /* المبيعات بعد خصم السطر (زي إجمالي السيستم) لو الملف فيه عمود «بعد الخصم» — البوشينج بيفضل على قيمة البيع قبل الخصم */
+    const v = nz(o.total); x.total += (o.net != null && o.net !== '') ? nz(o.net) : v;
     if (hasItem && o.item){
       const name = String(o.item).toUpperCase();
       if (name.includes('$$') && !isSocialSale(o.seller, o.cust)){
