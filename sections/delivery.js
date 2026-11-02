@@ -73,6 +73,15 @@ function css() {
 :is(#adm,#delivery) .delwrap .dbar button{flex:1 0 auto;background:transparent;color:#475569;border:0;border-radius:12px;padding:9px 16px;font-size:14px;font-weight:700;min-height:44px;box-shadow:none}
 :is(#adm,#delivery) .delwrap .dbar button.on{background:#fff;color:#047857;box-shadow:0 1px 2px rgba(0,0,0,.08)}
 :is(#adm,#delivery) .delwrap .dbar .n{display:inline-block;margin-inline-start:6px;background:#d1fae5;color:#065f46;border-radius:99px;padding:1px 8px;font-size:12px}
+:is(#adm,#delivery) .delwrap .newbar{width:100%;min-height:66px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;margin:0 0 14px;border-radius:18px;border:0;background:linear-gradient(135deg,#047857,#10b981);color:#fff;font-size:20px;font-weight:900;box-shadow:0 10px 18px -8px rgba(5,150,105,.7);cursor:pointer}
+:is(#adm,#delivery) .delwrap .newbar small{font-size:12px;font-weight:600;color:#d1fae5}
+:is(#adm,#delivery) .delwrap .ocgrid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(400px,1fr));align-items:start}
+:is(#adm,#delivery) .delwrap .ocgrid .oc{margin-bottom:0}
+@media(max-width:480px){:is(#adm,#delivery) .delwrap .ocgrid{grid-template-columns:1fr}}
+:is(#adm,#delivery) .delwrap h3.sec.need{color:#b45309;background:#fffbeb;border:1px solid #fcd34d;border-radius:12px;padding:8px 12px}
+.mback{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:70;display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:18px 12px}
+.mdl{position:relative;width:min(560px,100%);margin:auto}
+.mdl .mclose{position:absolute;top:10px;left:10px;z-index:2;width:40px;height:40px;padding:0;border-radius:50%;background:#f1f5f9;color:#334155;border:1px solid #e2e8f0;font-size:18px;box-shadow:none}
 :is(#adm,#delivery) .delwrap .dlay{display:grid;gap:20px;grid-template-columns:1fr;align-items:start}
 @media(min-width:1024px){:is(#adm,#delivery) .delwrap .dlay{grid-template-columns:5fr 6fr}}
 :is(#adm,#delivery) .delwrap .dform{background:#fff;border-radius:24px;border:1px solid #e2e8f0;padding:24px;box-shadow:0 1px 2px rgba(0,0,0,.05)}
@@ -233,7 +242,7 @@ function beep(freq = 880, n = 3) {
 }
 
 /* ---------- البيانات ---------- */
-const active = () => ORDERS.filter(o => o.status === 'PENDING').sort((a, b) => (!!a.driverName - !!b.driverName) || b.startTime - a.startTime);   // اللي من غير مندوب الأول
+const active = () => ORDERS.filter(o => o.status === 'PENDING').sort((a, b) => a.startTime - b.startTime);   // الأقدم الأول (الأطول انتظاراً)
 const done = () => ORDERS.filter(o => o.status === 'COMPLETED' && o.endTime && o.driverName);
 const drvList = () => { const s = new Set(DRIVERS.map(d => d.name)); ORDERS.forEach(o => o.driverName && s.add(o.driverName)); return [...s]; };
 
@@ -311,7 +320,7 @@ function liveHtml(act) {
   const now = Date.now(), bm = batchMap(ORDERS.filter(o => o.driverName && now - o.startTime < 36 * 3600e3), now);
   const needN = act.filter(o => !o.driverName).length;
   const lateN = act.filter(o => o.driverName).filter(o => { const b = bm.get(o.id) || { th: LATE_SINGLE, start: o.startTime }; return o.zone !== 'خارج المعمورة' && now - b.start >= b.th; }).length;
-  const cards = act.map(o => {
+  const cardArr = act.map(o => {
     if (!o.driverName) return asgCard(o, now);
     const b = bm.get(o.id) || { th: LATE_SINGLE, start: o.startTime, batch: false, size: 1, idx: 1 }, out = o.zone === 'خارج المعمورة';
     const late = !out && now - b.start >= b.th, min = Math.floor((now - o.startTime) / MIN), warn = min >= (b.batch ? 25 : 15);
@@ -327,12 +336,18 @@ function liveHtml(act) {
       ${(o.isVisa || o.isVodafoneCash) ? `<div>${o.isVisa ? '<span class="pb v">💳 دفع بالفيزا</span>' : ''}${o.isVodafoneCash ? '<span class="pb f">📱 فودافون كاش</span>' : ''}</div>` : ''}
       ${o.notes ? `<div class="note">ملاحظة: ${esc(o.notes)}</div>` : ''}
       <div class="ftr"><div class="tot"><small>المبلغ الإجمالي المطلوب</small><b>${M((o.orderValue || 0) + (o.changeGiven || 0))}</b></div>
-      ${canWrite() ? `<div class="btns"><button class="fin" data-fin="${o.id}">✔ تسليم</button><button class="prn" data-rc="${o.id}">🖨 طباعة ريسيت</button><button class="edt" data-ed="${o.id}">✏️ تعديل</button>${isAdm() ? `<button class="del" data-rm="${o.id}">🗑 حذف</button>` : ''}</div>` : ''}</div></div>`;
-  }).join('');
-  return `<div class="dlay">${canWrite() ? `<div>${formHtml()}</div>` : ''}
-    <div><div class="lhead"><div><h2 style="display:inline">الأوردرات النشطة حالياً</h2><span class="pill">${act.length - needN} جاري توصيلها</span>${needN ? `<span class="pill am">🧾 ${needN} محتاج مندوب</span>` : ''}${lateN ? `<span class="pill red">⚠ ${lateN} متأخر (تجاوز مهلة التوصيل)</span>` : ''}</div>
+      ${canWrite() ? `<div class="btns"><button class="fin" data-fin="${o.id}">✔ تسليم</button><button class="prn" data-rc="${o.id}">🖨 طباعة ريسيت</button><button class="edt" data-ed="${o.id}">✏️ تعديل</button><button class="del" data-rm="${o.id}">🗑 حذف</button></div>` : ''}</div></div>`;
+  });
+  const outCards = [], needCards = [];
+  act.forEach((o, n) => (o.driverName ? outCards : needCards).push(cardArr[n]));
+  return `${canWrite() ? `<button type="button" class="newbar" data-new><span>➕ تسجيل أوردر جديد</span><small>اضغط هنا علشان تبدأ أوردر (للأوردر اللي ملوش فاتورة)</small></button>` : ''}
+    <div class="lhead"><div><h2 style="display:inline">الأوردرات النشطة حالياً</h2><span class="pill">${act.length - needN} جاري توصيلها</span>${needN ? `<span class="pill am" data-goneed style="cursor:pointer">🧾 ${needN} محتاج مندوب ↓</span>` : ''}${lateN ? `<span class="pill red">⚠ ${lateN} متأخر (تجاوز مهلة التوصيل)</span>` : ''}</div>
       <button class="sndb ${ST.mute ? 'off' : ''}" data-mute>${ST.mute ? '🔇 الصوت مكتوم' : '🔊 الصوت مفعل'}</button></div>
-      ${cards || '<div class="empty">لا توجد طلبات نشطة حالياً</div>'}</div></div>${commHtml()}`;
+    <h3 class="sec">🛵 بره دلوقتي (${outCards.length})</h3>
+    <div class="ocgrid">${outCards.join('') || '<div class="empty">مفيش أوردر بره دلوقتي</div>'}</div>
+    ${needN ? `<h3 class="sec need" id="needSec">🧾 محتاجة مندوب (${needN}) — اختار المندوب والمنطقة</h3><div class="ocgrid">${needCards.join('')}</div>` : ''}
+    ${commHtml()}
+    ${canWrite() && (ST.formOpen || EDIT) ? `<div class="mback" data-mback><div class="mdl"><button type="button" class="mclose" data-closeform title="إغلاق">✕</button>${formHtml()}</div></div>` : ''}`;
 }
 
 // عمولة الدليفري باليوم (طلبه 2/11): الأوردرات اللي اتسلّمت خارج المعمورة في اليوم ده × 5 ج، لكل مندوب
@@ -348,7 +363,7 @@ function asgCard(o, now) {
       <div class="zones" data-asz="${o.id}">
         <button type="button" data-az="${ZONES[0]}" class="in ${a.zone === ZONES[0] ? 'on' : ''}"><span class="ic">📍</span><span><b>داخل المعمورة الشاطئ</b><small>من غير عمولة</small></span></button>
         <button type="button" data-az="${ZONES[1]}" class="out ${a.zone === ZONES[1] ? 'on' : ''}"><span class="ic">🧭</span><span><b>خارج المعمورة</b><small>عمولة الدليفري ${COMM_OUT} ج</small></span></button></div>
-      <div class="btns"><button class="fin" data-asgo="${o.id}">🛵 تأكيد وبدء التوصيل</button>${isAdm() ? `<button class="del" data-rm="${o.id}">🗑 حذف</button>` : ''}</div></div>` : ''}</div>`;
+      <div class="btns"><button class="fin" data-asgo="${o.id}">🛵 تأكيد وبدء التوصيل</button><button class="del" data-rm="${o.id}">🗑 حذف</button></div></div>` : ''}</div>`;
 }
 
 async function assign(id) {
@@ -430,7 +445,12 @@ function bind() {
   const rp = $('[data-rep]', ROOT); if (rp) rp.onclick = copyReport;
   ROOT.querySelectorAll('[data-fin]').forEach(b => b.onclick = () => finish(b.dataset.fin));
   ROOT.querySelectorAll('[data-rc]').forEach(b => b.onclick = () => receipt(b.dataset.rc));
-  ROOT.querySelectorAll('[data-ed]').forEach(b => b.onclick = () => { EDIT = b.dataset.ed; ST.view = 'live'; render(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
+  ROOT.querySelectorAll('[data-ed]').forEach(b => b.onclick = () => { EDIT = b.dataset.ed; ST.formOpen = true; ST.view = 'live'; render(); });
+  const nb = $('[data-new]', ROOT); if (nb) nb.onclick = () => { EDIT = null; ST.formOpen = true; render(); setTimeout(() => { const e = $('#dEmp', ROOT); if (e) e.focus(); }, 50); };
+  const gn = $('[data-goneed]', ROOT); if (gn) gn.onclick = () => { const e = $('#needSec', ROOT); if (e) e.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+  const closeForm = () => { ST.formOpen = false; EDIT = null; render(); };
+  const mb = $('[data-mback]', ROOT); if (mb) mb.onclick = e => { if (e.target === mb) closeForm(); };
+  const cf = $('[data-closeform]', ROOT); if (cf) cf.onclick = closeForm;
   ROOT.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => remove(b.dataset.rm));
   ROOT.querySelectorAll('[data-adddrv]').forEach(b => b.onclick = addDrv);
   const f = $('#dForm', ROOT); if (!f) return;
@@ -438,7 +458,7 @@ function bind() {
   f.addEventListener('input', draft); f.addEventListener('change', draft);
   f.querySelectorAll('.pay input').forEach(i => i.onchange = () => i.closest('.pay').classList.toggle('on', i.checked));
   $('#dGo', f).onclick = save;
-  const c = $('#dCancel', f); if (c) c.onclick = () => { EDIT = null; render(); };
+  const c = $('#dCancel', f); if (c) c.onclick = closeForm;
   const dd = $('[data-deldrv]', f); if (dd) dd.onclick = delDrv;
 }
 
@@ -461,8 +481,8 @@ async function save() {
     isVisa: g('dVisa').checked, isVodafoneCash: g('dVoda').checked, notes: g('dNote').value.trim() };
   try {
     localStorage.setItem('del_emp', emp);
-    if (EDIT) { await updateDoc(doc(DB, 'deliv_orders', EDIT), data); EDIT = null; toast('اتعدّل ✔'); }
-    else { const ref = doc(collection(DB, 'deliv_orders')); await setDoc(ref, { ...data, startTime: Date.now(), endTime: null, status: 'PENDING', by: UID }); beep(660, 1); toast('الأوردر بدأ 🛵'); DR = {}; }
+    if (EDIT) { await updateDoc(doc(DB, 'deliv_orders', EDIT), data); EDIT = null; ST.formOpen = false; toast('اتعدّل ✔'); }
+    else { const ref = doc(collection(DB, 'deliv_orders')); await setDoc(ref, { ...data, startTime: Date.now(), endTime: null, status: 'PENDING', by: UID }); beep(660, 1); toast('الأوردر بدأ 🛵'); DR = {}; ST.formOpen = false; }
     render();
   } catch (e) { err.textContent = 'مقدرتش أحفظ: ' + (e.code || e.message); }
 }
