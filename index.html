@@ -401,7 +401,7 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="crmdev" class="hide"></div>
 <div id="delivery" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-11-02-C</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-11-02-D</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -877,7 +877,7 @@ onAuthStateChanged(auth, async user => {
 // جهاز الدليفري المشترك (1/11، طلبه): حساب بيدخل على شاشة الدليفري بس، من غير زرار خروج ومن غير قفل تلقائي
 function renderDeliveryDev(){
   const b = $('delivery'); b.classList.remove('hide');
-  b.innerHTML = `<div class="card"><h2 style="margin:0">🛵 متابعة الدليفري</h2><p class="sub" style="margin:2px 0 0">صيدلية د. أنس نحيلة</p></div><div id="delRootD"></div>`;
+  b.innerHTML = `<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div><h2 style="margin:0">🛵 متابعة الدليفري</h2><p class="sub" style="margin:2px 0 0">صيدلية د. أنس نحيلة</p></div><button class="ghost sm" onclick="doOut()">خروج</button></div><div id="delRootD"></div>`;
   DEL_ON = false; openDelivery($('delRootD'), 'cashier');
 }
 
