@@ -118,6 +118,10 @@ function css() {
 :is(#adm,#delivery) .delwrap .tile .tt{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 :is(#adm,#delivery) .delwrap .tile .bd{font-size:13px;padding:3px 10px}
 :is(#adm,#delivery) .delwrap .tile .tc{font-size:12px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+:is(#adm,#delivery) .delwrap .sugh{font-size:12px;color:#92400e;background:#fffbeb;border:1px dashed #fcd34d;border-radius:10px;padding:6px 10px}
+:is(#adm,#delivery) .delwrap .pill.sys{background:#f1f5f9;color:#475569;border:1px solid #e2e8f0}
+:is(#adm,#delivery) .delwrap .pill.sys.ok{background:#dcfce7;color:#166534;border-color:#bbf7d0}
+:is(#adm,#delivery) .delwrap .pill.sys.bad{background:#fee2e2;color:#991b1b;border-color:#fecaca;font-weight:800}
 :is(#adm,#delivery) .delwrap .tile .rd{font-size:10.5px;color:#64748b;margin-top:-3px}
 :is(#adm,#delivery) .delwrap .tile .tm2 b{font-size:18px;font-weight:900;color:#047857}
 :is(#adm,#delivery) .delwrap .tile.late .tm2 b{color:#b91c1c}
@@ -266,11 +270,14 @@ function css() {
 `;
   document.head.appendChild(s);
 }
-// بيرسم الشاشة من جديد إلا لو الموظف بيكتب/بيختار في خانة (علشان ميضيعش اللي بيعمله)
+// بيرسم الشاشة من جديد. بيستنى بس لو الموظف بيكتب في خانة نص دلوقتي (أقل من 8 ثواني من آخر كتابة)، أو لو نافذة مفتوحة (بنرسم لما تتقفل).
+// (2/11) قبل كده كان بيستنى لو أي select ماسك الفوكس — والموبايل بيسيبه ماسك بعد الاختيار فالأوردر مكانش بيتنقل لـ «جاري توصيلها».
+let LAST_UI = 0;
 function safeRender() {
   if (!ROOT || !ROOT.isConnected) return;
+  if (ST.formOpen || EDIT || ST.ask) { ST.dirty = true; return; }
   const a = document.activeElement;
-  if (a && ROOT.contains(a) && /INPUT|SELECT|TEXTAREA/.test(a.tagName)) { setTimeout(safeRender, 2500); return; }
+  if (a && ROOT.contains(a) && /^(INPUT|TEXTAREA)$/.test(a.tagName) && !/^(checkbox|radio|date)$/.test(a.type) && Date.now() - LAST_UI < 8000) { setTimeout(safeRender, 2500); return; }
   render();
 }
 function toast(t) { const d = document.createElement('div'); d.className = 'deltoast'; d.textContent = t; document.body.appendChild(d); setTimeout(() => d.remove(), 2200); }
@@ -287,6 +294,40 @@ function beep(freq = 880, n = 3) {
       g.gain.setValueAtTime(0.25, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.2); o.start(t); o.stop(t + 0.22);
     }
   } catch (e) { }
+}
+
+/* ---------- صوت الفاتورة الجديدة ---------- */
+const audioOn = () => !!(AC && AC.state === 'running');
+function armAudio() { try { AC = AC || new (window.AudioContext || window.webkitAudioContext)(); if (AC.state !== 'running') AC.resume(); } catch (e) { } }
+function siren(secs = 3) {   // (2/11، طلبه) فاتورة توصيل جديدة نزلت = صوت قوي 3 ثواني (+ اهتزاز على الموبايل)
+  if (ST.mute) return;
+  try {
+    armAudio();
+    const t0 = AC.currentTime, o = AC.createOscillator(), g = AC.createGain();
+    o.type = 'square'; o.connect(g); g.connect(AC.destination);
+    g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.7, t0 + 0.05);
+    for (let t = 0; t < secs; t += 0.3) o.frequency.setValueAtTime(Math.round(t / 0.3) % 2 ? 1175 : 880, t0 + t);
+    g.gain.setValueAtTime(0.7, t0 + secs - 0.15); g.gain.exponentialRampToValueAtTime(0.0001, t0 + secs);
+    o.start(t0); o.stop(t0 + secs + 0.05);
+  } catch (e) { }
+  try { navigator.vibrate && navigator.vibrate([300, 150, 300, 150, 300, 150, 300]); } catch (e) { }
+}
+let SEEN = null;   // الأوردرات المفتوحة اللي شفناها (أول تحميل مبيرنش)
+function checkNew() {
+  const ids = new Set(OPEN.keys());
+  if (SEEN) { let n = 0; ids.forEach(id => { if (!SEEN.has(id)) { const o = OPEN.get(id); if (o && !o.driverName && o.source === 'pos') n++; } }); if (n) siren(); }
+  SEEN = ids;
+}
+let SYS = null;    // نبضة سيرفر الصيدلية (deliv_sys/sync)
+
+/* ---------- اقتراح المنطقة من عنوان العميل (تجربة 2/11 — الكاشير يغيّره عادي، ودقته بتظهر في الإحصائيات) ---------- */
+const nrm = t => String(t || '').toLowerCase().replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').replace(/[\u064B-\u0652]/g, '');
+const OUT_KW = ['بلد', 'اصلاح', 'مندره', 'ابو قير', 'ابوقير', 'سموحه', 'بيطاش', 'سيوف', 'عجمي', 'وادي القمر', 'عصافره', 'ميامي', 'منتزه', 'سيدي بشر', 'هانوفيل', 'شماعه'];
+function suggestZone(district) {
+  const t = nrm(district); if (!t || t === '0') return '';
+  if (OUT_KW.some(k => t.includes(k))) return ZONES[1];
+  if (t.includes('شاط') || t.includes('معمور')) return ZONES[0];
+  return '';
 }
 
 /* ---------- البيانات ---------- */
@@ -365,7 +406,7 @@ function render() {
 </div>
     ${body}${ST.ask ? askHtml() : ''}`;
   ROOT.querySelectorAll('[data-v]').forEach(b => b.onclick = () => { ST.view = b.dataset.v; EDIT = null; render(); });
-  ROOT.querySelectorAll('[data-mute]').forEach(b => b.onclick = () => { ST.mute = !ST.mute; render(); });
+  ROOT.querySelectorAll('[data-mute]').forEach(b => b.onclick = () => { if (!ST.mute && !audioOn()) { armAudio(); beep(880, 2); setTimeout(render, 300); return; } ST.mute = !ST.mute; render(); });
   bind();
 }
 
@@ -410,6 +451,7 @@ function formHtml() {
   ${e ? '<button class="go ghost" id="dCancel">إلغاء التعديل</button>' : ''}<div class="err" id="dErr"></div></div>`;
 }
 
+const muteLbl = () => ST.mute ? '🔇 الصوت مكتوم' : audioOn() ? '🔊 الصوت مفعل' : '🔈 اضغط هنا لتفعيل الصوت';
 function liveHtml(act) {
   const now = Date.now(), bm = batchMap(ORDERS.filter(o => o.driverName && now - t0(o) < 36 * 3600e3), now);
   const needN = act.filter(o => !o.driverName).length;
@@ -432,8 +474,8 @@ function liveHtml(act) {
   const outCards = [], needCards = [];
   act.forEach((o, n) => (o.driverName ? outCards : needCards).push(cardArr[n]));
   return `<div class="topbar">${canWrite() ? `<button type="button" class="newbar" data-new><span>➕ تسجيل أوردر جديد</span><small>للأوردر اللي ملوش فاتورة</small></button>` : ''}<button type="button" class="newbar comm" data-comm><span>💰 عمولة الدليفري</span><small>اضغط لعرض عمولة كل مندوب</small></button></div>
-    <div class="lhead"><div><h2 style="display:inline">الأوردرات النشطة حالياً</h2><span class="pill">${act.length - needN} جاري توصيلها</span>${needN ? `<span class="pill am" data-goneed style="cursor:pointer">🧾 ${needN} محتاج مندوب ↓</span>` : ''}${lateN ? `<span class="pill red">⚠ ${lateN} عدّى 30 دقيقة من الفاتورة</span>` : ''}</div>
-      <button class="sndb ${ST.mute ? 'off' : ''}" data-mute>${ST.mute ? '🔇 الصوت مكتوم' : '🔊 الصوت مفعل'}</button></div>
+    <div class="lhead"><div><h2 style="display:inline">الأوردرات النشطة حالياً</h2><span class="pill">${act.length - needN} جاري توصيلها</span>${needN ? `<span class="pill am" data-goneed style="cursor:pointer">🧾 ${needN} محتاج مندوب ↓</span>` : ''}${lateN ? `<span class="pill red">⚠ ${lateN} عدّى 30 دقيقة من الفاتورة</span>` : ''}<span class="pill sys" data-sys>⚪ …</span></div>
+      <button class="sndb ${ST.mute ? 'off' : ''}" data-mute>${muteLbl()}</button></div>
     <div class="split">
       <div class="pane need" id="needSec"><h3><span>🧾 مستنية تأكيد المندوب (${needN})</span></h3>
         ${needN ? `<div class="stack">${needCards.join('')}</div>` : '<div class="empty">مفيش أوردرات مستنية</div>'}</div>
@@ -445,29 +487,30 @@ function liveHtml(act) {
 }
 
 function asgCard(o, now) {
-  const a = ASG[o.id] || {}, min = Math.floor((now - o.startTime) / MIN), drs = drvList();
+  const a = ASG[o.id] || {}, min = Math.floor((now - o.startTime) / MIN), drs = drvList(), sug = suggestZone(o.district), zsel = a.zone !== undefined ? a.zone : sug;
   return `<div class="oc asg" data-id="${o.id}" data-start="${o.startTime}" data-bs="${o.startTime}" data-th="${LATE_SINGLE}" data-out="0" data-batch="0">
     <div class="top"><div class="who"><div class="av">🧾</div><div>
       <h4>${esc(nm(o.customerName) || 'عميل بدون اسم')}<span class="bg bat">من السيستم #${o.posId || ''}</span></h4>
-      <div class="chips">${o.district ? `<span class="cu">🏠 ${esc(o.district)}</span>` : ''}${o.employeeName ? `<span class="bg emp">الكاشير: ${esc(nm(o.employeeName))}</span>` : ''}${o.posEndTime ? `<span class="bg cm">✅ اتقفل في السيستم ${timeStr(o.posEndTime)}</span>` : ''}</div></div></div>
+      <div class="chips">${o.district ? `<span class="cu">🏠 ${esc(o.district)}</span>` : ''}${o.employeeName ? `<span class="bg emp">الكاشير: ${esc(nm(o.employeeName))}</span>` : ''}${o.posEndTime ? `<span class="bg cm">✅ اتقفل في السيستم ${timeStr(o.posEndTime)}</span>` : ''}${o.importedAt ? `<span class="cu" title="الوقت من حفظ الفاتورة لحد نزولها هنا">⏱ نزل بعد ${Math.max(0, Math.round((o.importedAt - o.startTime) / 1000))} ث</span>` : ''}</div></div></div>
       <div class="tms"><span class="bd" data-bd>🕒 منذ ${min} د</span><div class="dt"><span>📅 ${dateStr(o.startTime)}</span><span>الفاتورة: ${timeStr(o.startTime)}</span></div></div></div>
     <div class="dgrid"><div><small>قيمة الطلب</small><b>${M(o.orderValue)}</b></div><div><small>الحالة</small><b style="color:#b45309">محتاج مندوب ومنطقة</b></div></div>
     ${canWrite() ? `<div class="asgbox">${canDrv() ? '<div><button type="button" class="lnk" data-adddrv>+ إضافة مندوب جديد</button></div>' : ''}<select data-asd="${o.id}"><option value="">-- اختر المندوب (إجباري) --</option>${drs.map(x => `<option ${a.drv === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
+      ${sug && a.zone === undefined ? `<div class="sugh">💡 المنطقة اتحدّدت من العنوان «${esc(o.district)}» — غيّرها لو غلط</div>` : ''}
       <div class="zones" data-asz="${o.id}">
-        <button type="button" data-az="${ZONES[0]}" class="in ${a.zone === ZONES[0] ? 'on' : ''}"><span class="ic">📍</span><span><b>داخل المعمورة الشاطئ</b><small>من غير عمولة</small></span></button>
-        <button type="button" data-az="${ZONES[1]}" class="out ${a.zone === ZONES[1] ? 'on' : ''}"><span class="ic">🧭</span><span><b>خارج المعمورة</b><small>عمولة الدليفري ${COMM_OUT} ج</small></span></button></div>
+        <button type="button" data-az="${ZONES[0]}" class="in ${zsel === ZONES[0] ? 'on' : ''}"><span class="ic">📍</span><span><b>داخل المعمورة الشاطئ</b><small>من غير عمولة</small></span></button>
+        <button type="button" data-az="${ZONES[1]}" class="out ${zsel === ZONES[1] ? 'on' : ''}"><span class="ic">🧭</span><span><b>خارج المعمورة</b><small>عمولة الدليفري ${COMM_OUT} ج</small></span></button></div>
       <div class="btns"><button class="fin" data-asgo="${o.id}">🛵 تأكيد وبدء التوصيل</button><button class="del" data-rm="${o.id}">🗑 حذف</button></div></div>` : ''}</div>`;
 }
 
 async function assign(id) {
   const o = findOrder(id); if (!o) return;
-  const a = ASG[id] || {};
+  const a = ASG[id] || {}, sug = suggestZone(o.district), zone = a.zone !== undefined ? a.zone : sug;
   if (!a.drv) { toast('اختار المندوب الأول'); return; }
-  if (!a.zone) { toast('لازم تختار المنطقة: داخل أو خارج المعمورة'); const z = ROOT.querySelector(`[data-asz="${id}"]`); if (z) z.classList.add('miss'); return; }
-  const data = { driverName: a.drv, zone: a.zone, assignedAt: Date.now() };   // assignedAt = لحظة خروج المندوب
-  if (o.posEndTime) Object.assign(data, { status: 'COMPLETED', endTime: o.posEndTime, endSource: 'pos', comm: commFor(a.zone) });   // الكاشير قفل التوصيل في السيستم قبل ما نحدد المندوب
+  if (!zone) { toast('لازم تختار المنطقة: داخل أو خارج المعمورة'); const z = ROOT.querySelector(`[data-asz="${id}"]`); if (z) z.classList.add('miss'); return; }
+  const data = { driverName: a.drv, zone, assignedAt: Date.now(), zoneSug: sug };   // assignedAt = لحظة خروج المندوب · zoneSug = اللي اقترحه البرنامج (لقياس دقته)
+  if (o.posEndTime) Object.assign(data, { status: 'COMPLETED', endTime: o.posEndTime, endSource: 'pos', comm: commFor(zone) });   // الكاشير قفل التوصيل في السيستم قبل ما نحدد المندوب
   try {
-    await updateDoc(doc(DB, 'deliv_orders', id), data); delete ASG[id]; beep(660, 1);
+    await updateDoc(doc(DB, 'deliv_orders', id), data); delete ASG[id]; beep(660, 1); if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); render();
     logAct('assign', { ...o, ...data }, { who: isAdm() ? 'admin' : (localStorage.getItem('del_emp') || '') });
     toast(o.posEndTime ? 'اتسجّل واتقفل (اتقفل في السيستم) ✔' : 'الأوردر بدأ 🛵');
   } catch (e) { toast('مقدرتش: ' + (e.code || e.message)); }
@@ -496,7 +539,7 @@ function statsHtml() {
   const list = filtered(), bm = batchMap(pool(), Date.now()), ds = driverStats(list, bm);
   const tot = list.length, tsum = list.reduce((s, o) => s + totMs(o), 0), late = list.filter(o => totMs(o) > PROMISE).length;
   const val = list.reduce((s, o) => s + (o.orderValue || 0), 0), out = list.filter(isOut), comm = out.reduce((s, o) => s + commOf(o), 0);
-  const w = list.filter(o => o.source === 'pos' && o.assignedAt), wavg = w.length ? w.reduce((s, o) => s + (o.assignedAt - o.startTime), 0) / w.length : null;
+  const zs = list.filter(o => o.zoneSug), w = list.filter(o => o.source === 'pos' && o.assignedAt), wavg = w.length ? w.reduce((s, o) => s + (o.assignedAt - o.startTime), 0) / w.length : null;
   const days = {}; list.forEach(o => { const k = opDay(o.endTime); (days[k] = days[k] || []).push(o); });
   const rank = ds.filter(d => d.rn >= 3).sort((a, b) => a.rms / a.rn - b.rms / b.rn), few = ds.filter(d => d.rn > 0 && d.rn < 3);
   return `${filterBar()}
@@ -505,6 +548,7 @@ function statsHtml() {
     <div class="${late ? 'bad' : ''}"><div class="l">عدّى 30 دقيقة من الفاتورة</div><div class="v">${N(late)}${tot ? ` <small>(${Math.round(late / tot * 100)}%)</small>` : ''}</div></div>
     <div><div class="l">متوسط انتظار المندوب (من الفاتورة لحد الخروج)</div><div class="v">${wavg == null ? '—' : durMin(wavg)}</div><div class="l">${w.length ? N(w.length) + ' أوردر من السيستم' : 'لسه مفيش بيانات'}</div></div>
     <div><div class="l">قيمة الأوردرات</div><div class="v">${M(val)}</div></div>
+    <div><div class="l">دقة اقتراح المنطقة من العنوان</div><div class="v">${zs.length ? Math.round(zs.filter(o => o.zone === o.zoneSug).length / zs.length * 100) + '%' : '—'}</div><div class="l">${zs.length ? `${zs.filter(o => o.zone === o.zoneSug).length} من ${zs.length} صح` : 'لسه بنجرب'}</div></div>
     <div style="border-inline-start-color:#f59e0b"><div class="l">خارج المعمورة · عمولة الدليفري</div><div class="v">${N(out.length)} · ${M(comm)}</div></div></div>
   <h3 class="sec">الطيارين</h3><div class="tw"><table><tr><th class="l">الطيار</th><th>أوردرات</th><th>متوسط من الفاتورة</th><th>متوسط من الخروج (مؤكد)</th><th>&lt;10</th><th>10–15</th><th>15–20</th><th>20–30</th><th>&gt;30</th><th>خارج المعمورة</th><th>عمولة الدليفري</th><th>القيمة</th></tr>
   ${ds.map(d => `<tr><td class="l"><b>${esc(nm(d.n))}</b></td><td>${d.c}</td><td>${d.c ? durMin(d.tms / d.c) : '—'}</td><td>${d.rn ? `${durMin(d.rms / d.rn)} <small style="color:#94a3b8">(${d.rn})</small>` : '—'}</td>${d.b.map((x, i) => `<td ${i === 4 && x ? 'style="color:#C0392B;font-weight:800"' : ''}>${x}</td>`).join('')}<td>${d.out}${d.out ? ` (${M(d.outVal)})` : ''}</td><td><b style="color:#b45309">${M(d.comm)}</b></td><td>${M(d.val)}</td></tr>`).join('') || '<tr><td colspan="12" class="empty">مفيش بيانات في الفترة دي</td></tr>'}</table></div>
@@ -619,7 +663,7 @@ async function finish(id) {
   const o = findOrder(id); if (!o) return;
   try {
     await updateDoc(doc(DB, 'deliv_orders', id), { status: 'COMPLETED', endTime: Date.now(), endSource: 'app', comm: commFor(o.zone) });
-    beep(990, 2); toast('تم التسليم ✔');
+    beep(990, 2); toast('تم التسليم ✔'); if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); render();
   } catch (e) { toast('مقدرتش: ' + (e.code || e.message)); }
 }
 async function remove(id) {
@@ -692,6 +736,14 @@ function exportXl() {
 /* ---------- تايمر ---------- */
 function tick() {
   const now = Date.now();
+  const sy = ROOT.querySelector('[data-sys]');
+  if (sy) {
+    if (!SYS || !SYS.at) { sy.textContent = '⚪ لسه مفيش إشارة من سيرفر الفواتير'; sy.className = 'pill sys'; }
+    else { const ag = Math.max(0, Math.round((now - SYS.at) / 1000));
+      if (ag < 150) { sy.textContent = `🟢 سيرفر الفواتير شغال (آخر فحص من ${ag < 90 ? ag + ' ث' : Math.round(ag / 60) + ' د'})`; sy.className = 'pill sys ok'; }
+      else { sy.textContent = `🔴 سيرفر الفواتير واقف من ${Math.round(ag / 60)} دقيقة — الفواتير مش بتنزل`; sy.className = 'pill sys bad'; } }
+  }
+  const mb = ROOT.querySelector('[data-mute]'); if (mb) { const l = muteLbl(); if (mb.textContent !== l) mb.textContent = l; }
   ROOT.querySelectorAll('.oc[data-start]').forEach(c => {
     const out = c.dataset.out === '1', min = Math.floor((now - +c.dataset.start) / MIN);
     const late = !out && now - +c.dataset.bs >= +c.dataset.th, warn = min >= 20;
@@ -714,15 +766,17 @@ function subDone() {   // اللي اتسلّم من 9 الصبح (اليوم ا
 }
 
 export async function mountDelivery(root, role) {
-  ROOT = root; ROLE = role; css();
+  ROOT = root; ROLE = role; css(); SEEN = null;
   ROOT.id = ROOT.id || 'delRoot'; ROOT.classList.add('delwrap');
   const app = getApp(); DB = getFirestore(app); UID = getAuth(app).currentUser ? getAuth(app).currentUser.uid : '';
   UNSUB.forEach(u => u()); UNSUB = []; if (UDONE) { UDONE(); UDONE = null; } clearInterval(TICK); clearInterval(REFRESH);
   const fail = e => { ROOT.innerHTML = `<div class="banner bad">مقدرتش أقرا الدليفري: ${esc(e.code || e.message)}${e.code === 'permission-denied' ? ' — حط قواعد Firebase الجديدة الأول' : ''}</div>`; };
   UNSUB.push(onSnapshot(query(collection(DB, 'deliv_orders'), where('status', '==', 'PENDING')), s => {
-    OPEN = new Map(s.docs.map(d => [d.id, { id: d.id, ...d.data() }])); READY = 1; rebuild(); safeRender();
+    OPEN = new Map(s.docs.map(d => [d.id, { id: d.id, ...d.data() }])); READY = 1; checkNew(); rebuild(); safeRender();
   }, fail));
   subDone();
+  UNSUB.push(onSnapshot(doc(DB, 'deliv_sys', 'sync'), s => { SYS = s.exists() ? s.data() : null; }, () => { SYS = null; }));
+  if (!ROOT._wired) { ROOT._wired = 1; ROOT.addEventListener('input', () => { LAST_UI = Date.now(); }); document.addEventListener('pointerdown', armAudio, true); }
   UNSUB.push(onSnapshot(collection(DB, 'deliv_drivers'), s => {
     DRIVERS = s.docs.map(d => ({ id: d.id, ...d.data() }));
     safeRender();
