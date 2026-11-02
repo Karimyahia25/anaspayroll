@@ -299,18 +299,23 @@ function beep(freq = 880, n = 3) {
 /* ---------- صوت الفاتورة الجديدة ---------- */
 const audioOn = () => !!(AC && AC.state === 'running');
 function armAudio() { try { AC = AC || new (window.AudioContext || window.webkitAudioContext)(); if (AC.state !== 'running') AC.resume(); } catch (e) { } }
-function siren(secs = 3) {   // (2/11، طلبه) فاتورة توصيل جديدة نزلت = صوت قوي 3 ثواني (+ اهتزاز على الموبايل)
+function siren(secs = 2) {   // (2/11) فاتورة توصيل جديدة = نغمة رقيقة متوسطة ثانيتين (4 نقرات ناعمة) + اهتزاز خفيف على الموبايل
   if (ST.mute) return;
   try {
     armAudio();
-    const t0 = AC.currentTime, o = AC.createOscillator(), g = AC.createGain();
-    o.type = 'square'; o.connect(g); g.connect(AC.destination);
-    g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.7, t0 + 0.05);
-    for (let t = 0; t < secs; t += 0.3) o.frequency.setValueAtTime(Math.round(t / 0.3) % 2 ? 1175 : 880, t0 + t);
-    g.gain.setValueAtTime(0.7, t0 + secs - 0.15); g.gain.exponentialRampToValueAtTime(0.0001, t0 + secs);
+    const t0 = AC.currentTime, o = AC.createOscillator(), g = AC.createGain(), n = 4, step = secs / n;
+    o.type = 'sine'; o.connect(g); g.connect(AC.destination);
+    g.gain.setValueAtTime(0.0001, t0);
+    for (let i = 0; i < n; i++) {
+      const t = t0 + i * step;
+      o.frequency.setValueAtTime(i % 2 ? 988 : 784, t);                    // صول ← سي
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.3, t + 0.04);                   // بداية ناعمة
+      g.gain.exponentialRampToValueAtTime(0.0001, t + step * 0.9);          // وتخفت
+    }
     o.start(t0); o.stop(t0 + secs + 0.05);
   } catch (e) { }
-  try { navigator.vibrate && navigator.vibrate([300, 150, 300, 150, 300, 150, 300]); } catch (e) { }
+  try { navigator.vibrate && navigator.vibrate([200, 120, 200]); } catch (e) { }
 }
 let SEEN = null;   // الأوردرات المفتوحة اللي شفناها (أول تحميل مبيرنش)
 function checkNew() {

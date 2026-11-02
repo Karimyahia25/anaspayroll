@@ -401,7 +401,7 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="crmdev" class="hide"></div>
 <div id="delivery" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-11-02-M</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-11-02-N</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -2624,7 +2624,7 @@ let DEL_ON = false;
 async function openDelivery(root, role){
   if (DEL_ON) return; DEL_ON = true;
   if (!root && ROLE === 'admin') delAcct();
-  try { const m = await import('./sections/delivery.js?v=13'); await m.mountDelivery(root || $('delRoot'), role || ROLE); }
+  try { const m = await import('./sections/delivery.js?v=14'); await m.mountDelivery(root || $('delRoot'), role || ROLE); }
   catch (e) { DEL_ON = false; (root || $('delRoot')).innerHTML = `<div class="banner bad">مقدرتش أحمّل قسم الدليفري: ${esc(e.code || e.message)}</div>`; }
 }
 
