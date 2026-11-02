@@ -73,7 +73,13 @@ function css() {
 :is(#adm,#delivery) .delwrap .dbar button{flex:1 0 auto;background:transparent;color:#475569;border:0;border-radius:12px;padding:9px 16px;font-size:14px;font-weight:700;min-height:44px;box-shadow:none}
 :is(#adm,#delivery) .delwrap .dbar button.on{background:#fff;color:#047857;box-shadow:0 1px 2px rgba(0,0,0,.08)}
 :is(#adm,#delivery) .delwrap .dbar .n{display:inline-block;margin-inline-start:6px;background:#d1fae5;color:#065f46;border-radius:99px;padding:1px 8px;font-size:12px}
-:is(#adm,#delivery) .delwrap .newbar{width:100%;min-height:66px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;margin:0 0 14px;border-radius:18px;border:0;background:linear-gradient(135deg,#047857,#10b981);color:#fff;font-size:20px;font-weight:900;box-shadow:0 10px 18px -8px rgba(5,150,105,.7);cursor:pointer}
+:is(#adm,#delivery) .delwrap .topbar{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:0 0 14px}
+:is(#adm,#delivery) .delwrap .topbar .newbar:only-child{grid-column:1/-1}
+:is(#adm,#delivery) .delwrap .newbar.comm{background:linear-gradient(135deg,#b45309,#f59e0b);box-shadow:0 10px 18px -8px rgba(217,119,6,.7)}
+:is(#adm,#delivery) .delwrap .newbar.comm small{color:#fef3c7}
+@media(max-width:560px){:is(#adm,#delivery) .delwrap .newbar{font-size:15px;min-height:58px}:is(#adm,#delivery) .delwrap .newbar small{font-size:10.5px}}
+:is(#adm,#delivery) .delwrap .mdl .cmm{margin-top:0}
+:is(#adm,#delivery) .delwrap .newbar{width:100%;min-height:66px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;margin:0;border-radius:18px;border:0;background:linear-gradient(135deg,#047857,#10b981);color:#fff;font-size:20px;font-weight:900;box-shadow:0 10px 18px -8px rgba(5,150,105,.7);cursor:pointer}
 :is(#adm,#delivery) .delwrap .newbar small{font-size:12px;font-weight:600;color:#d1fae5}
 :is(#adm,#delivery) .delwrap .ocgrid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(400px,1fr));align-items:start}
 :is(#adm,#delivery) .delwrap .ocgrid .oc{margin-bottom:0}
@@ -82,8 +88,8 @@ function css() {
 .mback{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:70;display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:18px 12px}
 .mdl{position:relative;width:min(560px,100%);margin:auto}
 .mdl .mclose{position:absolute;top:10px;left:10px;z-index:2;width:40px;height:40px;padding:0;border-radius:50%;background:#f1f5f9;color:#334155;border:1px solid #e2e8f0;font-size:18px;box-shadow:none}
-:is(#adm,#delivery) .delwrap .split{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;align-items:start}
-@media(max-width:1000px){:is(#adm,#delivery) .delwrap .split{grid-template-columns:1fr}}
+:is(#adm,#delivery) .delwrap .split{display:grid;grid-template-columns:340px minmax(0,1fr);gap:16px;align-items:start}
+@media(max-width:1000px){:is(#adm,#delivery) .delwrap .split{grid-template-columns:1fr}:is(#adm,#delivery) .delwrap .pane.need{order:2}}
 :is(#adm,#delivery) .delwrap .pane{background:#fff;border:1px solid #e2e8f0;border-radius:18px;padding:12px}
 :is(#adm,#delivery) .delwrap .pane.need{background:#fffbeb;border-color:#fcd34d}
 :is(#adm,#delivery) .delwrap .pane h3{margin:0 0 10px;font-size:15px;font-weight:900;color:#1e293b}
@@ -363,16 +369,16 @@ function liveHtml(act) {
   });
   const outCards = [], needCards = [];
   act.forEach((o, n) => (o.driverName ? outCards : needCards).push(cardArr[n]));
-  return `${canWrite() ? `<button type="button" class="newbar" data-new><span>➕ تسجيل أوردر جديد</span><small>اضغط هنا علشان تبدأ أوردر (للأوردر اللي ملوش فاتورة)</small></button>` : ''}
+  return `<div class="topbar">${canWrite() ? `<button type="button" class="newbar" data-new><span>➕ تسجيل أوردر جديد</span><small>للأوردر اللي ملوش فاتورة</small></button>` : ''}<button type="button" class="newbar comm" data-comm><span>💰 عمولة الدليفري</span><small>اضغط لعرض عمولة كل مندوب</small></button></div>
     <div class="lhead"><div><h2 style="display:inline">الأوردرات النشطة حالياً</h2><span class="pill">${act.length - needN} جاري توصيلها</span>${needN ? `<span class="pill am" data-goneed style="cursor:pointer">🧾 ${needN} محتاج مندوب ↓</span>` : ''}${lateN ? `<span class="pill red">⚠ ${lateN} متأخر (تجاوز مهلة التوصيل)</span>` : ''}</div>
       <button class="sndb ${ST.mute ? 'off' : ''}" data-mute>${ST.mute ? '🔇 الصوت مكتوم' : '🔊 الصوت مفعل'}</button></div>
     <div class="split">
-      <div class="pane"><h3><span>🛵 جاري توصيلها (${outCards.length})</span></h3>
-        <div class="tiles">${outCards.join('') || '<div class="empty" style="grid-column:1/-1">مفيش أوردر جاري توصيله دلوقتي</div>'}</div></div>
       <div class="pane need" id="needSec"><h3><span>🧾 مستنية تأكيد المندوب (${needN})</span></h3>
         ${needN ? `<div class="stack">${needCards.join('')}</div>` : '<div class="empty">مفيش أوردرات مستنية</div>'}</div>
+      <div class="pane"><h3><span>🛵 جاري توصيلها (${outCards.length})</span></h3>
+        <div class="tiles">${outCards.join('') || '<div class="empty" style="grid-column:1/-1">مفيش أوردر جاري توصيله دلوقتي</div>'}</div></div>
     </div>
-    ${commHtml()}
+    ${ST.commOpen ? `<div class="mback" data-mback2><div class="mdl"><button type="button" class="mclose" data-closecomm title="إغلاق">✕</button>${commHtml()}</div></div>` : ''}
     ${canWrite() && (ST.formOpen || EDIT) ? `<div class="mback" data-mback><div class="mdl"><button type="button" class="mclose" data-closeform title="إغلاق">✕</button>${formHtml()}</div></div>` : ''}`;
 }
 
@@ -477,6 +483,10 @@ function bind() {
   const closeForm = () => { ST.formOpen = false; EDIT = null; render(); };
   const mb = $('[data-mback]', ROOT); if (mb) mb.onclick = e => { if (e.target === mb) closeForm(); };
   const cf = $('[data-closeform]', ROOT); if (cf) cf.onclick = closeForm;
+  const cb = $('[data-comm]', ROOT); if (cb) cb.onclick = () => { ST.commOpen = true; render(); };
+  const closeComm = () => { ST.commOpen = false; render(); };
+  const mb2 = $('[data-mback2]', ROOT); if (mb2) mb2.onclick = e => { if (e.target === mb2) closeComm(); };
+  const cc = $('[data-closecomm]', ROOT); if (cc) cc.onclick = closeComm;
   ROOT.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => remove(b.dataset.rm));
   ROOT.querySelectorAll('[data-adddrv]').forEach(b => b.onclick = addDrv);
   const f = $('#dForm', ROOT); if (!f) return;
