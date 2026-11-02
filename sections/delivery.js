@@ -209,6 +209,13 @@ function css() {
 `;
   document.head.appendChild(s);
 }
+// بيرسم الشاشة من جديد إلا لو الموظف بيكتب/بيختار في خانة (علشان ميضيعش اللي بيعمله)
+function safeRender() {
+  if (!ROOT || !ROOT.isConnected) return;
+  const a = document.activeElement;
+  if (a && ROOT.contains(a) && /INPUT|SELECT|TEXTAREA/.test(a.tagName)) { setTimeout(safeRender, 2500); return; }
+  render();
+}
 function toast(t) { const d = document.createElement('div'); d.className = 'deltoast'; d.textContent = t; document.body.appendChild(d); setTimeout(() => d.remove(), 2200); }
 
 /* ---------- صوت ---------- */
@@ -470,13 +477,13 @@ async function remove(id) {
 async function addDrv() {
   const n = (prompt('اسم الطيار الجديد:') || '').trim(); if (!n) return;
   if (drvList().includes(n)) { toast('الطيار ده موجود'); return; }
-  try { await addDoc(collection(DB, 'deliv_drivers'), { name: n }); toast('اتضاف ✔'); } catch (e) { toast('مقدرتش: ' + (e.code || e.message)); }
+  try { const r = await addDoc(collection(DB, 'deliv_drivers'), { name: n }); DRIVERS.push({ id: r.id, name: n }); toast('اتضاف ✔'); render(); } catch (e) { toast('مقدرتش أضيف المندوب: ' + (e.code || e.message)); }
 }
 async function delDrv() {
   const n = $('#dDrv', ROOT).value, d = DRIVERS.find(x => x.name === n);
   if (!d) { toast('الطيار ده مش في القايمة (متسجل على أوردرات قديمة بس)'); return; }
   if (!confirm(`تشيل الطيار «${n}» من القايمة؟ أوردراته القديمة هتفضل في السجل.`)) return;
-  try { await deleteDoc(doc(DB, 'deliv_drivers', d.id)); toast('اتشال'); } catch (e) { toast('مقدرتش: ' + (e.code || e.message)); }
+  try { await deleteDoc(doc(DB, 'deliv_drivers', d.id)); DRIVERS = DRIVERS.filter(x => x.id !== d.id); toast('اتشال'); render(); } catch (e) { toast('مقدرتش: ' + (e.code || e.message)); }
 }
 
 function receipt(id) {
@@ -539,13 +546,13 @@ export async function mountDelivery(root, role) {
   const fail = e => { ROOT.innerHTML = `<div class="banner bad">مقدرتش أقرا الدليفري: ${esc(e.code || e.message)}${e.code === 'permission-denied' ? ' — حط قواعد Firebase الجديدة الأول' : ''}</div>`; };
   UNSUB.push(onSnapshot(query(collection(DB, 'deliv_orders'), orderBy('startTime', 'desc'), limit(6000)), s => {
     ORDERS = s.docs.map(d => ({ id: d.id, ...d.data() })); READY = 1;
-    if (!(document.activeElement && ROOT.contains(document.activeElement) && /INPUT|SELECT/.test(document.activeElement.tagName))) render();
+    safeRender();
   }, fail));
   UNSUB.push(onSnapshot(collection(DB, 'deliv_drivers'), s => {
     DRIVERS = s.docs.map(d => ({ id: d.id, ...d.data() }));
-    if (!DRIVERS.length && isAdm() && READY === 0) DEF_DRIVERS.forEach(n => addDoc(collection(DB, 'deliv_drivers'), { name: n }).catch(() => { }));
-  }, () => { }));
+    safeRender();
+  }, e => toast('قايمة المناديب: ' + (e.code || e.message))));
   TICK = setInterval(() => { if (ROOT.isConnected) tick(); }, 1000);
-  REFRESH = setInterval(() => { if (ROOT.isConnected && ST.view === 'live' && !(document.activeElement && ROOT.contains(document.activeElement) && /INPUT|SELECT/.test(document.activeElement.tagName))) render(); }, 30000);
+  REFRESH = setInterval(() => { if (ROOT.isConnected && ST.view === 'live') safeRender(); }, 30000);
   render();
 }
