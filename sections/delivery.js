@@ -82,6 +82,33 @@ function css() {
 .mback{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:70;display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:18px 12px}
 .mdl{position:relative;width:min(560px,100%);margin:auto}
 .mdl .mclose{position:absolute;top:10px;left:10px;z-index:2;width:40px;height:40px;padding:0;border-radius:50%;background:#f1f5f9;color:#334155;border:1px solid #e2e8f0;font-size:18px;box-shadow:none}
+:is(#adm,#delivery) .delwrap .split{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;align-items:start}
+@media(max-width:1000px){:is(#adm,#delivery) .delwrap .split{grid-template-columns:1fr}}
+:is(#adm,#delivery) .delwrap .pane{background:#fff;border:1px solid #e2e8f0;border-radius:18px;padding:12px}
+:is(#adm,#delivery) .delwrap .pane.need{background:#fffbeb;border-color:#fcd34d}
+:is(#adm,#delivery) .delwrap .pane h3{margin:0 0 10px;font-size:15px;font-weight:900;color:#1e293b}
+:is(#adm,#delivery) .delwrap .pane.need h3{color:#b45309}
+:is(#adm,#delivery) .delwrap .tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+@media(max-width:600px){:is(#adm,#delivery) .delwrap .tiles{grid-template-columns:1fr 1fr;gap:8px}:is(#adm,#delivery) .delwrap .tile .tbtn .fin{font-size:13px}}
+:is(#adm,#delivery) .delwrap .stack{display:flex;flex-direction:column;gap:10px}
+:is(#adm,#delivery) .delwrap .stack .oc{margin:0}
+:is(#adm,#delivery) .delwrap .tile{padding:10px;gap:6px;border-radius:14px;margin:0;min-width:0}
+:is(#adm,#delivery) .delwrap .tile .th{display:flex;justify-content:space-between;align-items:center;gap:4px}
+:is(#adm,#delivery) .delwrap .tile .dn{font-size:15px;font-weight:900;color:#1e293b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+:is(#adm,#delivery) .delwrap .tile .tt{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+:is(#adm,#delivery) .delwrap .tile .bd{font-size:13px;padding:3px 10px}
+:is(#adm,#delivery) .delwrap .tile .tc{font-size:12px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+:is(#adm,#delivery) .delwrap .tile .tm2 b{font-size:18px;font-weight:900;color:#047857}
+:is(#adm,#delivery) .delwrap .tile.late .tm2 b{color:#b91c1c}
+:is(#adm,#delivery) .delwrap .tile .tm2 small{display:block;font-size:10.5px;color:#64748b}
+:is(#adm,#delivery) .delwrap .tile .tb{display:flex;gap:4px;flex-wrap:wrap;align-items:center}
+:is(#adm,#delivery) .delwrap .tile .tb .bg{font-size:11px;padding:2px 7px}
+:is(#adm,#delivery) .delwrap .tile .tb .pb{padding:1px 6px;font-size:12px;margin:0}
+:is(#adm,#delivery) .delwrap .tile .nt{font-size:14px}
+:is(#adm,#delivery) .delwrap .tile .tbtn{display:flex;flex-direction:column;gap:6px;margin-top:auto}
+:is(#adm,#delivery) .delwrap .tile .tbtn .fin{width:100%;min-height:38px;background:#059669;color:#fff;border:0;border-radius:10px;font-size:14px;font-weight:800;padding:6px;box-shadow:none}
+:is(#adm,#delivery) .delwrap .tile .ib{display:flex;gap:6px}
+:is(#adm,#delivery) .delwrap .tile .ib button{flex:1;min-height:34px;padding:4px;border-radius:9px;font-size:15px;box-shadow:none;border:1px solid #e2e8f0;background:#f8fafc;color:#334155}
 :is(#adm,#delivery) .delwrap .dlay{display:grid;gap:20px;grid-template-columns:1fr;align-items:start}
 @media(min-width:1024px){:is(#adm,#delivery) .delwrap .dlay{grid-template-columns:5fr 6fr}}
 :is(#adm,#delivery) .delwrap .dform{background:#fff;border-radius:24px;border:1px solid #e2e8f0;padding:24px;box-shadow:0 1px 2px rgba(0,0,0,.05)}
@@ -325,27 +352,26 @@ function liveHtml(act) {
     const b = bm.get(o.id) || { th: LATE_SINGLE, start: o.startTime, batch: false, size: 1, idx: 1 }, out = o.zone === 'خارج المعمورة';
     const late = !out && now - b.start >= b.th, min = Math.floor((now - o.startTime) / MIN), warn = min >= (b.batch ? 25 : 15);
     const cls = late ? 'late' : out ? 'outz' : b.batch ? 'batch' : '';
-    return `<div class="oc ${cls}" data-id="${o.id}" data-start="${o.startTime}" data-bs="${b.start}" data-th="${b.th}" data-out="${out ? 1 : 0}" data-batch="${b.batch ? 1 : 0}">
-      ${b.batch ? `<div><span class="bg bat">🔗 طلعة مجمعة (${b.size} أوردرات معاً) · أوردر #${b.idx} من ${b.size}</span> <span class="cu">${out ? 'خارج المعمورة (بدون إنذار)' : 'مهلة الإنذار: 30 دقيقة'}</span></div>` : ''}
-      <div class="top"><div class="who"><div class="av">🛵</div><div>
-        <h4>${esc(nm(o.driverName))}${late ? `<span class="bg red" data-lt>⚠ متأخر (+${b.th / MIN} د)</span>` : '<span data-lt></span>'}</h4>
-        <div class="chips">${o.customerName ? `<span class="cu">👤 ${esc(o.customerName)}</span>` : ''}${o.employeeName ? `<span class="bg emp">الموظف: ${esc(nm(o.employeeName))}</span>` : ''}<span class="bg ${out ? 'zout' : 'zin'}">${out ? '🧭' : '📍'} ${esc(o.zone || ZONES[0])}</span>${out ? `<span class="bg cm">💰 عمولة الدليفري ${COMM_OUT} ج</span>` : ''}${o.source === 'pos' ? `<span class="bg bat">من السيستم #${o.posId}</span>` : ''}${o.district ? `<span class="cu">🏠 ${esc(o.district)}</span>` : ''}${o.posEndTime ? `<span class="bg cm">✅ اتقفل في السيستم ${timeStr(o.posEndTime)}</span>` : ''}</div></div></div>
-        <div class="tms"><span class="bd ${late ? 'late' : out ? 'out' : warn ? 'warn' : ''}" data-bd>🕒 منذ ${min} د${out ? ' · بدون إنذار' : ''}</span>
-          <div class="dt"><span>📅 ${dateStr(o.startTime)}</span><span>خروج: ${timeStr(o.startTime)}</span></div></div></div>
-      <div class="dgrid"><div><small>قيمة الطلب</small><b>${M(o.orderValue)}</b></div><div><small>فكة للطلب</small><b>${M(o.changeGiven || 0)}</b></div></div>
-      ${(o.isVisa || o.isVodafoneCash) ? `<div>${o.isVisa ? '<span class="pb v">💳 دفع بالفيزا</span>' : ''}${o.isVodafoneCash ? '<span class="pb f">📱 فودافون كاش</span>' : ''}</div>` : ''}
-      ${o.notes ? `<div class="note">ملاحظة: ${esc(o.notes)}</div>` : ''}
-      <div class="ftr"><div class="tot"><small>المبلغ الإجمالي المطلوب</small><b>${M((o.orderValue || 0) + (o.changeGiven || 0))}</b></div>
-      ${canWrite() ? `<div class="btns"><button class="fin" data-fin="${o.id}">✔ تسليم</button><button class="prn" data-rc="${o.id}">🖨 طباعة ريسيت</button><button class="edt" data-ed="${o.id}">✏️ تعديل</button><button class="del" data-rm="${o.id}">🗑 حذف</button></div>` : ''}</div></div>`;
+    const tot = (o.orderValue || 0) + (o.changeGiven || 0);
+    return `<div class="oc tile ${cls}" data-id="${o.id}" data-start="${o.startTime}" data-bs="${b.start}" data-th="${b.th}" data-out="${out ? 1 : 0}" data-batch="${b.batch ? 1 : 0}">
+      <div class="th"><b class="dn">${esc(nm(o.driverName))}</b>${b.batch ? `<span class="bg bat" title="طلعة مجمعة: أوردر ${b.idx} من ${b.size}">🔗 ${b.idx}/${b.size}</span>` : ''}</div>
+      <div class="tt"><span class="bd ${late ? 'late' : out ? 'out' : warn ? 'warn' : ''}" data-bd>🕒 ${min} د</span><span data-lt class="${late ? 'bg red' : ''}">${late ? '⚠ متأخر' : ''}</span></div>
+      <div class="tc" title="${esc(o.customerName || '')}">${o.customerName ? '👤 ' + esc(o.customerName) : '&nbsp;'}</div>
+      <div class="tm2"><b>${M(tot)}</b>${o.changeGiven ? `<small>قيمة ${N(o.orderValue)} + فكة ${N(o.changeGiven)}</small>` : '<small>&nbsp;</small>'}</div>
+      <div class="tb"><span class="bg ${out ? 'zout' : 'zin'}">${out ? `🧭 خارج · 💰${COMM_OUT}` : '📍 داخل'}</span>${o.isVisa ? '<span class="pb v" title="فيزا">💳</span>' : ''}${o.isVodafoneCash ? '<span class="pb f" title="فودافون كاش">📱</span>' : ''}${o.notes ? `<span class="nt" title="${esc(o.notes)}">📝</span>` : ''}${o.posEndTime ? '<span class="nt" title="اتقفل في السيستم">✅</span>' : ''}</div>
+      ${canWrite() ? `<div class="tbtn"><button class="fin" data-fin="${o.id}">✔ تسليم</button><div class="ib"><button class="prn" data-rc="${o.id}" title="طباعة ريسيت">🖨</button><button class="edt" data-ed="${o.id}" title="تعديل">✏️</button><button class="del" data-rm="${o.id}" title="حذف">🗑</button></div></div>` : ''}</div>`;
   });
   const outCards = [], needCards = [];
   act.forEach((o, n) => (o.driverName ? outCards : needCards).push(cardArr[n]));
   return `${canWrite() ? `<button type="button" class="newbar" data-new><span>➕ تسجيل أوردر جديد</span><small>اضغط هنا علشان تبدأ أوردر (للأوردر اللي ملوش فاتورة)</small></button>` : ''}
     <div class="lhead"><div><h2 style="display:inline">الأوردرات النشطة حالياً</h2><span class="pill">${act.length - needN} جاري توصيلها</span>${needN ? `<span class="pill am" data-goneed style="cursor:pointer">🧾 ${needN} محتاج مندوب ↓</span>` : ''}${lateN ? `<span class="pill red">⚠ ${lateN} متأخر (تجاوز مهلة التوصيل)</span>` : ''}</div>
       <button class="sndb ${ST.mute ? 'off' : ''}" data-mute>${ST.mute ? '🔇 الصوت مكتوم' : '🔊 الصوت مفعل'}</button></div>
-    <h3 class="sec">🛵 بره دلوقتي (${outCards.length})</h3>
-    <div class="ocgrid">${outCards.join('') || '<div class="empty">مفيش أوردر بره دلوقتي</div>'}</div>
-    ${needN ? `<h3 class="sec need" id="needSec">🧾 محتاجة مندوب (${needN}) — اختار المندوب والمنطقة</h3><div class="ocgrid">${needCards.join('')}</div>` : ''}
+    <div class="split">
+      <div class="pane"><h3><span>🛵 جاري توصيلها (${outCards.length})</span></h3>
+        <div class="tiles">${outCards.join('') || '<div class="empty" style="grid-column:1/-1">مفيش أوردر جاري توصيله دلوقتي</div>'}</div></div>
+      <div class="pane need" id="needSec"><h3><span>🧾 مستنية تأكيد المندوب (${needN})</span></h3>
+        ${needN ? `<div class="stack">${needCards.join('')}</div>` : '<div class="empty">مفيش أوردرات مستنية</div>'}</div>
+    </div>
     ${commHtml()}
     ${canWrite() && (ST.formOpen || EDIT) ? `<div class="mback" data-mback><div class="mdl"><button type="button" class="mclose" data-closeform title="إغلاق">✕</button>${formHtml()}</div></div>` : ''}`;
 }
@@ -549,10 +575,10 @@ function tick() {
   ROOT.querySelectorAll('.oc[data-start]').forEach(c => {
     const out = c.dataset.out === '1', min = Math.floor((now - +c.dataset.start) / MIN);
     const late = !out && now - +c.dataset.bs >= +c.dataset.th, warn = min >= (c.dataset.batch === '1' ? 25 : 15);
-    const bd = c.querySelector('[data-bd]'); if (bd) { bd.textContent = `🕒 منذ ${min} د${out ? ' · بدون إنذار' : ''}`; bd.className = 'bd ' + (late ? 'late' : out ? 'out' : warn ? 'warn' : ''); }
+    const bd = c.querySelector('[data-bd]'); if (bd) { bd.textContent = c.classList.contains('tile') ? `🕒 ${min} د` : `🕒 منذ ${min} د${out ? ' · بدون إنذار' : ''}`; bd.className = 'bd ' + (late ? 'late' : out ? 'out' : warn ? 'warn' : ''); }
     if (late !== c.classList.contains('late')) {
       c.classList.toggle('late', late);
-      const lt = c.querySelector('[data-lt]'); if (lt) { lt.className = late ? 'bg red' : ''; lt.textContent = late ? `⚠ متأخر (+${+c.dataset.th / MIN} د)` : ''; }
+      const lt = c.querySelector('[data-lt]'); if (lt) { lt.className = late ? 'bg red' : ''; lt.textContent = late ? (c.classList.contains('tile') ? '⚠ متأخر' : `⚠ متأخر (+${+c.dataset.th / MIN} د)`) : ''; }
     }
     if (late && !ALARMED.has(c.dataset.id)) { ALARMED.add(c.dataset.id); beep(1200, 4); }
   });
