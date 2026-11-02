@@ -29,6 +29,7 @@ const durMin = ms => (ms == null || isNaN(ms)) ? '—' : Math.round(ms / MIN) + 
 const nm = n => String(n || '').replace(/\*/g, '').trim();
 
 let ROOT, ROLE, DB, UID, ORDERS = [], DRIVERS = [], READY = 0, BM = new Map(), EDIT = null, UNSUB = [], TICK = null, REFRESH = null;
+let ASG = {};   // اختيار المندوب والمنطقة لأوردرات السيستم اللي لسه متوزعتش
 let DR = {};   // مسودة الفورم (علشان التحديث التلقائي ميمسحش اللي اتكتب)
 let ST = { cday: '', view: 'live', period: 'today', from: '', to: '', driver: '', zone: '', mute: false, shown: 60 };
 const ALARMED = new Set();
@@ -170,6 +171,14 @@ function css() {
 .delwrap .btns .prn{background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe}
 .delwrap .btns .edt{background:#f1f5f9;color:#334155;border:1px solid #e2e8f0}
 .delwrap .btns .del{background:#f8fafc;color:#64748b;border:1px solid #e2e8f0}
+.delwrap .oc.asg{background:#fffbeb;border:2px dashed #f59e0b}
+.delwrap .asgbox{display:flex;flex-direction:column;gap:10px;border-top:1px solid #fde68a;padding-top:12px}
+.delwrap .asgbox select{width:100%;background:#fff;border:1px solid #fcd34d;border-radius:12px;padding:10px 12px;font-size:15px;font-weight:700;min-height:44px}
+.delwrap .asgbox .zones button{min-height:78px;padding:10px;gap:6px}
+.delwrap .asgbox .zones button b{font-size:15px}
+.delwrap .asgbox .zones.miss button{box-shadow:0 0 0 3px #fca5a5}
+.delwrap .pill.am{background:#fef3c7;color:#92400e;border:1px solid #fcd34d}
+.delwrap .hint2{font-size:12px;color:#64748b;margin:-8px 0 14px;background:#f8fafc;border-radius:10px;padding:8px 10px}
 .delwrap .dk{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin-bottom:12px}
 .delwrap .dk>div{background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:12px 14px;border-inline-start:4px solid #10b981}
 .delwrap .dk .l{font-size:12px;color:#64748b}.delwrap .dk .v{font-size:21px;font-weight:800}
@@ -216,8 +225,8 @@ function beep(freq = 880, n = 3) {
 }
 
 /* ---------- البيانات ---------- */
-const active = () => ORDERS.filter(o => o.status === 'PENDING').sort((a, b) => b.startTime - a.startTime);
-const done = () => ORDERS.filter(o => o.status === 'COMPLETED' && o.endTime);
+const active = () => ORDERS.filter(o => o.status === 'PENDING').sort((a, b) => (!!a.driverName - !!b.driverName) || b.startTime - a.startTime);   // اللي من غير مندوب الأول
+const done = () => ORDERS.filter(o => o.status === 'COMPLETED' && o.endTime && o.driverName);
 const drvList = () => { const s = new Set(DRIVERS.map(d => d.name)); ORDERS.forEach(o => o.driverName && s.add(o.driverName)); return [...s]; };
 
 function periodRange() {
@@ -269,6 +278,7 @@ function formHtml() {
   const d = e ? { emp: e.employeeName || '', drv: e.driverName, cus: e.customerName || '', zone: e.zone || '', val: e.orderValue, chg: e.changeGiven || '', visa: !!e.isVisa, voda: !!e.isVodafoneCash, note: e.notes || '' }
     : { emp: DR.emp !== undefined ? DR.emp : (localStorage.getItem('del_emp') || ''), drv: DR.drv || '', cus: DR.cus || '', zone: DR.zone || '', val: DR.val || '', chg: DR.chg || '', visa: !!DR.visa, voda: !!DR.voda, note: DR.note || '' };
   return `<div class="dform ${e ? 'edit' : ''}" id="dForm"><h3>${e ? '✏️ تعديل الأوردر' : '🚀 تسجيل طلب جديد'}</h3>
+  ${e ? '' : '<p class="hint2">فواتير التوصيل بتنزل هنا لوحدها من فارما فلاي — سجّل بإيدك بس الأوردر اللي ملوش فاتورة، علشان ميتكررش.</p>'}
   <div class="fld emp"><label>الموظف المسئول <span class="req">* (إجباري)</span></label>
     <select id="dEmp"><option value="">-- اختر الموظف المسئول (إجباري) --</option>${EMPLOYEES.map(x => `<option ${x === d.emp ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></div>
   <div class="fld"><div style="display:flex;justify-content:space-between;align-items:center"><label style="margin:0">اسم المندوب</label>${isAdm() ? '<button type="button" class="lnk" data-adddrv>+ إضافة مندوب جديد</button>' : ''}</div>
@@ -290,9 +300,11 @@ function formHtml() {
 }
 
 function liveHtml(act) {
-  const now = Date.now(), bm = batchMap(ORDERS.filter(o => now - o.startTime < 36 * 3600e3), now);
-  const lateN = act.filter(o => { const b = bm.get(o.id) || { th: LATE_SINGLE, start: o.startTime }; return o.zone !== 'خارج المعمورة' && now - b.start >= b.th; }).length;
+  const now = Date.now(), bm = batchMap(ORDERS.filter(o => o.driverName && now - o.startTime < 36 * 3600e3), now);
+  const needN = act.filter(o => !o.driverName).length;
+  const lateN = act.filter(o => o.driverName).filter(o => { const b = bm.get(o.id) || { th: LATE_SINGLE, start: o.startTime }; return o.zone !== 'خارج المعمورة' && now - b.start >= b.th; }).length;
   const cards = act.map(o => {
+    if (!o.driverName) return asgCard(o, now);
     const b = bm.get(o.id) || { th: LATE_SINGLE, start: o.startTime, batch: false, size: 1, idx: 1 }, out = o.zone === 'خارج المعمورة';
     const late = !out && now - b.start >= b.th, min = Math.floor((now - o.startTime) / MIN), warn = min >= (b.batch ? 25 : 15);
     const cls = late ? 'late' : out ? 'outz' : b.batch ? 'batch' : '';
@@ -300,7 +312,7 @@ function liveHtml(act) {
       ${b.batch ? `<div><span class="bg bat">🔗 طلعة مجمعة (${b.size} أوردرات معاً) · أوردر #${b.idx} من ${b.size}</span> <span class="cu">${out ? 'خارج المعمورة (بدون إنذار)' : 'مهلة الإنذار: 30 دقيقة'}</span></div>` : ''}
       <div class="top"><div class="who"><div class="av">🛵</div><div>
         <h4>${esc(nm(o.driverName))}${late ? `<span class="bg red" data-lt>⚠ متأخر (+${b.th / MIN} د)</span>` : '<span data-lt></span>'}</h4>
-        <div class="chips">${o.customerName ? `<span class="cu">👤 ${esc(o.customerName)}</span>` : ''}${o.employeeName ? `<span class="bg emp">الموظف: ${esc(nm(o.employeeName))}</span>` : ''}<span class="bg ${out ? 'zout' : 'zin'}">${out ? '🧭' : '📍'} ${esc(o.zone || ZONES[0])}</span>${out ? `<span class="bg cm">💰 عمولة الدليفري ${COMM_OUT} ج</span>` : ''}</div></div></div>
+        <div class="chips">${o.customerName ? `<span class="cu">👤 ${esc(o.customerName)}</span>` : ''}${o.employeeName ? `<span class="bg emp">الموظف: ${esc(nm(o.employeeName))}</span>` : ''}<span class="bg ${out ? 'zout' : 'zin'}">${out ? '🧭' : '📍'} ${esc(o.zone || ZONES[0])}</span>${out ? `<span class="bg cm">💰 عمولة الدليفري ${COMM_OUT} ج</span>` : ''}${o.source === 'pos' ? `<span class="bg bat">من السيستم #${o.posId}</span>` : ''}${o.district ? `<span class="cu">🏠 ${esc(o.district)}</span>` : ''}${o.posEndTime ? `<span class="bg cm">✅ اتقفل في السيستم ${timeStr(o.posEndTime)}</span>` : ''}</div></div></div>
         <div class="tms"><span class="bd ${late ? 'late' : out ? 'out' : warn ? 'warn' : ''}" data-bd>🕒 منذ ${min} د${out ? ' · بدون إنذار' : ''}</span>
           <div class="dt"><span>📅 ${dateStr(o.startTime)}</span><span>خروج: ${timeStr(o.startTime)}</span></div></div></div>
       <div class="dgrid"><div><small>قيمة الطلب</small><b>${M(o.orderValue)}</b></div><div><small>فكة للطلب</small><b>${M(o.changeGiven || 0)}</b></div></div>
@@ -310,12 +322,38 @@ function liveHtml(act) {
       ${canWrite() ? `<div class="btns"><button class="fin" data-fin="${o.id}">✔ تسليم</button><button class="prn" data-rc="${o.id}">🖨 طباعة ريسيت</button><button class="edt" data-ed="${o.id}">✏️ تعديل</button>${isAdm() ? `<button class="del" data-rm="${o.id}">🗑 حذف</button>` : ''}</div>` : ''}</div></div>`;
   }).join('');
   return `<div class="dlay">${canWrite() ? `<div>${formHtml()}</div>` : ''}
-    <div><div class="lhead"><div><h2 style="display:inline">الأوردرات النشطة حالياً</h2><span class="pill">${act.length} جاري توصيلها</span>${lateN ? `<span class="pill red">⚠ ${lateN} متأخر (تجاوز مهلة التوصيل)</span>` : ''}</div>
+    <div><div class="lhead"><div><h2 style="display:inline">الأوردرات النشطة حالياً</h2><span class="pill">${act.length - needN} جاري توصيلها</span>${needN ? `<span class="pill am">🧾 ${needN} محتاج مندوب</span>` : ''}${lateN ? `<span class="pill red">⚠ ${lateN} متأخر (تجاوز مهلة التوصيل)</span>` : ''}</div>
       <button class="sndb ${ST.mute ? 'off' : ''}" data-mute>${ST.mute ? '🔇 الصوت مكتوم' : '🔊 الصوت مفعل'}</button></div>
       ${cards || '<div class="empty">لا توجد طلبات نشطة حالياً</div>'}</div></div>${commHtml()}`;
 }
 
 // عمولة الدليفري باليوم (طلبه 2/11): الأوردرات اللي اتسلّمت خارج المعمورة في اليوم ده × 5 ج، لكل مندوب
+function asgCard(o, now) {
+  const a = ASG[o.id] || {}, min = Math.floor((now - o.startTime) / MIN), drs = drvList();
+  return `<div class="oc asg" data-id="${o.id}" data-start="${o.startTime}" data-bs="${o.startTime}" data-th="${LATE_SINGLE}" data-out="0" data-batch="0">
+    <div class="top"><div class="who"><div class="av">🧾</div><div>
+      <h4>${esc(nm(o.customerName) || 'عميل بدون اسم')}<span class="bg bat">من السيستم #${o.posId || ''}</span></h4>
+      <div class="chips">${o.district ? `<span class="cu">🏠 ${esc(o.district)}</span>` : ''}${o.employeeName ? `<span class="bg emp">الكاشير: ${esc(nm(o.employeeName))}</span>` : ''}${o.posEndTime ? `<span class="bg cm">✅ اتقفل في السيستم ${timeStr(o.posEndTime)}</span>` : ''}</div></div></div>
+      <div class="tms"><span class="bd" data-bd>🕒 منذ ${min} د</span><div class="dt"><span>📅 ${dateStr(o.startTime)}</span><span>الفاتورة: ${timeStr(o.startTime)}</span></div></div></div>
+    <div class="dgrid"><div><small>قيمة الطلب</small><b>${M(o.orderValue)}</b></div><div><small>الحالة</small><b style="color:#b45309">محتاج مندوب ومنطقة</b></div></div>
+    ${canWrite() ? `<div class="asgbox"><select data-asd="${o.id}"><option value="">-- اختر المندوب (إجباري) --</option>${drs.map(x => `<option ${a.drv === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
+      <div class="zones" data-asz="${o.id}">
+        <button type="button" data-az="${ZONES[0]}" class="in ${a.zone === ZONES[0] ? 'on' : ''}"><span class="ic">📍</span><span><b>داخل المعمورة الشاطئ</b><small>من غير عمولة</small></span></button>
+        <button type="button" data-az="${ZONES[1]}" class="out ${a.zone === ZONES[1] ? 'on' : ''}"><span class="ic">🧭</span><span><b>خارج المعمورة</b><small>عمولة الدليفري ${COMM_OUT} ج</small></span></button></div>
+      <div class="btns"><button class="fin" data-asgo="${o.id}">🛵 تأكيد وبدء التوصيل</button>${isAdm() ? `<button class="del" data-rm="${o.id}">🗑 حذف</button>` : ''}</div></div>` : ''}</div>`;
+}
+
+async function assign(id) {
+  const o = ORDERS.find(x => x.id === id); if (!o) return;
+  const a = ASG[id] || {};
+  if (!a.drv) { toast('اختار المندوب الأول'); return; }
+  if (!a.zone) { toast('لازم تختار المنطقة: داخل أو خارج المعمورة'); const z = ROOT.querySelector(`[data-asz="${id}"]`); if (z) z.classList.add('miss'); return; }
+  const data = { driverName: a.drv, zone: a.zone };
+  if (o.posEndTime) { data.status = 'COMPLETED'; data.endTime = o.posEndTime; }   // الكاشير قفل التوصيل في السيستم قبل ما نحدد المندوب
+  try { await updateDoc(doc(DB, 'deliv_orders', id), data); delete ASG[id]; beep(660, 1); toast(o.posEndTime ? 'اتسجّل واتقفل (اتقفل في السيستم) ✔' : 'الأوردر بدأ 🛵'); }
+  catch (e) { toast('مقدرتش: ' + (e.code || e.message)); }
+}
+
 function commHtml() {
   const day = ST.cday || opDay(Date.now()), per = new Map();
   drvList().forEach(n => per.set(n, 0));
@@ -371,6 +409,13 @@ function filterBar() {
 function bind() {
   ROOT.querySelectorAll('[data-p]').forEach(b => b.onclick = () => { ST.period = b.dataset.p; ST.shown = 60; render(); });
   [['fFrom', 'from'], ['fTo', 'to'], ['fDrv', 'driver'], ['fZone', 'zone']].forEach(([id, k]) => { const e = $('#' + id, ROOT); if (e) e.onchange = () => { ST[k] = e.value; ST.shown = 60; render(); }; });
+  ROOT.querySelectorAll('[data-asd]').forEach(sel => sel.onchange = () => { (ASG[sel.dataset.asd] = ASG[sel.dataset.asd] || {}).drv = sel.value; });
+  ROOT.querySelectorAll('[data-az]').forEach(b => b.onclick = () => {
+    const box = b.closest('[data-asz]'), id = box.dataset.asz;
+    (ASG[id] = ASG[id] || {}).zone = b.dataset.az; box.classList.remove('miss');
+    box.querySelectorAll('[data-az]').forEach(x => x.classList.toggle('on', x === b));
+  });
+  ROOT.querySelectorAll('[data-asgo]').forEach(b => b.onclick = () => assign(b.dataset.asgo));
   const cd = $('#cDay', ROOT); if (cd) cd.onchange = () => { ST.cday = cd.value; render(); };
   const more = $('[data-more]', ROOT); if (more) more.onclick = () => { ST.shown += 100; render(); };
   const xl = $('[data-xl]', ROOT); if (xl) xl.onclick = exportXl;
