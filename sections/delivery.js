@@ -36,6 +36,7 @@ const ALARMED = new Set();
 
 const canWrite = () => ROLE === 'admin' || ROLE === 'cashier';
 const isAdm = () => ROLE === 'admin';
+const canDrv = () => ROLE === 'admin' || ROLE === 'cashier';   // (2/11، طلبه) إضافة/شيل مندوب: الأدمن وجهاز الدليفري
 const seeStats = () => ROLE === 'admin' || ROLE === 'viewer';
 
 /* ---------- الطلعات المجمعة ---------- */
@@ -73,7 +74,7 @@ function css() {
 :is(#adm,#delivery) .delwrap .dbar button.on{background:#fff;color:#047857;box-shadow:0 1px 2px rgba(0,0,0,.08)}
 :is(#adm,#delivery) .delwrap .dbar .n{display:inline-block;margin-inline-start:6px;background:#d1fae5;color:#065f46;border-radius:99px;padding:1px 8px;font-size:12px}
 :is(#adm,#delivery) .delwrap .dlay{display:grid;gap:20px;grid-template-columns:1fr;align-items:start}
-@media(min-width:1024px){:is(#adm,#delivery) .delwrap .dlay{grid-template-columns:5fr 7fr}}
+@media(min-width:1024px){:is(#adm,#delivery) .delwrap .dlay{grid-template-columns:5fr 6fr}}
 :is(#adm,#delivery) .delwrap .dform{background:#fff;border-radius:24px;border:1px solid #e2e8f0;padding:24px;box-shadow:0 1px 2px rgba(0,0,0,.05)}
 :is(#adm,#delivery) .delwrap .dform.edit{outline:3px solid #fbbf24}
 :is(#adm,#delivery) .delwrap .dform h3{margin:0 0 16px;padding-bottom:12px;border-bottom:1px solid #e2e8f0;font-size:18px;font-weight:800;color:#1e293b}
@@ -123,7 +124,7 @@ function css() {
 :is(#adm,#delivery) .delwrap .pill.red{background:#fee2e2;color:#b91c1c;border:1px solid #fecaca}
 :is(#adm,#delivery) .delwrap .sndb{font-size:12px;font-weight:600;border-radius:12px;padding:6px 10px;min-height:0;border:1px solid #a7f3d0;background:#ecfdf5;color:#047857;box-shadow:none}
 :is(#adm,#delivery) .delwrap .sndb.off{background:#f1f5f9;color:#94a3b8;border-color:transparent}
-:is(#adm,#delivery) .delwrap .oc{background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:18px;margin-bottom:16px;box-shadow:0 1px 2px rgba(0,0,0,.05);display:flex;flex-direction:column;gap:12px}
+:is(#adm,#delivery) .delwrap .oc{background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:14px;margin-bottom:12px;box-shadow:0 1px 2px rgba(0,0,0,.05);display:flex;flex-direction:column;gap:9px}
 :is(#adm,#delivery) .delwrap .oc.batch{border:2px solid #c7d2fe}
 :is(#adm,#delivery) .delwrap .oc.outz{border:2px solid #818cf8}
 :is(#adm,#delivery) .delwrap .oc.late{background:rgba(254,242,242,.85);border:2px solid #f87171;box-shadow:0 0 0 1px #f87171,0 4px 6px rgba(254,202,202,.6)}
@@ -150,7 +151,7 @@ function css() {
 :is(#adm,#delivery) .delwrap .bd.late{background:#dc2626;color:#fff}
 :is(#adm,#delivery) .delwrap .dt{display:flex;gap:8px;font-size:11px;color:#64748b;font-weight:600}
 :is(#adm,#delivery) .delwrap .dt span{background:#f1f5f9;border-radius:6px;padding:2px 8px}
-:is(#adm,#delivery) .delwrap .dgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+:is(#adm,#delivery) .delwrap .dgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 :is(#adm,#delivery) .delwrap .dgrid>div{background:#f8fafc;border-radius:12px;padding:8px}
 :is(#adm,#delivery) .delwrap .oc.late .dgrid>div{background:rgba(254,226,226,.7);border:1px solid #fecaca}
 :is(#adm,#delivery) .delwrap .dgrid small{display:block;font-size:10px;color:#64748b;font-weight:600;margin-bottom:2px}
@@ -174,7 +175,7 @@ function css() {
 :is(#adm,#delivery) .delwrap .oc.asg{background:#fffbeb;border:2px dashed #f59e0b}
 :is(#adm,#delivery) .delwrap .asgbox{display:flex;flex-direction:column;gap:10px;border-top:1px solid #fde68a;padding-top:12px}
 :is(#adm,#delivery) .delwrap .asgbox select{width:100%;background:#fff;border:1px solid #fcd34d;border-radius:12px;padding:10px 12px;font-size:15px;font-weight:700;min-height:44px}
-:is(#adm,#delivery) .delwrap .asgbox .zones button{min-height:78px;padding:10px;gap:6px}
+:is(#adm,#delivery) .delwrap .asgbox .zones button{min-height:66px;padding:8px 10px;gap:4px}
 :is(#adm,#delivery) .delwrap .asgbox .zones button b{font-size:15px}
 :is(#adm,#delivery) .delwrap .asgbox .zones.miss button{box-shadow:0 0 0 3px #fca5a5}
 :is(#adm,#delivery) .delwrap .pill.am{background:#fef3c7;color:#92400e;border:1px solid #fcd34d}
@@ -281,9 +282,9 @@ function formHtml() {
   ${e ? '' : '<p class="hint2">فواتير التوصيل بتنزل هنا لوحدها من فارما فلاي — سجّل بإيدك بس الأوردر اللي ملوش فاتورة، علشان ميتكررش.</p>'}
   <div class="fld emp"><label>الموظف المسئول <span class="req">* (إجباري)</span></label>
     <select id="dEmp"><option value="">-- اختر الموظف المسئول (إجباري) --</option>${EMPLOYEES.map(x => `<option ${x === d.emp ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></div>
-  <div class="fld"><div style="display:flex;justify-content:space-between;align-items:center"><label style="margin:0">اسم المندوب</label>${isAdm() ? '<button type="button" class="lnk" data-adddrv>+ إضافة مندوب جديد</button>' : ''}</div>
+  <div class="fld"><div style="display:flex;justify-content:space-between;align-items:center"><label style="margin:0">اسم المندوب</label>${canDrv() ? '<button type="button" class="lnk" data-adddrv>+ إضافة مندوب جديد</button>' : ''}</div>
     <div class="row2"><select id="dDrv">${drs.length ? '' : '<option value="">لا يوجد مناديب مسجلين</option>'}${drs.map(x => `<option ${d.drv === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
-      ${isAdm() ? '<button type="button" class="trash" data-deldrv title="حذف المندوب">🗑</button>' : ''}</div></div>
+      ${canDrv() ? '<button type="button" class="trash" data-deldrv title="حذف المندوب">🗑</button>' : ''}</div></div>
   <div class="fld"><label>اسم العميل (اختياري)</label><input id="dCus" placeholder="مثال: محمد أحمد" value="${esc(d.cus)}"></div>
   <div class="fld"><label class="lbl b">المنطقة والنطاق <span class="req">* (إجباري — لازم تختار واحدة)</span></label>
     <div class="zones" id="dZone">
@@ -336,7 +337,7 @@ function asgCard(o, now) {
       <div class="chips">${o.district ? `<span class="cu">🏠 ${esc(o.district)}</span>` : ''}${o.employeeName ? `<span class="bg emp">الكاشير: ${esc(nm(o.employeeName))}</span>` : ''}${o.posEndTime ? `<span class="bg cm">✅ اتقفل في السيستم ${timeStr(o.posEndTime)}</span>` : ''}</div></div></div>
       <div class="tms"><span class="bd" data-bd>🕒 منذ ${min} د</span><div class="dt"><span>📅 ${dateStr(o.startTime)}</span><span>الفاتورة: ${timeStr(o.startTime)}</span></div></div></div>
     <div class="dgrid"><div><small>قيمة الطلب</small><b>${M(o.orderValue)}</b></div><div><small>الحالة</small><b style="color:#b45309">محتاج مندوب ومنطقة</b></div></div>
-    ${canWrite() ? `<div class="asgbox"><select data-asd="${o.id}"><option value="">-- اختر المندوب (إجباري) --</option>${drs.map(x => `<option ${a.drv === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
+    ${canWrite() ? `<div class="asgbox">${canDrv() ? '<div><button type="button" class="lnk" data-adddrv>+ إضافة مندوب جديد</button></div>' : ''}<select data-asd="${o.id}"><option value="">-- اختر المندوب (إجباري) --</option>${drs.map(x => `<option ${a.drv === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
       <div class="zones" data-asz="${o.id}">
         <button type="button" data-az="${ZONES[0]}" class="in ${a.zone === ZONES[0] ? 'on' : ''}"><span class="ic">📍</span><span><b>داخل المعمورة الشاطئ</b><small>من غير عمولة</small></span></button>
         <button type="button" data-az="${ZONES[1]}" class="out ${a.zone === ZONES[1] ? 'on' : ''}"><span class="ic">🧭</span><span><b>خارج المعمورة</b><small>عمولة الدليفري ${COMM_OUT} ج</small></span></button></div>
@@ -424,13 +425,13 @@ function bind() {
   ROOT.querySelectorAll('[data-rc]').forEach(b => b.onclick = () => receipt(b.dataset.rc));
   ROOT.querySelectorAll('[data-ed]').forEach(b => b.onclick = () => { EDIT = b.dataset.ed; ST.view = 'live'; render(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
   ROOT.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => remove(b.dataset.rm));
+  ROOT.querySelectorAll('[data-adddrv]').forEach(b => b.onclick = addDrv);
   const f = $('#dForm', ROOT); if (!f) return;
   f.querySelectorAll('[data-z]').forEach(b => b.onclick = () => { f.querySelectorAll('[data-z]').forEach(x => x.classList.remove('on')); b.classList.add('on'); $('#dZone', f).classList.remove('miss'); draft(); });
   f.addEventListener('input', draft); f.addEventListener('change', draft);
   f.querySelectorAll('.pay input').forEach(i => i.onchange = () => i.closest('.pay').classList.toggle('on', i.checked));
   $('#dGo', f).onclick = save;
   const c = $('#dCancel', f); if (c) c.onclick = () => { EDIT = null; render(); };
-  const ad = $('[data-adddrv]', f); if (ad) ad.onclick = addDrv;
   const dd = $('[data-deldrv]', f); if (dd) dd.onclick = delDrv;
 }
 
