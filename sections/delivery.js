@@ -1,11 +1,13 @@
-// قسم متابعة الدليفري (1/11) — منقول من برنامج «إدارة توصيل الصيدلية» (AI Studio) لموقع المرتبات.
-// الأوردرات في deliv_orders والطيارين في deliv_drivers. الوقت بالـ ms زي البرنامج القديم.
-// الأدمن: كل حاجة (تسجيل، تعديل، حذف، طيارين، تحليلات). جهاز الكاشير: تسجيل + تسليم + تعديل أوردر لسه شغال. صاحب الصيدلية: اطلاع.
-// الطلعة المجمعة: أوردرات نفس الطيار بينها ≤ 5 دقايق = طلعة واحدة، ونصيب الأوردر = وقت الطلعة ÷ عدد الأوردرات.
-// متأخر: أوردر منفرد من 20 دقيقة، وطلعة مجمعة من 30 دقيقة (وعد التوصيل 30 دقيقة). في الإحصائيات «متأخر» = أكتر من 30 دقيقة.
+// قسم متابعة الدليفري (1/11) — منقول من برنامج «إدارة توصيل الصيدلية» (AI Studio) لموقع المرتبات، وأُعيد بناء أساسه 2/11 بعد مراجعة صريحة.
+// الأوردرات في deliv_orders والطيارين في deliv_drivers وسجل التغييرات في deliv_log (بيتكتب بس). الوقت بالـ ms.
+// الأوقات التلاتة (2/11): startTime = وقت الفاتورة (أو التسجيل اليدوي) · assignedAt = خروج المندوب (لحظة تأكيد المندوب) · endTime = التسليم.
+//   endSource: app = ضغطة «تسليم» (موثوق) · pos = «إتمام التوصيل» في فارما فلاي (مش موثوق — بيتحسب في الإجماليات بس، مش في ترتيب المناديب).
+// متأخر = من الفاتورة 30 دقيقة (وعد التوصيل) لأوردر جوه المعمورة. الطلعة المجمعة = أوردرات نفس المندوب بتتأكد في خلال 5 دقايق.
+// القراية: الشاشة الحية بتسمع على الأوردرات المفتوحة + اللي اتسلّم من 9 الصبح بس. الإحصائيات بتسحب الفترة اللي تختارها عند الطلب (علشان حصة Firebase المجانية).
+// العمولة: بتتخزن على الأوردر وقت التسليم (comm) فتغيير السعر بعدين مبيغيّرش القديم.
 import { getApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, setDoc, updateDoc, deleteDoc, addDoc, collection, onSnapshot, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, doc, setDoc, updateDoc, deleteDoc, addDoc, collection, onSnapshot, query, orderBy, limit, where, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = t => String(t == null ? '' : t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -17,18 +19,28 @@ const ZONES = ['داخل المعمورة الشاطئ', 'خارج المعمو�
 const DEF_DRIVERS = ['عبدالله', 'عزوز'];
 const COMM_OUT = 5;   // (2/11، طلبه) عمولة الدليفري على كل أوردر اتسلّم خارج المعمورة
 const isOut = o => o.zone === 'خارج المعمورة';
-const commOf = o => isOut(o) ? COMM_OUT : 0;
+const commFor = zone => zone === 'خارج المعمورة' ? COMM_OUT : 0;
+const commOf = o => o.comm != null ? o.comm : commFor(o.zone);   // المتخزنة وقت التسليم، وللقديم بالسعر الحالي
 
 const dayKey = ts => new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo' }).format(new Date(ts));
 const timeStr = ts => ts ? new Intl.DateTimeFormat('ar-EG', { timeZone: 'Africa/Cairo', hour: 'numeric', minute: '2-digit' }).format(new Date(ts)) : '—';
 const opDay = ts => dayKey(ts - 9 * 3600e3);   // (2/11) اليوم التشغيلي 9ص → 9ص (زي الخزنة): الشيفت اللي بيعدّي نص الليل يفضل في يوم واحد
+const addDay = (k, n) => { const [y, m, d] = k.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10); };
+const cairoHour = ts => +new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Cairo', hour: '2-digit', hour12: false }).format(new Date(ts));
+function cairoStart(k) {   // بداية اليوم التشغيلي k (9 الصبح بتوقيت القاهرة) بالـ ms
+  const [y, m, d] = k.split('-').map(Number);
+  for (const h of [6, 7]) { const t = Date.UTC(y, m - 1, d, h); if (cairoHour(t) === 9) return t; }
+  return Date.UTC(y, m - 1, d, 7);
+}
 const dayLbl = ts => { const k = opDay(ts); return `${+k.slice(8)}/${+k.slice(5, 7)}`; };
 const dateStr = ts => { const [y, m, d] = dayKey(ts).split('-'); return `${+d}/${+m}`; };
 const dur = ms => { if (ms == null || isNaN(ms)) return '—'; const s = Math.max(0, Math.round(ms / 1000)); const m = Math.floor(s / 60); return m >= 60 ? `${Math.floor(m / 60)}س ${m % 60}د` : `${m}:${String(s % 60).padStart(2, '0')}`; };
 const durMin = ms => (ms == null || isNaN(ms)) ? '—' : Math.round(ms / MIN) + ' د';
 const nm = n => String(n || '').replace(/\*/g, '').trim();
 
-let ROOT, ROLE, DB, UID, ORDERS = [], DRIVERS = [], READY = 0, BM = new Map(), EDIT = null, UNSUB = [], TICK = null, REFRESH = null;
+let ROOT, ROLE, DB, UID, ORDERS = [], DRIVERS = [], READY = 0, EDIT = null, UNSUB = [], UDONE = null, TICK = null, REFRESH = null;
+let OPEN = new Map(), DONE = new Map(), HIST = [];   // OPEN = المفتوح · DONE = اللي اتسلّم من 9 الصبح · HIST = فترة الإحصائيات (عند الطلب)
+const HC = new Map();                                   // كاش الفترات: 'من|إلى' ← {at, rows}
 let ASG = {};   // اختيار المندوب والمنطقة لأوردرات السيستم اللي لسه متوزعتش
 let DR = {};   // مسودة الفورم (علشان التحديث التلقائي ميمسحش اللي اتكتب)
 let ST = { cday: '', view: 'live', period: 'today', from: '', to: '', driver: '', zone: '', mute: false, shown: 60 };
@@ -39,27 +51,29 @@ const isAdm = () => ROLE === 'admin';
 const canDrv = () => ROLE === 'admin' || ROLE === 'cashier';   // (2/11، طلبه) إضافة/شيل مندوب: الأدمن وجهاز الدليفري
 const seeStats = () => ROLE === 'admin' || ROLE === 'viewer';
 
-/* ---------- الطلعات المجمعة ---------- */
+/* ---------- الطلعات المجمعة (بوقت خروج المندوب) ---------- */
+const t0 = o => o.assignedAt || o.startTime;
 function batchMap(list, now) {
   const map = new Map(), byDrv = new Map();
-  list.forEach(o => { const k = (o.driverName || '').trim().toLowerCase(); if (!byDrv.has(k)) byDrv.set(k, []); byDrv.get(k).push(o); });
+  list.forEach(o => { const k = (o.driverName || '').trim().toLowerCase(); if (!k) return; if (!byDrv.has(k)) byDrv.set(k, []); byDrv.get(k).push(o); });
   byDrv.forEach(arr => {
-    arr.sort((a, b) => a.startTime - b.startTime);
+    arr.sort((a, b) => t0(a) - t0(b));
     const clusters = []; let cur = [];
-    arr.forEach(o => { if (cur.length && Math.abs(o.startTime - cur[cur.length - 1].startTime) > BATCH_GAP) { clusters.push(cur); cur = []; } cur.push(o); });
+    arr.forEach(o => { if (cur.length && Math.abs(t0(o) - t0(cur[cur.length - 1])) > BATCH_GAP) { clusters.push(cur); cur = []; } cur.push(o); });
     if (cur.length) clusters.push(cur);
     clusters.forEach(c => {
-      const size = c.length, start = Math.min(...c.map(o => o.startTime));
+      const size = c.length, start = Math.min(...c.map(t0));
       const done = c.filter(o => o.status === 'COMPLETED' && o.endTime);
       const end = done.length ? Math.max(...done.map(o => o.endTime)) : null;
       const total = done.length ? Math.max(0, end - start) : Math.max(0, now - start);
-      const eff = Math.round(total / size), th = size > 1 ? LATE_BATCH : LATE_SINGLE;
-      c.forEach((o, i) => map.set(o.id, { batch: size > 1, size, idx: i + 1, start, eff, th, all: done.length === size }));
+      c.forEach((o, i) => map.set(o.id, { batch: size > 1, size, idx: i + 1, start, eff: Math.round(total / size) }));
     });
   });
   return map;
 }
-const orderMs = (o, b) => o.endTime ? (b ? b.eff : o.endTime - o.startTime) : null;
+const rideMs = (o, b) => o.endTime ? (b ? b.eff : o.endTime - t0(o)) : null;   // من خروج المندوب (نصيب الأوردر من الطلعة)
+const totMs = o => o.endTime ? o.endTime - o.startTime : null;                   // من الفاتورة/التسجيل لحد التسليم = اللي العميل شافه
+const endSrc = o => o.endSource || (o.source === 'pos' ? 'pos' : 'app');
 
 /* ---------- ستايل ---------- */
 function css() {
@@ -104,6 +118,7 @@ function css() {
 :is(#adm,#delivery) .delwrap .tile .tt{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 :is(#adm,#delivery) .delwrap .tile .bd{font-size:13px;padding:3px 10px}
 :is(#adm,#delivery) .delwrap .tile .tc{font-size:12px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+:is(#adm,#delivery) .delwrap .tile .rd{font-size:10.5px;color:#64748b;margin-top:-3px}
 :is(#adm,#delivery) .delwrap .tile .tm2 b{font-size:18px;font-weight:900;color:#047857}
 :is(#adm,#delivery) .delwrap .tile.late .tm2 b{color:#b91c1c}
 :is(#adm,#delivery) .delwrap .tile .tm2 small{display:block;font-size:10.5px;color:#64748b}
@@ -275,35 +290,61 @@ function beep(freq = 880, n = 3) {
 }
 
 /* ---------- البيانات ---------- */
+const rebuild = () => { const m = new Map(OPEN); DONE.forEach((v, k) => m.set(k, v)); ORDERS = [...m.values()]; };
+const findOrder = id => ORDERS.find(o => o.id === id) || HIST.find(o => o.id === id);
 const active = () => ORDERS.filter(o => o.status === 'PENDING').sort((a, b) => a.startTime - b.startTime);   // الأقدم الأول (الأطول انتظاراً)
-const done = () => ORDERS.filter(o => o.status === 'COMPLETED' && o.endTime && o.driverName);
-const drvList = () => { const s = new Set(DRIVERS.map(d => d.name)); ORDERS.forEach(o => o.driverName && s.add(o.driverName)); return [...s]; };
+// كل اللي اتسلّم: الفترة المحمّلة + الحي (الحي بيكسب)
+const pool = () => { const m = new Map(); HIST.forEach(o => m.set(o.id, o)); ORDERS.forEach(o => { if (o.status === 'COMPLETED') m.set(o.id, o); }); return [...m.values()].filter(o => o.status === 'COMPLETED' && o.endTime && o.driverName); };
+const drvList = () => { const s = new Set(DRIVERS.map(d => d.name)); ORDERS.forEach(o => o.driverName && s.add(o.driverName)); HIST.forEach(o => o.driverName && s.add(o.driverName)); return [...s]; };
 
 function periodRange() {
-  const now = Date.now(), t = opDay(now), ms = 864e5;
-  const back = n => opDay(now - n * ms);
+  const now = Date.now(), t = opDay(now), back = n => opDay(now - n * 864e5);
   switch (ST.period) {
     case 'today': return [t, t];
     case 'yest': return [back(1), back(1)];
     case '7': return [back(6), t];
     case 'month': return [t.slice(0, 8) + '01', t];
-    case 'custom': return [ST.from || '0000-00-00', ST.to || '9999-99-99'];
-    default: return ['0000-00-00', '9999-99-99'];
+    case 'custom': { let a = ST.from || t, b = ST.to || t; if (a > b) [a, b] = [b, a]; const lim = addDay(b, -119); if (a < lim) a = lim; return [a, b]; }   // أقصى 120 يوم
+    default: return [back(89), t];                                                                                                              // «آخر 90 يوم»
   }
 }
 function filtered() {
   const [a, b] = periodRange();
-  return done().filter(o => { const k = opDay(o.endTime); return k >= a && k <= b && (!ST.driver || o.driverName === ST.driver) && (!ST.zone || (o.zone || ZONES[0]) === ST.zone); });
+  return pool().filter(o => { const k = opDay(o.endTime); return k >= a && k <= b && (!ST.driver || o.driverName === ST.driver) && (!ST.zone || (o.zone || ZONES[0]) === ST.zone); });
+}
+async function fetchRange(a, b) {
+  const st = cairoStart(a), en = cairoStart(addDay(b, 1)) - 1;
+  const snap = await getDocs(query(collection(DB, 'deliv_orders'), where('endTime', '>=', st), where('endTime', '<=', en), limit(5000)));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+async function loadHist(hk) {
+  const c = HC.get(hk);
+  try {
+    if (c && Date.now() - c.at < 600000) HIST = c.rows;
+    else { const [a, b] = hk.split('|'); const rows = await fetchRange(a, b); HC.set(hk, { at: Date.now(), rows }); HIST = rows; }
+  } catch (e) { toast('مقدرتش أحمّل الفترة: ' + (e.code || e.message)); HIST = []; }
+  ST.histKey = hk; ST.loading = false; safeRender();
+}
+function commEnsure() {   // عمولة يوم غير النهارده: بنسحبه عند الطلب
+  const day = ST.cday || opDay(Date.now());
+  if (day === opDay(Date.now())) return;
+  const k = day + '|' + day, c = HC.get(k);
+  if ((c && Date.now() - c.at < 600000) || ST.commLoading === k) return;
+  ST.commLoading = k;
+  fetchRange(day, day).then(rows => HC.set(k, { at: Date.now(), rows })).catch(e => { toast('عمولة اليوم: ' + (e.code || e.message)); HC.set(k, { at: Date.now(), rows: [] }); })
+    .finally(() => { ST.commLoading = ''; safeRender(); });
 }
 
 function driverStats(list, bm) {
+  const mk = n => ({ n, c: 0, tms: 0, rn: 0, rms: 0, val: 0, out: 0, outVal: 0, comm: 0, b: [0, 0, 0, 0, 0] });
   const m = new Map();
-  drvList().forEach(d => m.set(d, { n: d, c: 0, ms: 0, val: 0, out: 0, outVal: 0, b: [0, 0, 0, 0, 0] }));
+  drvList().forEach(d => m.set(d, mk(d)));
   list.forEach(o => {
-    const x = m.get(o.driverName) || (m.set(o.driverName, { n: o.driverName, c: 0, ms: 0, val: 0, out: 0, outVal: 0, b: [0, 0, 0, 0, 0] }), m.get(o.driverName));
-    const t = orderMs(o, bm.get(o.id)) / MIN, out = o.zone === 'خارج المعمورة';
-    x.c++; x.ms += orderMs(o, bm.get(o.id)); x.val += o.orderValue || 0;
-    if (out) { x.out++; x.outVal += o.orderValue || 0; }
+    const x = m.get(o.driverName) || (m.set(o.driverName, mk(o.driverName)), m.get(o.driverName));
+    const t = totMs(o) / MIN;
+    x.c++; x.tms += totMs(o); x.val += o.orderValue || 0;
+    if (endSrc(o) === 'app') { x.rn++; x.rms += rideMs(o, bm.get(o.id)); }   // وقت الخروج→التسليم من ضغطة التطبيق بس
+    if (isOut(o)) { x.out++; x.outVal += o.orderValue || 0; x.comm += commOf(o); }
     x.b[t < 10 ? 0 : t < 15 ? 1 : t < 20 ? 2 : t <= 30 ? 3 : 4]++;
   });
   return [...m.values()].sort((a, b) => b.c - a.c);
@@ -315,16 +356,35 @@ function render() {
   const act = active(), tabs = [['live', '🛵 شغّال دلوقتي', act.length]];
   if (seeStats()) tabs.push(['stats', '📊 الطيارين'], ['log', '📋 السجل']);
   if (!tabs.some(t => t[0] === ST.view)) ST.view = 'live';
+  const hk = periodRange().join('|'), hist = seeStats() && ST.view !== 'live';
+  if (hist && ST.histKey !== hk && !ST.loading) { ST.loading = true; loadHist(hk); }
+  if (ST.commOpen) commEnsure();
+  const body = !READY ? '<p class="sub">جاري التحميل…</p>' : ST.view === 'live' ? liveHtml(act)
+    : (ST.loading || ST.histKey !== hk) ? `${filterBar()}<div class="empty">⏳ جاري تحميل أوردرات الفترة…</div>` : ST.view === 'stats' ? statsHtml() : logHtml();
   ROOT.innerHTML = `<div class="dbar">${tabs.map(t => `<button class="${ST.view === t[0] ? 'on' : ''}" data-v="${t[0]}">${t[1]}${t[2] != null ? `<span class="n">${t[2]}</span>` : ''}</button>`).join('')}
 </div>
-    ${!READY ? '<p class="sub">جاري التحميل…</p>' : ST.view === 'live' ? liveHtml(act) : ST.view === 'stats' ? statsHtml() : logHtml()}`;
+    ${body}${ST.ask ? askHtml() : ''}`;
   ROOT.querySelectorAll('[data-v]').forEach(b => b.onclick = () => { ST.view = b.dataset.v; EDIT = null; render(); });
   ROOT.querySelectorAll('[data-mute]').forEach(b => b.onclick = () => { ST.mute = !ST.mute; render(); });
   bind();
 }
 
+// «مين بيعمل ده؟» — للحذف والتعديل: الجهاز مشترك فبنسجّل الاسم في deliv_log
+function askWho(text) { return new Promise(res => { ST.ask = { text, res, sel: localStorage.getItem('del_emp') || '' }; render(); }); }
+function askHtml() {
+  return `<div class="mback" data-ask style="z-index:90"><div class="mdl"><div class="dform"><h3>${esc(ST.ask.text)}</h3>
+    <div class="fld"><label>مين اللي بيعمل ده؟ (بيتسجل)</label><select id="whoSel"><option value="">-- اختر اسمك --</option>${EMPLOYEES.map(x => `<option ${x === ST.ask.sel ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></div>
+    <button class="go" data-whook>تأكيد</button><button class="go ghost" data-whono>إلغاء</button></div></div></div>`;
+}
+async function logAct(act, o, extra) {   // سجل بيتكتب بس (deliv_log) — فشله مبيوقفش الشغل
+  try {
+    await addDoc(collection(DB, 'deliv_log'), { at: serverTimestamp(), act, oid: o ? o.id : '', by: UID, who: (extra && extra.who) || '',
+      full: o ? JSON.stringify(o) : '', d: extra && extra.d ? JSON.stringify(extra.d) : '' });
+  } catch (e) { }
+}
+
 function formHtml() {
-  const e = EDIT ? ORDERS.find(o => o.id === EDIT) : null, drs = drvList();
+  const e = EDIT ? findOrder(EDIT) : null, drs = drvList(), lock = !!(e && e.driverName && !isAdm());
   const d = e ? { emp: e.employeeName || '', drv: e.driverName, cus: e.customerName || '', zone: e.zone || '', val: e.orderValue, chg: e.changeGiven || '', visa: !!e.isVisa, voda: !!e.isVodafoneCash, note: e.notes || '' }
     : { emp: DR.emp !== undefined ? DR.emp : (localStorage.getItem('del_emp') || ''), drv: DR.drv || '', cus: DR.cus || '', zone: DR.zone || '', val: DR.val || '', chg: DR.chg || '', visa: !!DR.visa, voda: !!DR.voda, note: DR.note || '' };
   return `<div class="dform ${e ? 'edit' : ''}" id="dForm"><h3>${e ? '✏️ تعديل الأوردر' : '🚀 تسجيل طلب جديد'}</h3>
@@ -336,10 +396,11 @@ function formHtml() {
       ${canDrv() ? '<button type="button" class="trash" data-deldrv title="حذف المندوب">🗑</button>' : ''}</div></div>
   <div class="fld"><label>اسم العميل (اختياري)</label><input id="dCus" placeholder="مثال: محمد أحمد" value="${esc(d.cus)}"></div>
   <div class="fld"><label class="lbl b">المنطقة والنطاق <span class="req">* (إجباري — لازم تختار واحدة)</span></label>
+    ${lock ? '<p class="hint2">القيمة والمنطقة اتقفلوا بعد تأكيد المندوب — لو غلط اطلب من الأدمن يعدّلهم.</p>' : ''}
     <div class="zones" id="dZone">
-      <button type="button" data-z="${ZONES[0]}" class="in ${d.zone === ZONES[0] ? 'on' : ''}"><span class="ic">📍</span><span><b>داخل المعمورة الشاطئ</b><small>من غير عمولة</small></span></button>
-      <button type="button" data-z="${ZONES[1]}" class="out ${d.zone === ZONES[1] ? 'on' : ''}"><span class="ic">🧭</span><span><b>خارج المعمورة</b><small>عمولة الدليفري ${COMM_OUT} ج</small></span></button></div></div>
-  <div class="fld g2"><div><label class="lbl">قيمة الطلب</label><input id="dVal" type="number" inputmode="decimal" min="0" step="0.5" placeholder="0.00" value="${d.val}"></div>
+      <button type="button" ${lock ? 'disabled' : ''} data-z="${ZONES[0]}" class="in ${d.zone === ZONES[0] ? 'on' : ''}"><span class="ic">📍</span><span><b>داخل المعمورة الشاطئ</b><small>من غير عمولة</small></span></button>
+      <button type="button" ${lock ? 'disabled' : ''} data-z="${ZONES[1]}" class="out ${d.zone === ZONES[1] ? 'on' : ''}"><span class="ic">🧭</span><span><b>خارج المعمورة</b><small>عمولة الدليفري ${COMM_OUT} ج</small></span></button></div></div>
+  <div class="fld g2"><div><label class="lbl">قيمة الطلب</label><input id="dVal" type="number" inputmode="decimal" min="0" step="0.5" placeholder="0.00" ${lock ? 'disabled' : ''} value="${d.val}"></div>
     <div><label class="lbl">فكة إضافية للطلب</label><input id="dChg" type="number" inputmode="decimal" min="0" step="0.5" placeholder="0.00" value="${d.chg}"></div></div>
   <div class="fld"><label class="lbl">طريقة الدفع الخاصة بالطلب</label><div class="pays">
     <label class="pay visa ${d.visa ? 'on' : ''}"><span><i class="ic">💳</i><span><b>فيزا</b><small>دفع بالفيزا</small></span></span><input type="checkbox" id="dVisa" ${d.visa ? 'checked' : ''}></label>
@@ -350,18 +411,19 @@ function formHtml() {
 }
 
 function liveHtml(act) {
-  const now = Date.now(), bm = batchMap(ORDERS.filter(o => o.driverName && now - o.startTime < 36 * 3600e3), now);
+  const now = Date.now(), bm = batchMap(ORDERS.filter(o => o.driverName && now - t0(o) < 36 * 3600e3), now);
   const needN = act.filter(o => !o.driverName).length;
-  const lateN = act.filter(o => o.driverName).filter(o => { const b = bm.get(o.id) || { th: LATE_SINGLE, start: o.startTime }; return o.zone !== 'خارج المعمورة' && now - b.start >= b.th; }).length;
+  const lateN = act.filter(o => o.driverName && !isOut(o) && now - o.startTime >= PROMISE).length;
   const cardArr = act.map(o => {
     if (!o.driverName) return asgCard(o, now);
-    const b = bm.get(o.id) || { th: LATE_SINGLE, start: o.startTime, batch: false, size: 1, idx: 1 }, out = o.zone === 'خارج المعمورة';
-    const late = !out && now - b.start >= b.th, min = Math.floor((now - o.startTime) / MIN), warn = min >= (b.batch ? 25 : 15);
+    const b = bm.get(o.id) || { batch: false, size: 1, idx: 1 }, out = isOut(o);
+    const late = !out && now - o.startTime >= PROMISE, min = Math.floor((now - o.startTime) / MIN), ride = Math.floor((now - t0(o)) / MIN), warn = min >= 20;
     const cls = late ? 'late' : out ? 'outz' : b.batch ? 'batch' : '';
     const tot = (o.orderValue || 0) + (o.changeGiven || 0);
-    return `<div class="oc tile ${cls}" data-id="${o.id}" data-start="${o.startTime}" data-bs="${b.start}" data-th="${b.th}" data-out="${out ? 1 : 0}" data-batch="${b.batch ? 1 : 0}">
+    return `<div class="oc tile ${cls}" data-id="${o.id}" data-start="${o.startTime}" data-bs="${o.startTime}" data-th="${PROMISE}" data-as="${t0(o)}" data-out="${out ? 1 : 0}" data-batch="${b.batch ? 1 : 0}">
       <div class="th"><b class="dn">${esc(nm(o.driverName))}</b>${b.batch ? `<span class="bg bat" title="طلعة مجمعة: أوردر ${b.idx} من ${b.size}">🔗 ${b.idx}/${b.size}</span>` : ''}</div>
       <div class="tt"><span class="bd ${late ? 'late' : out ? 'out' : warn ? 'warn' : ''}" data-bd>🕒 ${min} د</span><span data-lt class="${late ? 'bg red' : ''}">${late ? '⚠ متأخر' : ''}</span></div>
+      <div class="rd" data-rd>خرج من ${ride} د</div>
       <div class="tc" title="${esc(o.customerName || '')}">${o.customerName ? '👤 ' + esc(o.customerName) : '&nbsp;'}</div>
       <div class="tm2"><b>${M(tot)}</b>${o.changeGiven ? `<small>قيمة ${N(o.orderValue)} + فكة ${N(o.changeGiven)}</small>` : '<small>&nbsp;</small>'}</div>
       <div class="tb"><span class="bg ${out ? 'zout' : 'zin'}">${out ? `🧭 خارج · 💰${COMM_OUT}` : '📍 داخل'}</span>${o.isVisa ? '<span class="pb v" title="فيزا">💳</span>' : ''}${o.isVodafoneCash ? '<span class="pb f" title="فودافون كاش">📱</span>' : ''}${o.notes ? `<span class="nt" title="${esc(o.notes)}">📝</span>` : ''}${o.posEndTime ? '<span class="nt" title="اتقفل في السيستم">✅</span>' : ''}</div>
@@ -370,7 +432,7 @@ function liveHtml(act) {
   const outCards = [], needCards = [];
   act.forEach((o, n) => (o.driverName ? outCards : needCards).push(cardArr[n]));
   return `<div class="topbar">${canWrite() ? `<button type="button" class="newbar" data-new><span>➕ تسجيل أوردر جديد</span><small>للأوردر اللي ملوش فاتورة</small></button>` : ''}<button type="button" class="newbar comm" data-comm><span>💰 عمولة الدليفري</span><small>اضغط لعرض عمولة كل مندوب</small></button></div>
-    <div class="lhead"><div><h2 style="display:inline">الأوردرات النشطة حالياً</h2><span class="pill">${act.length - needN} جاري توصيلها</span>${needN ? `<span class="pill am" data-goneed style="cursor:pointer">🧾 ${needN} محتاج مندوب ↓</span>` : ''}${lateN ? `<span class="pill red">⚠ ${lateN} متأخر (تجاوز مهلة التوصيل)</span>` : ''}</div>
+    <div class="lhead"><div><h2 style="display:inline">الأوردرات النشطة حالياً</h2><span class="pill">${act.length - needN} جاري توصيلها</span>${needN ? `<span class="pill am" data-goneed style="cursor:pointer">🧾 ${needN} محتاج مندوب ↓</span>` : ''}${lateN ? `<span class="pill red">⚠ ${lateN} عدّى 30 دقيقة من الفاتورة</span>` : ''}</div>
       <button class="sndb ${ST.mute ? 'off' : ''}" data-mute>${ST.mute ? '🔇 الصوت مكتوم' : '🔊 الصوت مفعل'}</button></div>
     <div class="split">
       <div class="pane need" id="needSec"><h3><span>🧾 مستنية تأكيد المندوب (${needN})</span></h3>
@@ -382,7 +444,6 @@ function liveHtml(act) {
     ${canWrite() && (ST.formOpen || EDIT) ? `<div class="mback" data-mback><div class="mdl"><button type="button" class="mclose" data-closeform title="إغلاق">✕</button>${formHtml()}</div></div>` : ''}`;
 }
 
-// عمولة الدليفري باليوم (طلبه 2/11): الأوردرات اللي اتسلّمت خارج المعمورة في اليوم ده × 5 ج، لكل مندوب
 function asgCard(o, now) {
   const a = ASG[o.id] || {}, min = Math.floor((now - o.startTime) / MIN), drs = drvList();
   return `<div class="oc asg" data-id="${o.id}" data-start="${o.startTime}" data-bs="${o.startTime}" data-th="${LATE_SINGLE}" data-out="0" data-batch="0">
@@ -399,60 +460,74 @@ function asgCard(o, now) {
 }
 
 async function assign(id) {
-  const o = ORDERS.find(x => x.id === id); if (!o) return;
+  const o = findOrder(id); if (!o) return;
   const a = ASG[id] || {};
   if (!a.drv) { toast('اختار المندوب الأول'); return; }
   if (!a.zone) { toast('لازم تختار المنطقة: داخل أو خارج المعمورة'); const z = ROOT.querySelector(`[data-asz="${id}"]`); if (z) z.classList.add('miss'); return; }
-  const data = { driverName: a.drv, zone: a.zone };
-  if (o.posEndTime) { data.status = 'COMPLETED'; data.endTime = o.posEndTime; }   // الكاشير قفل التوصيل في السيستم قبل ما نحدد المندوب
-  try { await updateDoc(doc(DB, 'deliv_orders', id), data); delete ASG[id]; beep(660, 1); toast(o.posEndTime ? 'اتسجّل واتقفل (اتقفل في السيستم) ✔' : 'الأوردر بدأ 🛵'); }
-  catch (e) { toast('مقدرتش: ' + (e.code || e.message)); }
+  const data = { driverName: a.drv, zone: a.zone, assignedAt: Date.now() };   // assignedAt = لحظة خروج المندوب
+  if (o.posEndTime) Object.assign(data, { status: 'COMPLETED', endTime: o.posEndTime, endSource: 'pos', comm: commFor(a.zone) });   // الكاشير قفل التوصيل في السيستم قبل ما نحدد المندوب
+  try {
+    await updateDoc(doc(DB, 'deliv_orders', id), data); delete ASG[id]; beep(660, 1);
+    logAct('assign', { ...o, ...data }, { who: isAdm() ? 'admin' : (localStorage.getItem('del_emp') || '') });
+    toast(o.posEndTime ? 'اتسجّل واتقفل (اتقفل في السيستم) ✔' : 'الأوردر بدأ 🛵');
+  } catch (e) { toast('مقدرتش: ' + (e.code || e.message)); }
 }
 
+// عمولة الدليفري باليوم: الأوردرات اللي اتسلّمت خارج المعمورة في اليوم ده، لكل مندوب (المبلغ = comm المتخزن على كل أوردر)
 function commHtml() {
-  const day = ST.cday || opDay(Date.now()), per = new Map();
-  drvList().forEach(n => per.set(n, 0));
-  done().forEach(o => { if (isOut(o) && opDay(o.endTime) === day) per.set(o.driverName, (per.get(o.driverName) || 0) + 1); });
-  const rows = [...per.entries()].sort((a, b) => b[1] - a[1]), tot = rows.reduce((s, r) => s + r[1], 0);
+  const today = opDay(Date.now()), day = ST.cday || today, per = new Map();
+  drvList().forEach(n => per.set(n, { c: 0, m: 0 }));
+  const k = day + '|' + day, c = HC.get(k);
+  const rows = day === today ? ORDERS.filter(o => o.status === 'COMPLETED') : ((c && c.rows) || []);
+  const loading = day !== today && !c;
+  rows.forEach(o => { if (o.endTime && o.driverName && isOut(o) && opDay(o.endTime) === day) { const x = per.get(o.driverName) || { c: 0, m: 0 }; x.c++; x.m += commOf(o); per.set(o.driverName, x); } });
+  const list = [...per.entries()].sort((a, b) => b[1].c - a[1].c), tc = list.reduce((s, r) => s + r[1].c, 0), tm = list.reduce((s, r) => s + r[1].m, 0);
   return `<div class="cmm"><div class="lhead" style="border:0;margin-bottom:8px"><h2>💰 عمولة الدليفري — يوم ${+day.slice(8)}/${+day.slice(5, 7)} <small style="font-size:12px;color:#64748b;font-weight:600">(من 9 ص لـ 9 ص)</small></h2>
     <div class="cd"><label for="cDay">اليوم:</label><input type="date" id="cDay" value="${day}"></div></div>
-  <div class="tw" style="margin:0"><table><tr><th class="l">المندوب</th><th>أوردرات خارج المعمورة اتسلّمت</th><th>العمولة (${COMM_OUT} ج للأوردر)</th></tr>
-  ${rows.map(([n, c]) => `<tr><td class="l"><b style="color:#1e293b;font-size:14px">${esc(nm(n))}</b></td><td>${c}</td><td><b>${M(c * COMM_OUT)}</b></td></tr>`).join('') || '<tr><td colspan="3" class="empty">مفيش مناديب</td></tr>'}
-  ${rows.length > 1 ? `<tr><td class="l"><b style="color:#1e293b">الإجمالي</b></td><td><b style="color:#1e293b">${tot}</b></td><td><b>${M(tot * COMM_OUT)}</b></td></tr>` : ''}</table></div>
-  <p class="hint">بتتحسب على الأوردرات اللي اتضغط عليها «تسليم» خارج المعمورة في اليوم ده. اليوم بيبدأ 9 الصبح وبيخلص 9 الصبح اللي بعده، فالشيفت اللي بيعدّي نص الليل عمولته كلها في يوم واحد. الأوردر الشغال لسه ملوش عمولة لحد ما يتسلّم.</p></div>`;
+  ${loading ? '<div class="empty">⏳ جاري تحميل اليوم…</div>' : `<div class="tw" style="margin:0"><table><tr><th class="l">المندوب</th><th>أوردرات خارج المعمورة اتسلّمت</th><th>العمولة</th></tr>
+  ${list.map(([n, x]) => `<tr><td class="l"><b style="color:#1e293b;font-size:14px">${esc(nm(n))}</b></td><td>${x.c}</td><td><b>${M(x.m)}</b></td></tr>`).join('') || '<tr><td colspan="3" class="empty">مفيش مناديب</td></tr>'}
+  ${list.length > 1 ? `<tr><td class="l"><b style="color:#1e293b">الإجمالي</b></td><td><b style="color:#1e293b">${tc}</b></td><td><b>${M(tm)}</b></td></tr>` : ''}</table></div>`}
+  <p class="hint">بتتحسب على الأوردرات اللي اتسلّمت خارج المعمورة في اليوم ده، والمبلغ متخزن على كل أوردر وقت التسليم (${COMM_OUT} ج دلوقتي). اليوم بيبدأ 9 الصبح وبيخلص 9 الصبح اللي بعده، فالشيفت اللي بيعدّي نص الليل عمولته كلها في يوم واحد.</p></div>`;
 }
 
+const rideCell = (o, b) => { const v = rideMs(o, b); return endSrc(o) === 'app' ? `<b>${durMin(v)}</b>` : `<span style="color:#94a3b8" title="اتقفل من السيستم — الوقت مش موثوق">${durMin(v)}*</span>`; };
+
 function statsHtml() {
-  const list = filtered(), bm = batchMap(done(), Date.now()), ds = driverStats(list, bm);
-  const tot = list.length, ms = list.reduce((s, o) => s + orderMs(o, bm.get(o.id)), 0), late = list.filter(o => orderMs(o, bm.get(o.id)) > PROMISE).length;
-  const val = list.reduce((s, o) => s + (o.orderValue || 0), 0), out = list.filter(o => o.zone === 'خارج المعمورة');
+  const list = filtered(), bm = batchMap(pool(), Date.now()), ds = driverStats(list, bm);
+  const tot = list.length, tsum = list.reduce((s, o) => s + totMs(o), 0), late = list.filter(o => totMs(o) > PROMISE).length;
+  const val = list.reduce((s, o) => s + (o.orderValue || 0), 0), out = list.filter(isOut), comm = out.reduce((s, o) => s + commOf(o), 0);
+  const w = list.filter(o => o.source === 'pos' && o.assignedAt), wavg = w.length ? w.reduce((s, o) => s + (o.assignedAt - o.startTime), 0) / w.length : null;
   const days = {}; list.forEach(o => { const k = opDay(o.endTime); (days[k] = days[k] || []).push(o); });
+  const rank = ds.filter(d => d.rn >= 3).sort((a, b) => a.rms / a.rn - b.rms / b.rn), few = ds.filter(d => d.rn > 0 && d.rn < 3);
   return `${filterBar()}
   <div class="dk"><div><div class="l">أوردرات اتسلّمت</div><div class="v">${N(tot)}</div></div>
-    <div><div class="l">متوسط الوقت للأوردر</div><div class="v">${tot ? durMin(ms / tot) : '—'}</div></div>
-    <div class="${late ? 'bad' : ''}"><div class="l">أكتر من 30 دقيقة</div><div class="v">${N(late)}${tot ? ` <small>(${Math.round(late / tot * 100)}%)</small>` : ''}</div></div>
+    <div><div class="l">متوسط الوقت من الفاتورة (اللي العميل شافه)</div><div class="v">${tot ? durMin(tsum / tot) : '—'}</div></div>
+    <div class="${late ? 'bad' : ''}"><div class="l">عدّى 30 دقيقة من الفاتورة</div><div class="v">${N(late)}${tot ? ` <small>(${Math.round(late / tot * 100)}%)</small>` : ''}</div></div>
+    <div><div class="l">متوسط انتظار المندوب (من الفاتورة لحد الخروج)</div><div class="v">${wavg == null ? '—' : durMin(wavg)}</div><div class="l">${w.length ? N(w.length) + ' أوردر من السيستم' : 'لسه مفيش بيانات'}</div></div>
     <div><div class="l">قيمة الأوردرات</div><div class="v">${M(val)}</div></div>
-    <div><div class="l">خارج المعمورة</div><div class="v">${N(out.length)}</div><div class="l">${M(out.reduce((s, o) => s + (o.orderValue || 0), 0))}</div></div>
-    <div style="border-inline-start-color:#f59e0b"><div class="l">عمولة الدليفري</div><div class="v">${M(out.length * COMM_OUT)}</div><div class="l">${COMM_OUT} ج × ${N(out.length)} أوردر</div></div></div>
-  <h3 class="sec">الطيارين</h3><div class="tw"><table><tr><th class="l">الطيار</th><th>أوردرات</th><th>متوسط الوقت</th><th>&lt;10</th><th>10–15</th><th>15–20</th><th>20–30</th><th>&gt;30</th><th>خارج المعمورة</th><th>عمولة الدليفري</th><th>القيمة</th></tr>
-  ${ds.map(d => `<tr><td class="l"><b>${esc(nm(d.n))}</b></td><td>${d.c}</td><td>${d.c ? durMin(d.ms / d.c) : '—'}</td>${d.b.map((x, i) => `<td ${i === 4 && x ? 'style="color:#C0392B;font-weight:800"' : ''}>${x}</td>`).join('')}<td>${d.out}${d.out ? ` (${M(d.outVal)})` : ''}</td><td><b style="color:#b45309">${M(d.out * COMM_OUT)}</b></td><td>${M(d.val)}</td></tr>`).join('') || '<tr><td colspan="11" class="empty">مفيش بيانات في الفترة دي</td></tr>'}</table></div>
-  <h3 class="sec">🏆 ترتيب المناديب (الأسرع)</h3><div class="tw"><table><tr><th>#</th><th class="l">المندوب</th><th>أوردرات</th><th>متوسط الوقت</th><th>أكتر من 30 د</th><th>نسبة التأخير</th></tr>
-  ${ds.filter(d => d.c).sort((a, b) => a.ms / a.c - b.ms / b.c).map((d, i) => `<tr><td>${['🥇', '🥈', '🥉'][i] || i + 1}</td><td class="l"><b>${esc(nm(d.n))}</b></td><td>${d.c}</td><td><b>${durMin(d.ms / d.c)}</b></td><td>${d.b[4]}</td><td ${d.b[4] ? 'style="color:#dc2626;font-weight:800"' : ''}>${Math.round(d.b[4] / d.c * 100)}%</td></tr>`).join('') || '<tr><td colspan="6" class="empty">مفيش بيانات في الفترة دي</td></tr>'}</table></div>
-  <h3 class="sec">يوم بيوم</h3><div class="tw"><table><tr><th class="l">اليوم</th><th>أوردرات</th><th>متوسط الوقت</th><th>&gt;30 د</th><th>خارج المعمورة</th><th>عمولة الدليفري</th><th>القيمة</th></tr>
-  ${Object.keys(days).sort().reverse().map(k => { const a = days[k], t = a.reduce((s, o) => s + orderMs(o, bm.get(o.id)), 0); return `<tr><td class="l">${k.slice(8)}/${k.slice(5, 7)}</td><td>${a.length}</td><td>${durMin(t / a.length)}</td><td>${a.filter(o => orderMs(o, bm.get(o.id)) > PROMISE).length}</td><td>${a.filter(isOut).length}</td><td><b style="color:#b45309">${M(a.filter(isOut).length * COMM_OUT)}</b></td><td>${M(a.reduce((s, o) => s + (o.orderValue || 0), 0))}</td></tr>`; }).join('') || '<tr><td colspan="7" class="empty">—</td></tr>'}</table></div>
-  <div class="ctl"><button class="ghost" data-xl>📥 تنزيل إكسل (السجل + الطيارين)</button><button class="ghost" data-rep>📋 نسخ تقرير للواتساب</button></div>`;
+    <div style="border-inline-start-color:#f59e0b"><div class="l">خارج المعمورة · عمولة الدليفري</div><div class="v">${N(out.length)} · ${M(comm)}</div></div></div>
+  <h3 class="sec">الطيارين</h3><div class="tw"><table><tr><th class="l">الطيار</th><th>أوردرات</th><th>متوسط من الفاتورة</th><th>متوسط من الخروج (مؤكد)</th><th>&lt;10</th><th>10–15</th><th>15–20</th><th>20–30</th><th>&gt;30</th><th>خارج المعمورة</th><th>عمولة الدليفري</th><th>القيمة</th></tr>
+  ${ds.map(d => `<tr><td class="l"><b>${esc(nm(d.n))}</b></td><td>${d.c}</td><td>${d.c ? durMin(d.tms / d.c) : '—'}</td><td>${d.rn ? `${durMin(d.rms / d.rn)} <small style="color:#94a3b8">(${d.rn})</small>` : '—'}</td>${d.b.map((x, i) => `<td ${i === 4 && x ? 'style="color:#C0392B;font-weight:800"' : ''}>${x}</td>`).join('')}<td>${d.out}${d.out ? ` (${M(d.outVal)})` : ''}</td><td><b style="color:#b45309">${M(d.comm)}</b></td><td>${M(d.val)}</td></tr>`).join('') || '<tr><td colspan="12" class="empty">مفيش بيانات في الفترة دي</td></tr>'}</table></div>
+  <p class="sub">الأرقام بين القوسين = عدد الأوردرات اللي اتقفلت بضغطة «تسليم» من التطبيق. اللي اتقفل من فارما فلاي وقته مش موثوق فمبيدخلش في «من الخروج» ولا في الترتيب.</p>
+  <h3 class="sec">🏆 ترتيب المناديب (الأسرع من الخروج للتسليم)</h3><div class="tw"><table><tr><th>#</th><th class="l">المندوب</th><th>تسليمات مؤكدة</th><th>متوسط من الخروج</th><th>عدّى 30 د من الفاتورة</th></tr>
+  ${rank.map((d, i) => `<tr><td>${['🥇', '🥈', '🥉'][i] || i + 1}</td><td class="l"><b>${esc(nm(d.n))}</b></td><td>${d.rn}</td><td><b>${durMin(d.rms / d.rn)}</b></td><td ${d.b[4] ? 'style="color:#dc2626;font-weight:800"' : ''}>${d.b[4]} (${Math.round(d.b[4] / d.c * 100)}%)</td></tr>`).join('') || '<tr><td colspan="5" class="empty">محتاج 3 تسليمات مؤكدة (ضغطة «تسليم») على الأقل لكل مندوب علشان يدخل الترتيب</td></tr>'}</table></div>
+  ${few.length ? `<p class="sub">ناقصهم تسليمات مؤكدة: ${few.map(d => `${esc(nm(d.n))} (${d.rn})`).join('، ')}</p>` : ''}
+  <h3 class="sec">يوم بيوم</h3><div class="tw"><table><tr><th class="l">اليوم</th><th>أوردرات</th><th>متوسط من الفاتورة</th><th>&gt;30 د</th><th>خارج المعمورة</th><th>عمولة الدليفري</th><th>القيمة</th></tr>
+  ${Object.keys(days).sort().reverse().map(k => { const a = days[k], t = a.reduce((s, o) => s + totMs(o), 0), ou = a.filter(isOut); return `<tr><td class="l">${k.slice(8)}/${k.slice(5, 7)}</td><td>${a.length}</td><td>${durMin(t / a.length)}</td><td>${a.filter(o => totMs(o) > PROMISE).length}</td><td>${ou.length}</td><td><b style="color:#b45309">${M(ou.reduce((s, o) => s + commOf(o), 0))}</b></td><td>${M(a.reduce((s, o) => s + (o.orderValue || 0), 0))}</td></tr>`; }).join('') || '<tr><td colspan="7" class="empty">—</td></tr>'}</table></div>
+  <div class="ctl"><button class="ghost" data-xl>📥 تنزيل إكسل (السجل + الطيارين)</button><button class="ghost" data-rep>📋 نسخ تقرير للواتساب</button><button class="ghost" data-reload>🔄 تحديث الأرقام</button></div>
+  <p class="sub">اتحمّل ${N(HIST.length)} أوردر للفترة دي (بيتحفظوا 10 دقايق، والتحديث بيقرا من جديد).</p>`;
 }
 
 function logHtml() {
-  const list = filtered().sort((a, b) => b.endTime - a.endTime), bm = batchMap(done(), Date.now()), shown = list.slice(0, ST.shown);
-  return `${filterBar()}<div class="tw"><table><tr><th class="l">اليوم</th><th>خرج</th><th>وصل</th><th>الوقت</th><th class="l">الطيار</th><th class="l">العميل</th><th>المنطقة</th><th>عمولة</th><th>القيمة</th><th>الدفع</th><th class="l">سجّله</th>${isAdm() ? '<th></th>' : ''}</tr>
-  ${shown.map(o => { const b = bm.get(o.id), t = orderMs(o, b), late = t > PROMISE;
-    return `<tr class="${late ? 'late' : ''}"><td class="l">${dayLbl(o.endTime)}</td><td>${timeStr(o.startTime)}</td><td>${timeStr(o.endTime)}</td><td><b>${durMin(t)}</b>${b && b.batch ? ` <span class="tag b">طلعة ${b.size}</span>` : ''}</td><td class="l">${esc(nm(o.driverName))}</td><td class="l">${esc(o.customerName || '—')}${o.notes ? ' 📝' : ''}</td><td>${isOut(o) ? '<span class="tag o">خارج المعمورة</span>' : '<span class="tag i">داخل المعمورة</span>'}</td><td>${isOut(o) ? M(COMM_OUT) : '—'}</td><td>${M(o.orderValue)}</td><td>${o.isVisa ? 'فيزا' : o.isVodafoneCash ? 'فودافون' : 'كاش'}</td><td class="l">${esc(nm(o.employeeName) || '—')}</td>${isAdm() ? `<td><button class="ghost sm" data-ed="${o.id}">✏️</button> <button class="ghost sm" data-rc="${o.id}">🧾</button> <button class="ghost sm" data-rm="${o.id}">🗑️</button></td>` : ''}</tr>`; }).join('') || `<tr><td colspan="12" class="empty">مفيش أوردرات في الفترة دي</td></tr>`}</table></div>
-  ${list.length > ST.shown ? `<button class="ghost" data-more>عرض المزيد (${list.length - ST.shown})</button>` : ''}<p class="sub">${N(list.length)} أوردر في الفترة · الصف الأحمر = أكتر من 30 دقيقة.</p>`;
+  const list = filtered().sort((a, b) => b.endTime - a.endTime), bm = batchMap(pool(), Date.now()), shown = list.slice(0, ST.shown);
+  return `${filterBar()}<div class="tw"><table><tr><th class="l">اليوم</th><th>الفاتورة</th><th>خرج</th><th>وصل</th><th>من الفاتورة</th><th>من الخروج</th><th class="l">الطيار</th><th class="l">العميل</th><th>المنطقة</th><th>عمولة</th><th>القيمة</th><th>الدفع</th><th class="l">سجّله</th>${isAdm() ? '<th></th>' : ''}</tr>
+  ${shown.map(o => { const b = bm.get(o.id), t = totMs(o), late = t > PROMISE;
+    return `<tr class="${late ? 'late' : ''}"><td class="l">${dayLbl(o.endTime)}</td><td>${timeStr(o.startTime)}</td><td>${o.assignedAt ? timeStr(o.assignedAt) : '—'}</td><td>${timeStr(o.endTime)}${endSrc(o) === 'pos' ? '*' : ''}</td><td><b>${durMin(t)}</b></td><td>${rideCell(o, b)}${b && b.batch ? ` <span class="tag b">طلعة ${b.size}</span>` : ''}</td><td class="l">${esc(nm(o.driverName))}</td><td class="l">${esc(o.customerName || '—')}${o.notes ? ' 📝' : ''}</td><td>${isOut(o) ? '<span class="tag o">خارج المعمورة</span>' : '<span class="tag i">داخل المعمورة</span>'}</td><td>${isOut(o) ? M(commOf(o)) : '—'}</td><td>${M(o.orderValue)}</td><td>${o.isVisa ? 'فيزا' : o.isVodafoneCash ? 'فودافون' : 'كاش'}</td><td class="l">${esc(nm(o.employeeName) || '—')}</td>${isAdm() ? `<td><button class="ghost sm" data-ed="${o.id}">✏️</button> <button class="ghost sm" data-rc="${o.id}">🧾</button> <button class="ghost sm" data-rm="${o.id}">🗑️</button></td>` : ''}</tr>`; }).join('') || `<tr><td colspan="14" class="empty">مفيش أوردرات في الفترة دي</td></tr>`}</table></div>
+  ${list.length > ST.shown ? `<button class="ghost" data-more>عرض المزيد (${list.length - ST.shown})</button>` : ''}<p class="sub">${N(list.length)} أوردر في الفترة · الصف الأحمر = عدّى 30 دقيقة من الفاتورة · * = اتقفل من فارما فلاي (الوقت مش موثوق).</p>`;
 }
 
 function filterBar() {
-  const P = [['today', 'النهارده'], ['yest', 'إمبارح'], ['7', 'آخر 7 أيام'], ['month', 'الشهر ده'], ['all', 'الكل'], ['custom', 'من – إلى']];
+  const P = [['today', 'النهارده'], ['yest', 'إمبارح'], ['7', 'آخر 7 أيام'], ['month', 'الشهر ده'], ['all', 'آخر 90 يوم'], ['custom', 'من – إلى']];
   return `<div class="ctl chips">${P.map(p => `<button class="chip ${ST.period === p[0] ? 'on' : ''}" data-p="${p[0]}">${p[1]}</button>`).join('')}</div>
   <p class="sub" style="margin:0 0 8px">اليوم = من 9 الصبح لـ 9 الصبح اللي بعده.</p>
   <div class="ctl">${ST.period === 'custom' ? `<input type="date" id="fFrom" value="${ST.from}"><input type="date" id="fTo" value="${ST.to}">` : ''}
@@ -471,6 +546,10 @@ function bind() {
     box.querySelectorAll('[data-az]').forEach(x => x.classList.toggle('on', x === b));
   });
   ROOT.querySelectorAll('[data-asgo]').forEach(b => b.onclick = () => assign(b.dataset.asgo));
+  const rl = $('[data-reload]', ROOT); if (rl) rl.onclick = () => { HC.delete(periodRange().join('|')); ST.histKey = ''; render(); };
+  const ws = $('#whoSel', ROOT); if (ws) ws.onchange = () => { ST.ask.sel = ws.value; };
+  const wo = $('[data-whook]', ROOT); if (wo) wo.onclick = () => { const v = ($('#whoSel', ROOT).value || '').trim(); if (!v) { toast('اختار اسمك الأول'); return; } localStorage.setItem('del_emp', v); const a = ST.ask; ST.ask = null; render(); a.res(v); };
+  const wn = $('[data-whono]', ROOT); if (wn) wn.onclick = () => { const a = ST.ask; ST.ask = null; render(); a.res(null); };
   const cd = $('#cDay', ROOT); if (cd) cd.onchange = () => { ST.cday = cd.value; render(); };
   const more = $('[data-more]', ROOT); if (more) more.onclick = () => { ST.shown += 100; render(); };
   const xl = $('[data-xl]', ROOT); if (xl) xl.onclick = exportXl;
@@ -506,29 +585,54 @@ function draft() {
 
 async function save() {
   const err = $('#dErr'), g = id => $('#' + id, ROOT), emp = g('dEmp').value, drv = g('dDrv').value;
-  const z = ROOT.querySelector('[data-z].on');
+  const e0 = EDIT ? findOrder(EDIT) : null, lock = !!(e0 && e0.driverName && !isAdm());
+  const z = lock ? { dataset: { z: e0.zone } } : ROOT.querySelector('[data-z].on');
   err.textContent = '';
   if (!emp) { err.textContent = 'اختار الموظف اللي سجّل الأوردر'; return; }
   if (!drv) { err.textContent = 'مفيش طيار — ضيف طيار الأول'; return; }
   if (!z) { err.textContent = 'لازم تختار المنطقة: داخل المعمورة ولا خارج المعمورة'; $('#dZone', ROOT).classList.add('miss'); $('#dZone', ROOT).scrollIntoView({ block: 'center', behavior: 'smooth' }); return; }
-  const val = parseFloat(g('dVal').value) || 0, chg = parseFloat(g('dChg').value) || 0;
+  const val = lock ? e0.orderValue : (parseFloat(g('dVal').value) || 0), chg = parseFloat(g('dChg').value) || 0;
   if (val < 0 || val >= 100000 || chg < 0) { err.textContent = 'راجع القيمة'; return; }
   const data = { driverName: drv, customerName: g('dCus').value.trim(), employeeName: emp, zone: z.dataset.z, orderValue: val, changeGiven: chg,
     isVisa: g('dVisa').checked, isVodafoneCash: g('dVoda').checked, notes: g('dNote').value.trim() };
   try {
     localStorage.setItem('del_emp', emp);
-    if (EDIT) { await updateDoc(doc(DB, 'deliv_orders', EDIT), data); EDIT = null; ST.formOpen = false; toast('اتعدّل ✔'); }
-    else { const ref = doc(collection(DB, 'deliv_orders')); await setDoc(ref, { ...data, startTime: Date.now(), endTime: null, status: 'PENDING', by: UID }); beep(660, 1); toast('الأوردر بدأ 🛵'); DR = {}; ST.formOpen = false; }
+    if (EDIT) {
+      if (e0 && e0.status === 'COMPLETED') data.comm = commFor(data.zone);                       // أدمن بيعدّل أوردر اتسلّم ← العمولة تتظبط مع المنطقة
+      if (e0 && !e0.assignedAt && e0.driverName === '' && drv) data.assignedAt = Date.now();      // أوردر من السيستم اتحدد له مندوب من التعديل
+      const d = {}; Object.keys(data).forEach(k => { if (e0 && String(e0[k] ?? '') !== String(data[k] ?? '')) d[k] = [e0[k] ?? null, data[k]]; });
+      await updateDoc(doc(DB, 'deliv_orders', EDIT), data); logAct('edit', e0, { who: isAdm() ? 'admin' : emp, d }); patchLocal(EDIT, data);
+      EDIT = null; ST.formOpen = false; toast('اتعدّل ✔');
+    } else {
+      const now = Date.now(), ref = doc(collection(DB, 'deliv_orders'));
+      await setDoc(ref, { ...data, startTime: now, assignedAt: now, createdAt: serverTimestamp(), endTime: null, status: 'PENDING', source: 'manual', by: UID });
+      beep(660, 1); toast('الأوردر بدأ 🛵'); DR = {}; ST.formOpen = false;
+    }
     render();
   } catch (e) { err.textContent = 'مقدرتش أحفظ: ' + (e.code || e.message); }
 }
+function patchLocal(id, data) {   // أوردر في الفترة المحمّلة (مش في الاستماع الحي) ← نحدّثه محلياً
+  const apply = o => o.id === id ? { ...o, ...data } : o;
+  HIST = HIST.map(apply); HC.forEach(c => { c.rows = c.rows.map(apply); });
+}
 async function finish(id) {
-  try { await updateDoc(doc(DB, 'deliv_orders', id), { status: 'COMPLETED', endTime: Date.now() }); beep(990, 2); toast('تم التسليم ✔'); }
-  catch (e) { toast('مقدرتش: ' + (e.code || e.message)); }
+  const o = findOrder(id); if (!o) return;
+  try {
+    await updateDoc(doc(DB, 'deliv_orders', id), { status: 'COMPLETED', endTime: Date.now(), endSource: 'app', comm: commFor(o.zone) });
+    beep(990, 2); toast('تم التسليم ✔');
+  } catch (e) { toast('مقدرتش: ' + (e.code || e.message)); }
 }
 async function remove(id) {
-  const o = ORDERS.find(x => x.id === id); if (!o || !confirm(`تمسح الأوردر ده نهائي؟\n${nm(o.driverName)} ← ${o.customerName || 'عميل'} (${M(o.orderValue)})`)) return;
-  try { await deleteDoc(doc(DB, 'deliv_orders', id)); toast('اتمسح'); } catch (e) { toast('مقدرتش: ' + (e.code || e.message)); }
+  const o = findOrder(id); if (!o) return;
+  let who = 'admin';
+  if (!isAdm()) { who = await askWho(`حذف أوردر ${nm(o.driverName) || 'من غير مندوب'} ← ${o.customerName || 'عميل'} (${M(o.orderValue)})`); if (!who) return; }
+  else if (!confirm(`تمسح الأوردر ده نهائي؟\n${nm(o.driverName)} ← ${o.customerName || 'عميل'} (${M(o.orderValue)})`)) return;
+  try {
+    await logAct('delete', o, { who });                      // نسخة كاملة في deliv_log قبل المسح
+    await deleteDoc(doc(DB, 'deliv_orders', id));
+    HIST = HIST.filter(x => x.id !== id); HC.forEach(c => { c.rows = c.rows.filter(x => x.id !== id); });
+    toast('اتمسح'); render();
+  } catch (e) { toast('مقدرتش أمسح: ' + (e.code || e.message) + (e.code === 'permission-denied' ? ' — بعد تأكيد المندوب الحذف من الأدمن' : '')); }
 }
 async function addDrv() {
   const n = (prompt('اسم الطيار الجديد:') || '').trim(); if (!n) return;
@@ -543,7 +647,7 @@ async function delDrv() {
 }
 
 function receipt(id) {
-  const o = ORDERS.find(x => x.id === id); if (!o) return;
+  const o = findOrder(id); if (!o) return;
   const w = window.open('', '_blank', 'width=380,height=620'); if (!w) { toast('المتصفح قافل النافذة — اسمح بالـ popups'); return; }
   const pay = o.isVisa ? 'فيزا' : o.isVodafoneCash ? 'فودافون كاش' : 'كاش';
   w.document.write(`<!doctype html><meta charset="utf-8"><title>إيصال</title><body dir="rtl" style="font-family:Tahoma,sans-serif;width:72mm;margin:0 auto;padding:6px;font-size:13px;color:#000">
@@ -556,24 +660,30 @@ function receipt(id) {
 }
 
 function copyReport() {
-  const list = filtered(), bm = batchMap(done(), Date.now()), ds = driverStats(list, bm).filter(d => d.c), [a, b] = periodRange();
-  const tot = list.length, ms = list.reduce((x, o) => x + orderMs(o, bm.get(o.id)), 0), late = list.filter(o => orderMs(o, bm.get(o.id)) > PROMISE).length;
-  const lbl = k => `${+k.slice(8)}/${+k.slice(5, 7)}`, per = a === b ? `يوم ${lbl(a)}` : `من ${a < '0001' ? 'البداية' : lbl(a)} لـ ${b > '9998' ? 'النهاردة' : lbl(b)}`;
-  const t = [`📋 تقرير الدليفري — ${per} (9ص–9ص)`, `✅ اتسلّم ${tot} أوردر · متوسط الوقت ${tot ? durMin(ms / tot) : '—'} · أكتر من 30 دقيقة: ${late}`, `💵 قيمة الأوردرات: ${M(list.reduce((x, o) => x + (o.orderValue || 0), 0))}`, '',
-    '🛵 المناديب:', ...ds.map(d => `• ${nm(d.n)}: ${d.c} أوردر (${d.out} خارج المعمورة) · متوسط ${durMin(d.ms / d.c)} · عمولة ${M(d.out * COMM_OUT)}`),
-    '', `💰 إجمالي عمولة الدليفري: ${M(list.filter(isOut).length * COMM_OUT)}`].join('\n');
+  const list = filtered(), bm = batchMap(pool(), Date.now()), ds = driverStats(list, bm).filter(d => d.c), [a, b] = periodRange();
+  const tot = list.length, tsum = list.reduce((x, o) => x + totMs(o), 0), late = list.filter(o => totMs(o) > PROMISE).length;
+  const lbl = k => `${+k.slice(8)}/${+k.slice(5, 7)}`, per = a === b ? `يوم ${lbl(a)}` : `من ${lbl(a)} لـ ${lbl(b)}`;
+  const t = [`📋 تقرير الدليفري — ${per} (9ص–9ص)`, `✅ اتسلّم ${tot} أوردر · متوسط الوقت من الفاتورة ${tot ? durMin(tsum / tot) : '—'} · عدّى 30 دقيقة: ${late}`, `💵 قيمة الأوردرات: ${M(list.reduce((x, o) => x + (o.orderValue || 0), 0))}`, '',
+    '🛵 المناديب:', ...ds.map(d => `• ${nm(d.n)}: ${d.c} أوردر (${d.out} خارج المعمورة) · متوسط ${durMin(d.tms / d.c)} · عمولة ${M(d.comm)}`),
+    '', `💰 إجمالي عمولة الدليفري: ${M(list.filter(isOut).reduce((x, o) => x + commOf(o), 0))}`].join('\n');
   (navigator.clipboard ? navigator.clipboard.writeText(t).then(() => toast('اتنسخ — الصقه في الواتساب ✔')) : Promise.reject()).catch(() => prompt('انسخ التقرير:', t));
 }
 
 function exportXl() {
   if (!window.XLSX) { toast('مكتبة الإكسل مش محملة'); return; }
-  const list = filtered().sort((a, b) => a.endTime - b.endTime), bm = batchMap(done(), Date.now());
-  const log = [['اليوم التشغيلي (9ص–9ص)', 'خرج', 'وصل', 'وقت الأوردر (دقيقة)', 'طلعة مجمعة (عدد)', 'الطيار', 'العميل', 'المنطقة', 'القيمة', 'الفكة', 'الدفع', 'عمولة الدليفري', 'سجّله', 'ملاحظات']]
-    .concat(list.map(o => { const b = bm.get(o.id); return [opDay(o.endTime), timeStr(o.startTime), timeStr(o.endTime), +(orderMs(o, b) / MIN).toFixed(1), b && b.batch ? b.size : 1, o.driverName, o.customerName, o.zone || ZONES[0], o.orderValue, o.changeGiven, o.isVisa ? 'فيزا' : o.isVodafoneCash ? 'فودافون كاش' : 'كاش', commOf(o), o.employeeName, o.notes]; }));
-  const drv = [['الطيار', 'أوردرات', 'متوسط الوقت (دقيقة)', 'أقل من 10', '10–15', '15–20', '20–30', 'أكتر من 30', 'خارج المعمورة (عدد)', 'خارج المعمورة (قيمة)', 'عمولة الدليفري', 'القيمة']]
-    .concat(driverStats(list, bm).map(d => [d.n, d.c, d.c ? +(d.ms / d.c / MIN).toFixed(1) : 0, ...d.b, d.out, d.outVal, d.out * COMM_OUT, d.val]));
-  const how = [['طريقة الحساب'], ['وقت الأوردر = وقت الوصول − وقت الخروج.'], ['الطلعة المجمعة: أوردرات نفس الطيار بينها 5 دقايق أو أقل = طلعة واحدة، ونصيب كل أوردر = وقت الطلعة ÷ عدد الأوردرات.'],
-    ['مثال: طيار خرج بأوردرين الساعة 3:00 و3:02 ورجع 3:40 → وقت الطلعة 40 دقيقة ÷ 2 = 20 دقيقة لكل أوردر.'], ['"أكتر من 30" = الأوردر اللي عدّى وعد التوصيل (30 دقيقة).'], ['عمولة الدليفري = ' + COMM_OUT + ' ج × عدد الأوردرات اللي اتسلّمت خارج المعمورة. مثال: مندوب سلّم 8 أوردرات خارج المعمورة في اليوم = 8 × ' + COMM_OUT + ' = ' + (8 * COMM_OUT) + ' ج.'], ['الفترة: ' + periodRange().join(' → ')], ['اليوم التشغيلي بيبدأ 9 الصبح وبيخلص 9 الصبح اللي بعده.']];
+  const list = filtered().sort((a, b) => a.endTime - b.endTime), bm = batchMap(pool(), Date.now());
+  const log = [['اليوم التشغيلي (9ص–9ص)', 'وقت الفاتورة/التسجيل', 'خروج المندوب', 'وقت التسليم', 'مصدر وقت التسليم', 'من الفاتورة (دقيقة)', 'من الخروج (دقيقة)', 'طلعة مجمعة (عدد)', 'الطيار', 'العميل', 'المنطقة', 'القيمة', 'الفكة', 'الدفع', 'عمولة الدليفري', 'سجّله', 'ملاحظات']]
+    .concat(list.map(o => { const b = bm.get(o.id); return [opDay(o.endTime), timeStr(o.startTime), o.assignedAt ? timeStr(o.assignedAt) : '', timeStr(o.endTime), endSrc(o) === 'app' ? 'تطبيق' : 'فارما فلاي', +(totMs(o) / MIN).toFixed(1), +(rideMs(o, b) / MIN).toFixed(1), b && b.batch ? b.size : 1, o.driverName, o.customerName, o.zone || ZONES[0], o.orderValue, o.changeGiven, o.isVisa ? 'فيزا' : o.isVodafoneCash ? 'فودافون كاش' : 'كاش', commOf(o), o.employeeName, o.notes]; }));
+  const drv = [['الطيار', 'أوردرات', 'متوسط من الفاتورة (دقيقة)', 'تسليمات مؤكدة', 'متوسط من الخروج (دقيقة، مؤكد)', 'أقل من 10', '10–15', '15–20', '20–30', 'أكتر من 30', 'خارج المعمورة (عدد)', 'خارج المعمورة (قيمة)', 'عمولة الدليفري', 'القيمة']]
+    .concat(driverStats(list, bm).map(d => [d.n, d.c, d.c ? +(d.tms / d.c / MIN).toFixed(1) : 0, d.rn, d.rn ? +(d.rms / d.rn / MIN).toFixed(1) : '', ...d.b, d.out, d.outVal, d.comm, d.val]));
+  const how = [['طريقة الحساب'],
+    ['من الفاتورة = وقت التسليم − وقت الفاتورة (أو التسجيل اليدوي). ده اللي العميل شافه، وعليه وعد الـ30 دقيقة.'],
+    ['من الخروج = وقت التسليم − وقت تأكيد المندوب (خروجه). بيتحسب بس للأوردرات اللي اتقفلت بضغطة «تسليم» من التطبيق، لأن وقت «إتمام التوصيل» في فارما فلاي مش موثوق.'],
+    ['الطلعة المجمعة: أوردرات نفس المندوب اتأكدت في خلال 5 دقايق = طلعة واحدة، ونصيب كل أوردر من وقت الخروج = وقت الطلعة ÷ عدد الأوردرات.'],
+    ['مثال: مندوب اتأكد له أوردرين 3:00 و3:02 ورجع 3:40 → 40 دقيقة ÷ 2 = 20 دقيقة لكل أوردر.'],
+    ['"أكتر من 30" = الأوردر اللي عدّى وعد التوصيل (30 دقيقة من الفاتورة).'],
+    ['عمولة الدليفري = المتخزن على الأوردر وقت التسليم (' + COMM_OUT + ' ج لكل أوردر اتسلّم خارج المعمورة). مثال: 8 أوردرات خارج المعمورة = 8 × ' + COMM_OUT + ' = ' + (8 * COMM_OUT) + ' ج.'],
+    ['الفترة: ' + periodRange().join(' → ')], ['اليوم التشغيلي بيبدأ 9 الصبح وبيخلص 9 الصبح اللي بعده.']];
   const wb = XLSX.utils.book_new();
   [['طريقة الحساب', how], ['الطيارين', drv], ['السجل', log]].forEach(([n, r]) => XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(r), n));
   XLSX.writeFile(wb, `دليفري_${opDay(Date.now())}.xlsx`);
@@ -584,8 +694,9 @@ function tick() {
   const now = Date.now();
   ROOT.querySelectorAll('.oc[data-start]').forEach(c => {
     const out = c.dataset.out === '1', min = Math.floor((now - +c.dataset.start) / MIN);
-    const late = !out && now - +c.dataset.bs >= +c.dataset.th, warn = min >= (c.dataset.batch === '1' ? 25 : 15);
+    const late = !out && now - +c.dataset.bs >= +c.dataset.th, warn = min >= 20;
     const bd = c.querySelector('[data-bd]'); if (bd) { bd.textContent = c.classList.contains('tile') ? `🕒 ${min} د` : `🕒 منذ ${min} د${out ? ' · بدون إنذار' : ''}`; bd.className = 'bd ' + (late ? 'late' : out ? 'out' : warn ? 'warn' : ''); }
+    const rd = c.querySelector('[data-rd]'); if (rd && c.dataset.as) rd.textContent = `خرج من ${Math.floor((now - +c.dataset.as) / MIN)} د`;
     if (late !== c.classList.contains('late')) {
       c.classList.toggle('late', late);
       const lt = c.querySelector('[data-lt]'); if (lt) { lt.className = late ? 'bg red' : ''; lt.textContent = late ? (c.classList.contains('tile') ? '⚠ متأخر' : `⚠ متأخر (+${+c.dataset.th / MIN} د)`) : ''; }
@@ -594,21 +705,29 @@ function tick() {
   });
 }
 
+function subDone() {   // اللي اتسلّم من 9 الصبح (اليوم التشغيلي الحالي) — بيتجدد لما اليوم يتغير
+  if (UDONE) UDONE();
+  ST.liveDay = opDay(Date.now());
+  UDONE = onSnapshot(query(collection(DB, 'deliv_orders'), where('endTime', '>=', cairoStart(ST.liveDay))), s => {
+    DONE = new Map(s.docs.map(d => [d.id, { id: d.id, ...d.data() }])); rebuild(); safeRender();
+  }, e => toast('أوردرات النهارده: ' + (e.code || e.message)));
+}
+
 export async function mountDelivery(root, role) {
   ROOT = root; ROLE = role; css();
   ROOT.id = ROOT.id || 'delRoot'; ROOT.classList.add('delwrap');
   const app = getApp(); DB = getFirestore(app); UID = getAuth(app).currentUser ? getAuth(app).currentUser.uid : '';
-  UNSUB.forEach(u => u()); UNSUB = []; clearInterval(TICK); clearInterval(REFRESH);
+  UNSUB.forEach(u => u()); UNSUB = []; if (UDONE) { UDONE(); UDONE = null; } clearInterval(TICK); clearInterval(REFRESH);
   const fail = e => { ROOT.innerHTML = `<div class="banner bad">مقدرتش أقرا الدليفري: ${esc(e.code || e.message)}${e.code === 'permission-denied' ? ' — حط قواعد Firebase الجديدة الأول' : ''}</div>`; };
-  UNSUB.push(onSnapshot(query(collection(DB, 'deliv_orders'), orderBy('startTime', 'desc'), limit(6000)), s => {
-    ORDERS = s.docs.map(d => ({ id: d.id, ...d.data() })); READY = 1;
-    safeRender();
+  UNSUB.push(onSnapshot(query(collection(DB, 'deliv_orders'), where('status', '==', 'PENDING')), s => {
+    OPEN = new Map(s.docs.map(d => [d.id, { id: d.id, ...d.data() }])); READY = 1; rebuild(); safeRender();
   }, fail));
+  subDone();
   UNSUB.push(onSnapshot(collection(DB, 'deliv_drivers'), s => {
     DRIVERS = s.docs.map(d => ({ id: d.id, ...d.data() }));
     safeRender();
   }, e => toast('قايمة المناديب: ' + (e.code || e.message))));
   TICK = setInterval(() => { if (ROOT.isConnected) tick(); }, 1000);
-  REFRESH = setInterval(() => { if (ROOT.isConnected && ST.view === 'live') safeRender(); }, 30000);
+  REFRESH = setInterval(() => { if (!ROOT.isConnected) return; if (ST.liveDay !== opDay(Date.now())) subDone(); if (ST.view === 'live') safeRender(); }, 30000);
   render();
 }
