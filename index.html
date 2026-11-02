@@ -401,7 +401,7 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="crmdev" class="hide"></div>
 <div id="delivery" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-11-02-D</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-11-02-E</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -1880,15 +1880,11 @@ const NO_CLOSE_CODES = ['79', '82', '84', '85', '47', '80', '81'];
 const NO_CLOSE_NAME = /youssef|yousef|يوسف/i;
 const STATION_ORDER = [['76', 'ا عبدربه'], ['19', 'د اسراء'], ['63', 'د عادل'], ['70', 'ا آيـه'],
   ['38', 'ا إيمان'], ['9', 'ا احمد علي'], ['78', 'ا العربي'], ['72', 'ا جمال']];
-window.stTab = n => { [0,1].forEach(i => { $('stP'+i).classList.toggle('hide', i !== n); $('stT'+i).classList.toggle('on', i === n); });
-  if (n === 1) { DEL_ON = false; openDelivery($('delRootC'), 'cashier'); } };
 async function renderStation(){
   $('emp').innerHTML = `<div class="card"><div class="hdr"><div><h1>تقفيل الخزنة</h1>
 </div>
       <button class="ghost sm" onclick="doOut()">خروج</button></div></div>
-    <div class="tabs"><button id="stT0" class="on" onclick="stTab(0)">تقفيل الخزنة</button><button id="stT1" onclick="stTab(1)">🛵 الدليفري</button></div>
-    <div id="stP0" class="card"><div id="cashBox"><p class="sub">جاري التحميل…</p></div></div>
-    <div id="stP1" class="hide"><div id="delRootC"></div></div>`;
+    <div class="card"><div id="cashBox"><p class="sub">جاري التحميل…</p></div></div>`;
   try {
     const snap = await getDocs(collection(db, 'staff'));
     STAFFL = []; snap.forEach(d => { const v = d.data();
