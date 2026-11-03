@@ -1,0 +1,355 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAdmin() {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    function isViewer() {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/viewers/$(request.auth.uid));
+    }
+
+    // حساب جهاز الكاشير العام (cashier) — بيقفل الخزنة باسم الموظف اللي بيختاره
+    function isCashier() {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/cashiers/$(request.auth.uid));
+    }
+
+    // سيرفر الصيدلية (feeder) — السكريبت اليومي: بيكتب تحليل المخزون والتقارير بس، ومبيقراش أي حاجة تانية
+    function isStaff() {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/staff/$(request.auth.uid));
+    }
+
+    // (29/10) جهاز متابعة العملاء المشترك (crm) — الموظف بيختار اسمه من القايمة (من غير رقم سري، زي الكاشير)
+    function isCrmDev() {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/crmdevs/$(request.auth.uid));
+    }
+
+    match /crmdevs/{uid} {
+      allow read:  if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    function isFeeder() {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/feeders/$(request.auth.uid));
+    }
+
+    match /feeders/{uid} {
+      allow read:  if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // التقارير اليومية من السيرفر (مبيعات، مخزون) — الأدمن وصاحب الصيدلية بيشوفوا
+    match /reports/{doc} {
+      allow read:  if isAdmin() || isViewer();
+      allow write: if isAdmin() || isFeeder();
+    }
+
+    // ===== متابعة العملاء (21/10) =====
+    // القوايم (فيها أسماء وتليفونات العملاء): السيرفر بيكتبها كل يوم، الأدمن وصاحب الصيدلية بيقروها
+    // (23/10) الموظفين كمان بيقروا القوايم — كل موظف بيختار العملاء اللي هيتابعهم بنفسه
+    match /crm/{doc} {
+      allow read:  if isAdmin() || isViewer() || isStaff() || isCrmDev();
+      allow write: if isAdmin() || isFeeder();
+    }
+    // بحث بصنف: كل مشتريات العملاء المسجلين (مين اشترى إيه) — السيرفر بيكتبها كل يوم
+    match /crm_hist/{doc} {
+      allow read:  if isAdmin() || isViewer() || isStaff() || isCrmDev();
+      allow write: if isAdmin() || isFeeder();
+    }
+    // سجل التواصل: مين كلّم مين وإيه النتيجة — بيتسجل باسم اللي كتبه، ومحدش يعدّله غير الأدمن
+    // الموظف بيقرا تسجيلاته هو بس، وبيسجّل باسمه هو بس
+    match /crm_log/{id} {
+      allow read:   if isAdmin() || isViewer() || isCrmDev()
+                    || (request.auth != null && resource.data.by == request.auth.uid);
+      allow create: if request.auth != null && request.resource.data.by == request.auth.uid
+                    && (isAdmin() || isCrmDev() || exists(/databases/$(database)/documents/staff/$(request.auth.uid)));
+      allow update, delete: if isAdmin();
+    }
+    // (23/10) مفيش توزيع: الموظف بيحط اسمه على العميل (crm_claim/{كود العميل}).
+    // ميقدرش ياخد عميل عليه اسم زميل إلا لو عدّى 14 يوم؛ الأدمن أو صاحب الاسم بس اللي يشيله.
+    match /crm_claim/{id} {
+      // الجهاز المشترك (crm): الملكية بالاسم (name) مش بالـ uid لأن uid واحد للكل
+      allow read:   if isAdmin() || isViewer() || isStaff() || isCrmDev();
+      allow create: if (isStaff() || isCrmDev()) && request.resource.data.uid == request.auth.uid;
+      allow update: if (isStaff() && request.resource.data.uid == request.auth.uid
+                    && (resource.data.uid == request.auth.uid || resource.data.ts < request.time - duration.value(14, 'd')))
+                    || (isCrmDev() && request.resource.data.uid == request.auth.uid
+                    && (resource.data.name == request.resource.data.name || resource.data.ts < request.time - duration.value(14, 'd')));
+      allow delete: if isAdmin() || isCrmDev() || (request.auth != null && resource.data.uid == request.auth.uid);
+    }
+
+    // ===== طلبية النواقص اليومية من السيرفر (23/10) =====
+    // orders/<التاريخ> + orders/latest: السيرفر بيكتبها · orders/<التاريخ>_done: علامات «تم الطلب» (الأدمن ومسؤول المشتريات)
+    // السيرفر (feeder) بيقرا العلامات + «حفظ الطلبية» علشان يقارنها باللي وصل (orders/<التاريخ>_recv — 23/10)
+    match /orders/{doc} {
+      allow read:  if isAdmin() || isViewer() || isBuyer() || isFeeder();
+      allow write: if isAdmin()
+                   || (isFeeder() && !doc.matches('.*_done'))
+                   || (isBuyer() && doc.matches('.*_done'));
+    }
+
+    // مسؤول المشتريات (buyer) — طلبية النواقص بس
+    function isBuyer() {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/buyers/$(request.auth.uid));
+    }
+
+    match /buyers/{uid} {
+      allow read:  if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    // طلبيات النواقص + مشتريات اليوم + بيانات خفيفة لمسؤول المشتريات (مفيهاش مبيعات ولا تكلفة)
+    match /purchasing/{doc} {
+      allow read:  if isAdmin() || isViewer() || isBuyer();
+      allow create, update: if isAdmin() || (isBuyer() && (doc.matches('order_.*') || doc.matches('buys_.*') || doc.matches('plan_.*')));
+      allow delete: if isAdmin();
+    }
+
+    match /cashiers/{uid} {
+      allow read:  if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    match /payslips/{period}/employees/{uid} {
+      allow read:  if request.auth != null && (request.auth.uid == uid || isAdmin() || isViewer());
+      allow write: if isAdmin();
+    }
+
+    match /payslips/{period}/private/{uid} {
+      allow read:  if isAdmin() || isViewer();
+      allow write: if isAdmin();
+    }
+
+    // مسحوبات الموظفين (31/10): المدير بيسجّل، وصاحب الصيدلية بيشوف، والنشر بيخصمها من الكشف
+    match /advances/{id} {
+      allow read:   if isAdmin() || isViewer();
+      allow create: if isAdmin()
+                    && request.resource.data.amount is number
+                    && request.resource.data.amount > 0
+                    && request.resource.data.date is string;
+      allow delete: if isAdmin();
+    }
+
+    // (1/11) مسحوبات الموظفين من كروت الآجل في فارما فلاي — السيرفر بيكتبها كل يوم، والنشر بيخصمها
+    match /advances_pos/{month} {
+      allow read:  if isAdmin() || isViewer();
+      allow write: if isAdmin() || isFeeder();
+    }
+
+    match /periods/{period} {
+      allow read:  if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    match /staff/{uid} {
+      allow read:  if request.auth != null && (request.auth.uid == uid || isAdmin() || isViewer() || isCashier() || isCrmDev());
+      allow write: if isAdmin();
+    }
+
+    match /admins/{uid} {
+      allow read:  if request.auth != null;
+      allow write: if false;
+    }
+
+    match /viewers/{uid} {
+      allow read:  if request.auth != null;
+      allow write: if false;
+    }
+
+    match /queries/{id} {
+      allow read:   if request.auth != null
+                    && (resource.data.uid == request.auth.uid || isAdmin());
+      allow create: if request.auth != null
+                    && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    match /overtime/{id} {
+      allow read:   if request.auth != null
+                    && (resource.data.uid == request.auth.uid || isAdmin() || isViewer());
+      allow create: if request.auth != null
+                    && request.resource.data.uid == request.auth.uid
+                    && request.resource.data.status == 'قيد المراجعة'
+                    && request.resource.data.hours > 0
+                    && request.resource.data.hours <= 12;
+      // من 3/10: موافقة مدير الفرع نهائية، وصاحب الصيدلية اطلاع بس
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /permits/{id} {
+      allow read:   if request.auth != null
+                    && (resource.data.uid == request.auth.uid || isAdmin() || isViewer());
+      allow create: if request.auth != null
+                    && request.resource.data.uid == request.auth.uid
+                    && request.resource.data.status == 'قيد المراجعة'
+                    && (
+                      (request.resource.data.kind == 'أجازة استثنائية'
+                       && request.resource.data.days > 0
+                       && request.resource.data.days <= 30)
+                      ||
+                      (request.resource.data.minutes > 0
+                       && request.resource.data.minutes <= 600)
+                    );
+      allow update, delete: if isAdmin();
+    }
+
+    // ===== تقفيل الخزنة (3/10) =====
+    // الموظف بيسجّل تقفيلته باسمه وكوده هو بس، ومحدش يقدر يعدّلها أو يمسحها بعد كده.
+    // مدير الفرع يقدر يضيف مراجعة / تصحيح / إلغاء بس — الأرقام الأصلية بتفضل زي ما هي.
+    match /closings/{id} {
+      allow read:   if request.auth != null
+                    && (resource.data.uid == request.auth.uid
+                        || resource.data.get('empUid', '') == request.auth.uid
+                        || isAdmin() || isViewer());
+      allow create: if request.auth != null
+                    && request.resource.data.uid == request.auth.uid
+                    && (
+                      // الموظف بيقفل من حسابه هو
+                      (request.resource.data.get('empUid', request.auth.uid) == request.auth.uid
+                       && request.resource.data.code == get(/databases/$(database)/documents/staff/$(request.auth.uid)).data.code)
+                      ||
+                      // جهاز الكاشير العام: الكود لازم يطابق الموظف اللي اتختار
+                      (isCashier()
+                       && request.resource.data.code == get(/databases/$(database)/documents/staff/$(request.resource.data.empUid)).data.code)
+                    )
+                    && request.resource.data.at == request.time
+                    && request.resource.data.status == 'مرسل'
+                    && request.resource.data.bizDate is string
+                    && request.resource.data.bizDate.size() == 10
+                    && request.resource.data.posKind in ['مظبوط', 'عجز', 'زيادة']
+                    && request.resource.data.posAmount is number
+                    && request.resource.data.posAmount >= 0
+                    && request.resource.data.posAmount < 100000
+                    && request.resource.data.cashToSafe is number
+                    && request.resource.data.cashToSafe >= 0
+                    && !('review' in request.resource.data)
+                    && !('fixes' in request.resource.data)
+                    && !('void' in request.resource.data);
+      allow update: if isAdmin()
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                         .hasOnly(['review', 'fixes', 'void', 'reviewedAt']);
+      allow delete: if false;
+    }
+
+    // الخزنة الجوانية: جرد / سحب / إيداع — بتتسجل بس، متتعدلش ولا تتمسح
+    match /safe/{id} {
+      allow read:   if isAdmin() || isViewer();
+      allow create: if isAdmin() && request.resource.data.at == request.time;
+      allow update, delete: if false;
+    }
+
+    // ===== المخزون (stock.html) =====
+    match /inventory/{doc} {
+      allow read:  if isAdmin() || isViewer();
+      allow write: if isAdmin() || (isFeeder() && doc.matches('bundle_.*'));
+    }
+    match /settings/{doc} {
+      allow read:  if isAdmin() || isViewer();
+      allow write: if isAdmin();
+    }
+
+    // ===== أدلة الجزاءات (6/10): صور/لينك فيديو — الموظف يشوف بتاعه بس، مدير الفرع بس هو اللي بيكتب =====
+    match /evidence/{id} {
+      allow read:  if request.auth != null
+                   && (resource.data.uid == request.auth.uid || isAdmin() || isViewer());
+      allow write: if isAdmin();
+    }
+
+    // ===== متابعة الدليفري (1/11) — منقول من برنامج AI Studio =====
+    // الأدمن: كل حاجة. جهاز الكاشير: يبدأ أوردر ويسلّمه ويعدّل أوردر لسه شغال (مفيش مسح). صاحب الصيدلية: اطلاع.
+    // (1/11) جهاز الدليفري المشترك (delivery) — حساب بيفتح على الدليفري بس، صلاحياته زي الكاشير هنا
+    function isDelDev() {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/deliverydevs/$(request.auth.uid));
+    }
+    match /deliverydevs/{uid} {
+      allow read:  if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    // الأوقات: startTime = وقت الفاتورة/التسجيل · assignedAt = خروج المندوب (بيتسجل مرة واحدة وقت التعيين) · endTime = التسليم.
+    // endSource: app = ضغطة «تسليم» (وقتها لازم يكون وقت السيرفر تقريباً) · pos = «إتمام التوصيل» في فارما فلاي (= posEndTime بالظبط).
+    // بعد تعيين المندوب: المنطقة والقيمة مقفولين على الجهاز (الأدمن بس يغيّرهم). الحذف من الجهاز: لأوردر من غير مندوب، أو أوردر يدوي في أول 10 دقايق.
+    match /deliv_orders/{id} {
+      allow read:   if isAdmin() || isViewer() || isCashier() || isDelDev() || isFeeder();
+      allow create: if ((isAdmin() || isCashier() || isDelDev())
+                    && request.resource.data.status == 'PENDING'
+                    && request.resource.data.endTime == null
+                    && request.resource.data.driverName is string && request.resource.data.driverName != ''
+                    && request.resource.data.zone in ['داخل المعمورة الشاطئ', 'خارج المعمورة']
+                    && request.resource.data.orderValue is number
+                    && request.resource.data.orderValue >= 0
+                    && request.resource.data.orderValue < 100000
+                    && request.resource.data.startTime is number
+                    && request.resource.data.startTime > request.time.toMillis() - 600000
+                    && request.resource.data.startTime < request.time.toMillis() + 600000
+                    && request.resource.data.assignedAt == request.resource.data.startTime
+                    && request.resource.data.createdAt == request.time)
+                    // (2/11) سيرفر الصيدلية بيستورد فواتير التوصيل من فارما فلاي: أوردر جديد من غير مندوب (الموظف بيختاره من الموقع)
+                    || (isFeeder() && id.matches('pos_.*')
+                    && request.resource.data.source == 'pos'
+                    && request.resource.data.status == 'PENDING'
+                    && request.resource.data.endTime == null
+                    && request.resource.data.driverName == ''
+                    && request.resource.data.orderValue is number
+                    && request.resource.data.startTime is number);
+      allow update: if isAdmin()
+                    || (isFeeder() && resource.data.get('source', '') == 'pos' && resource.data.status == 'PENDING'
+                        && request.resource.data.diff(resource.data).affectedKeys()
+                             .hasOnly(['customerName','district','orderValue','posEndTime','endTime','status','comm','endSource'])
+                        && (request.resource.data.status == 'PENDING'
+                            || (request.resource.data.status == 'COMPLETED' && request.resource.data.endTime is number
+                                && resource.data.driverName != ''
+                                && request.resource.data.endSource == 'pos'
+                                && request.resource.data.endTime == request.resource.data.get('posEndTime', -1))))
+                    || ((isCashier() || isDelDev()) && resource.data.status == 'PENDING'
+                        && request.resource.data.diff(resource.data).affectedKeys()
+                             .hasOnly(['driverName','customerName','employeeName','zone','orderValue','changeGiven','isVisa','isVodafoneCash','notes','endTime','status','assignedAt','endSource','comm','zoneSug'])
+                        && (resource.data.driverName == ''
+                            || (request.resource.data.zone == resource.data.zone && request.resource.data.orderValue == resource.data.orderValue))
+                        && (request.resource.data.get('assignedAt', 0) == resource.data.get('assignedAt', 0)
+                            || (resource.data.driverName == ''
+                                && request.resource.data.assignedAt > request.time.toMillis() - 300000
+                                && request.resource.data.assignedAt < request.time.toMillis() + 60000))
+                        && (request.resource.data.status == 'PENDING'
+                            || (request.resource.data.status == 'COMPLETED' && request.resource.data.driverName != ''
+                                && request.resource.data.comm is number && request.resource.data.comm >= 0 && request.resource.data.comm <= 50
+                                && ((request.resource.data.endSource == 'pos'
+                                     && request.resource.data.endTime == resource.data.get('posEndTime', -1))
+                                    || (request.resource.data.endSource == 'app'
+                                        && request.resource.data.endTime > request.time.toMillis() - 300000
+                                        && request.resource.data.endTime < request.time.toMillis() + 60000)))));
+      allow delete: if isAdmin()
+                    || ((isCashier() || isDelDev()) && resource.data.status == 'PENDING');   // (3/11، طلبه) الأوردر اللي لسه مخلصش يتمسح في أي وقت (مثلاً الطيار رجع بيه) — المسح بيتسجل في deliv_log بنسخة كاملة
+    }
+
+    // نبضة سيرفر الصيدلية (آخر مرة فحص فيها فواتير التوصيل) — الشاشة بتعرضها 🟢/🔴
+    match /deliv_sys/{doc} {
+      allow read:  if isAdmin() || isViewer() || isCashier() || isDelDev();
+      allow write: if isFeeder();
+    }
+
+    // سجل التغييرات (تعيين/تعديل/حذف + نسخة كاملة من المحذوف) — بيتكتب بس، ومحدش يعدّله أو يمسحه
+    match /deliv_log/{id} {
+      allow read:   if isAdmin() || isViewer();
+      allow create: if (isAdmin() || isCashier() || isDelDev()) && request.resource.data.at == request.time;
+      allow update, delete: if false;
+    }
+    match /deliv_drivers/{id} {
+      allow read:  if isAdmin() || isViewer() || isCashier() || isDelDev();
+      allow create, update: if isAdmin() || isDelDev();   // جهاز الدليفري بيضيف مندوب
+      allow delete: if isAdmin();                         // (3/11، طلبه) شيل المندوب من القايمة للأدمن بس (أوردراته القديمة بتفضل)
+    }
+
+    match /{document=**} { allow read, write: if false; }
+  }
+}
