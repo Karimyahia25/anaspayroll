@@ -401,7 +401,7 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="crmdev" class="hide"></div>
 <div id="delivery" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-11-03-B</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-11-03-S</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -673,6 +673,12 @@ function realCust(code, name){
   if (['عميل','العميل','خعميل','عميلة'].includes(s.replace(/[^ء-ي]/g,''))) return false;
   return s.replace(/[^ء-ي a-zA-Z]/g,'').trim() !== '';
 }
+/* حافز أوردر السوشيال (قرار د. يحيى 3/11): 5 ج للبائع عن كل فاتورة بيع اسم العميل فيها «سوشيال»، من 1/11/2026.
+   البائع social = محدش ياخد · صاحب الصيدلية (dr ans) مش في شيت الموظفين فمبياخدش · المرتجع مبيتخصمش (فاتورة المرتجع
+   مفيهاش اسم العميل ولا رابط للفاتورة الأصلية). بيتخصم من ربح الحملة في تقرير السوشيال (سيرفر الصيدلية). */
+const SOCIAL_ORDER = { from: new Date(2026, 10, 1), each: 5 };
+const isSocialOrder = x => !x.ret && x.dt >= SOCIAL_ORDER.from && x.cust.includes('سوشيال')
+  && x.seller && x.seller.toLowerCase() !== 'social';
 function parseSales(wb, ps, pe, rates){
   const found = gridOf(wb, 'اسم البائع');
   if (!found) throw new Error('مش لاقي عمود "اسم البائع" — ده مش تقرير المبيعات');
@@ -694,7 +700,7 @@ function parseSales(wb, ps, pe, rates){
     const id = (o.id != null && o.id !== '') ? String(o.id)
       : (ymd(dt) + '|' + hhmm(o.time) + '|' + cNorm(o.cust) + '|' + seller);
     let x = inv.get(id);
-    if (!x){ x = { id, ret: String(o.kind||'').includes('مرتج'), type: cNorm(o.type),
+    if (!x){ x = { id, dt, ret: String(o.kind||'').includes('مرتج'), type: cNorm(o.type),
       hasCust: realCust(o.custCode, o.cust), cust: cNorm(o.cust),
       key: ymd(dt) + '|' + hhmm(o.time) + '|' + cNorm(o.cust), total: 0, seller };
       inv.set(id, x); }
@@ -754,8 +760,9 @@ function buildKPI(people, sales, items, W0){
   sales.forEach(r => {
     const s = r.seller; if (!s) return;
     const b = bySeller[s] = bySeller[s] || { invoices:0, net:0, gross:0, rets:0, retVal:0,
-      cust:0, deliv:0, vals:[] };
+      cust:0, deliv:0, vals:[], social:0 };
     b.net += r.total;
+    if (isSocialOrder(r)) b.social++;
     if (r.ret) { b.rets++; b.retVal += r.total; }
     else { b.invoices++; b.gross += r.total; b.vals.push(r.total);
       if (r.hasCust) b.cust++; if (r.type.includes('توصيل')) b.deliv++; }
@@ -780,7 +787,8 @@ function buildKPI(people, sales, items, W0){
       perHour: (+p.hours) ? b.net / p.hours : 0,
       pushValue: Math.round(it.pushValue*100)/100,
       pushComm: commOK ? Math.round(it.pushComm*100)/100 : 0,
-      pushPct: b.gross ? it.pushValue / b.gross : 0 });
+      pushPct: b.gross ? it.pushValue / b.gross : 0,
+      socialN: b.social, socialBonus: b.social * SOCIAL_ORDER.each });
   });
 
   const inc = rows.filter(r => r.include);
@@ -951,6 +959,7 @@ async function renderEmp(){
     x.value < 0 ? 'minus' : 'plus'));
   if (d.pushAuto) br += R('عمولة البوشينج', (d.pushAuto < 0 ? '− ' : '+ ') + F(Math.abs(d.pushAuto)) + ' ج',
     d.pushAuto < 0 ? 'minus' : 'plus');
+  if (d.socialAuto) br += R(`حافز أوردر السوشيال (${d.socialN || 0} أوردر × ${SOCIAL_ORDER.each} ج)`, '+ ' + F(d.socialAuto) + ' ج', 'plus');
   if (d.lateDed) br += R(`خصم التأخير (${(d.q||0)+(d.half||0)} مرة)`, '− ' + F(d.lateDed) + ' ج', 'minus');
   if (d.absPen) br += R(`جزاء غياب (${d.absDays||0} يوم)`, '− ' + F(d.absPen) + ' ج', 'minus');
   if (d.adminPen) br += R('جزاءات إدارية', '− ' + F(d.adminPen) + ' ج', 'minus');
@@ -2422,12 +2431,12 @@ function tileRows(kind){
   const tbl = (head, body) => `<div class="scroll"><table><tr>${head.map(h => `<th>${esc(h)}</th>`).join('')}</tr>${body}</table></div>`;
   const sortD = (a, b) => (b.v || 0) - (a.v || 0);
 
-  if (kind === 'basic' || kind === 'net' || kind === 'hours' || kind === 'bonusOnly' || kind === 'push' || kind === 'ded'){
+  if (kind === 'basic' || kind === 'net' || kind === 'hours' || kind === 'bonusOnly' || kind === 'push' || kind === 'social' || kind === 'ded'){
     const pick = { basic:['الراتب الأساسي','basic'], net:['الصافي','net'], hours:['الساعات','hours'],
-                   bonusOnly:['الحوافز','bonusOnly'], push:['عمولة البوشينج','pushAuto'],
+                   bonusOnly:['الحوافز','bonusOnly'], push:['عمولة البوشينج','pushAuto'], social:['حافز أوردر السوشيال','socialAuto'],
                    ded:['إجمالي الخصومات','totalDed'] }[kind];
     const list = R.map(r => ({ n: r.name, c: r.code,
-        v: kind === 'bonusOnly' ? (+r.bonus || 0) - (+r.pushAuto || 0) : (+r[pick[1]] || 0) }))
+        v: kind === 'bonusOnly' ? (+r.bonus || 0) - (+r.pushAuto || 0) - (+r.socialAuto || 0) : (+r[pick[1]] || 0) }))
       .filter(x => x.v).sort(sortD);
     return { title: pick[0], html: tbl(['الكود','الاسم', pick[0]],
       list.map(x => `<tr><td>${esc(x.c)}</td><td>${esc(x.n)}</td><td class="num"><b>${F2(x.v)}</b></td></tr>`).join('')
@@ -2703,7 +2712,7 @@ window.archivePeriod = async (pid, on) => {
 function payPanel(rows){
   const tot = rows.filter(inTotals), weekly = rows.filter(r => !inTotals(r));
   const sum = k => tot.reduce((a,r) => a + (+r[k] || 0), 0);
-  const comm = sum('pushAuto');
+  const comm = sum('pushAuto'), soc = sum('socialAuto');
   const oldPub = rows.length && rows.every(r => r.pushAuto === undefined);
   const noSales = !oldPub && rows.length && rows.every(r => !r.sales);
   const commBanner = oldPub
@@ -2715,8 +2724,9 @@ function payPanel(rows){
     <td class="num">${+r.lateDed ? F(r.lateDed) : '—'}</td>
     <td class="num">${+r.absPen ? F(r.absPen) : '—'}</td>
     <td class="num">${+r.adminPen ? F(r.adminPen) : '—'}</td>
-    <td class="num">${F((+r.totalDed||0) + (+r.cashPen||0))}</td><td class="num">${F((+r.bonus||0) - (+r.pushAuto||0))}</td>
+    <td class="num">${F((+r.totalDed||0) + (+r.cashPen||0))}</td><td class="num">${F((+r.bonus||0) - (+r.pushAuto||0) - (+r.socialAuto||0))}</td>
     <td class="num">${+r.pushAuto ? '+ ' + F(r.pushAuto) : '—'}</td>
+    <td class="num">${+r.socialAuto ? '+ ' + F(r.socialAuto) : '—'}</td>
     <td class="num">${+r.adv ? '− ' + F(r.adv) : '—'}</td>
     <td class="num"><b>${F(r.net)}</b></td>
     <td>${r.hidden ? '<span class="tag ok">غير منشور</span>' : (r.flags ? `<span class="tag late">${r.flags}</span>` : '—')}</td></tr>`).join('');
@@ -2727,8 +2737,9 @@ function payPanel(rows){
       {label:'ساعات العمل', value:HN(sum('hours')), k:'hours'},
       {label:'الخصومات', value:F(sum('totalDed'))+' ج', k:'ded'},
       {label:'خصم التأخير', value:F(sum('lateDed'))+' ج', k:'late'},
-      {label:'الحوافز', value:F(sum('bonus') - comm)+' ج', k:'bon'},
+      {label:'الحوافز', value:F(sum('bonus') - comm - soc)+' ج', k:'bon'},
       {label:'عمولة البوشينج', value:F(comm)+' ج', k:'push'},
+      {label:'حافز أوردر السوشيال', value:F(soc)+' ج', sub:`5 ج × ${tot.reduce((a,r)=>a+(+r.socialN||0),0)} أوردر`, k:'social'},
       {label:'جزاءات إدارية', value:F(sum('adminPen'))+' ج', k:'pen'},
       {label:'المسحوبات', value:F(sum('adv'))+' ج', k:'adv'}], 'tileBox')}
     <div id="tileBox"></div>
@@ -2738,7 +2749,7 @@ function payPanel(rows){
     <div class="scroll"><table>
       <tr><th>الكود</th><th>الاسم</th><th>الأساسي</th><th>ساعات</th><th>أجر</th><th>عدد التأخيرات</th>
       <th>خصم التأخير</th><th>جزاء غياب</th><th>جزاءات إدارية</th><th>إجمالي الخصومات</th>
-      <th>حوافز</th><th>عمولة بوشينج</th><th>مسحوبات</th><th>الصافي</th><th>الحالة</th></tr>
+      <th>حوافز</th><th>عمولة بوشينج</th><th>أوردر سوشيال</th><th>مسحوبات</th><th>الصافي</th><th>الحالة</th></tr>
       ${tr || '<tr><td colspan="15">مفيش كشوف في الفترة دي</td></tr>'}</table></div>
     <div class="note">اضغط على أي موظف تشوف تفاصيل أيامه. عمولة البوشينج محسوبة تلقائياً من ملف المبيعات وداخلة في الصافي.</div>
     <div id="drillBox"></div>`;
@@ -2799,6 +2810,7 @@ window.drill = uid => {
   (r.extra || []).forEach(x => br += R(x.label, (x.value < 0 ? '− ' : '+ ') + F(Math.abs(x.value)) + ' ج',
     x.value < 0 ? 'minus' : 'plus'));
   if (+r.pushAuto) br += R('عمولة البوشينج', '+ ' + F(r.pushAuto) + ' ج', 'plus');
+  if (+r.socialAuto) br += R(`حافز أوردر السوشيال (${r.socialN || 0} أوردر)`, '+ ' + F(r.socialAuto) + ' ج', 'plus');
   if (+r.lateDed) br += R(`خصم التأخير (${(r.q||0)+(r.half||0)} مرة)`, '− ' + F(r.lateDed) + ' ج', 'minus');
   if (+r.absPen) br += R(`جزاء غياب (${r.absDays||0} يوم)`, '− ' + F(r.absPen) + ' ج', 'minus');
   if (+r.adminPen) br += R('جزاءات إدارية', '− ' + F(r.adminPen) + ' ج', 'minus');
@@ -2864,12 +2876,12 @@ window.exportDash = () => {
   const P = DASH.periods.find(p => p.id === DASH.period) || {};
   const head = ['الكود','الاسم','الوظيفة','سعر الساعة الشهري','معدل الساعة','الساعات الفعلية','ساعات مرحّلة',
     'أجر الساعات','عدد التأخيرات','المعفاة','ربع يوم','نص يوم','خصم التأخير','أيام غياب','جزاء الغياب','جزاءات إدارية','إجمالي الخصومات','إجمالي الحوافز',
-    'مسحوبات آجلة','عمولة البوشينج (تلقائي)','صافي المستحق','أيام محتاجة مراجعة',
+    'مسحوبات آجلة','عمولة البوشينج (تلقائي)','حافز أوردر السوشيال','صافي المستحق','أيام محتاجة مراجعة',
     'عدد الفواتير','صافي المبيعات','نسبته من مبيعات الفرع','وسيط قيمة الفاتورة','مبيعات لكل ساعة',
     'نسبة تسجيل العميل','قيمة البوشينج','عمولة البوشينج','درجة التقييم','خصم الخزنة'];
   const body = DASH.rows.map(r => [r.code, r.name, r.job||'', r.rate||0, r.hourly||0, r.hours||0, r.carried||0,
     r.wage||0, r.lates||0, r.exempt||0, r.q||0, r.half||0, r.lateDed||0, 
-    r.absDays||0, r.absPen||0, r.adminPen||0, r.totalDed||0, r.bonus||0, r.adv||0, r.pushAuto||0, r.net||0, r.flags||0,
+    r.absDays||0, r.absPen||0, r.adminPen||0, r.totalDed||0, r.bonus||0, r.adv||0, r.pushAuto||0, r.socialAuto||0, r.net||0, r.flags||0,
     r.sales?.invoices||0, r.sales?.net||0, r.sales?.sharePct||0, r.sales?.medInv||0, r.sales?.perHour||0,
     r.sales?.custPct||0, r.sales?.pushValue||0, r.sales?.pushComm||0, r.sales?.score||'', r.cashPen||0]);
   const ws = XLSX.utils.aoa_to_sheet([[`كشف المرتبات — ${P.label || DASH.period}`], [], head, ...body]);
@@ -2930,6 +2942,11 @@ const autoComm = code => {
   const k = KPI.rows.find(x => String(x.code) === String(code));
   return k && k.commOK ? Math.round(k.pushComm * 100) / 100 : 0;
 };
+const autoSocial = code => {
+  if (!KPI) return { n: 0, amt: 0 };
+  const k = KPI.rows.find(x => String(x.code) === String(code));
+  return k ? { n: k.socialN || 0, amt: k.socialBonus || 0 } : { n: 0, amt: 0 };
+};
 const manualPush = p => (p.extra || []).filter(x => /pushing|بوشينج/i.test(String(x.label)))
   .reduce((a, x) => a + (+x.value || 0), 0);
 
@@ -2960,14 +2977,14 @@ function showPreview(){
   const hid = P.people.filter(p => p.noPublish);
   if (hid.length) w += `<div class="banner">${hid.map(x => esc(x.name)).join('، ')} — كشفه مش هيتنشر (مش هيشوفه على الموقع)، وأرقامه داخلة في إجماليات الفرع.</div>`;
 
-  const rows = P.people.map(p => { const c = autoComm(p.code), k = cashPen(p.code), av = advSite(p.code).amt;
+  const rows = P.people.map(p => { const c = autoComm(p.code), so = autoSocial(p.code).amt, k = cashPen(p.code), av = advSite(p.code).amt;
     return `<tr><td>${p.code}</td><td>${esc(p.name)}</td>
     <td class="num">${+p.basic ? F(p.basic) : '—'}</td><td class="num">${F(p.hours)}</td><td class="num">${F(p.wage)}</td><td class="num">${p.lates||0}</td>
     <td class="num">${F(p.totalDed)}</td><td class="num">${F(p.net)}</td>
-    <td class="num">${c ? '+ ' + F(c) : '—'}</td><td class="num">${k.pen ? '− ' + M2(k.pen) : '—'}</td><td class="num">${av ? '− ' + M2(av) : '—'}${advSite(p.code).pos ? `<br><small>💳 ${M2(advSite(p.code).pos)}</small>` : ''}</td>
-    <td class="num"><b>${F((+p.net||0) + c - k.pen - av)}</b></td>
+    <td class="num">${c ? '+ ' + F(c) : '—'}</td><td class="num">${so ? '+ ' + F(so) + `<br><small>${autoSocial(p.code).n} أوردر</small>` : '—'}</td><td class="num">${k.pen ? '− ' + M2(k.pen) : '—'}</td><td class="num">${av ? '− ' + M2(av) : '—'}${advSite(p.code).pos ? `<br><small>💳 ${M2(advSite(p.code).pos)}</small>` : ''}</td>
+    <td class="num"><b>${F((+p.net||0) + c + so - k.pen - av)}</b></td>
     <td>${p.flags ? `<span class="tag late">${p.flags}</span>` : '—'}</td></tr>`; }).join('');
-  const tot = P.people.reduce((a,p)=>a+(+p.net||0)+autoComm(p.code)-cashPen(p.code).pen-advSite(p.code).amt,0);
+  const tot = P.people.reduce((a,p)=>a+(+p.net||0)+autoComm(p.code)+autoSocial(p.code).amt-cashPen(p.code).pen-advSite(p.code).amt,0);
 
   $('preview').innerHTML = `
     <h2 style="margin-top:18px">٢. راجع قبل النشر</h2>
@@ -2975,9 +2992,9 @@ function showPreview(){
     ${w}
     <div class="scroll"><table>
       <tr><th>الكود</th><th>الاسم</th><th>الأساسي</th><th>ساعات</th><th>أجر</th><th>تأخيرات</th><th>خصومات</th>
-      <th>صافي الإكسيل</th><th>عمولة بوشينج</th><th>خصم الخزنة</th><th>مسحوبات (الموقع + 💳 كارت الآجل)</th><th>الصافي النهائي</th><th>مراجعة</th></tr>
+      <th>صافي الإكسيل</th><th>عمولة بوشينج</th><th>أوردر سوشيال (5 ج)</th><th>خصم الخزنة</th><th>مسحوبات (الموقع + 💳 كارت الآجل)</th><th>الصافي النهائي</th><th>مراجعة</th></tr>
       ${rows}</table></div>
-    <div class="note">الصافي النهائي = صافي الإكسيل + عمولة البوشينج المحسوبة تلقائياً من ملف المبيعات − المسحوبات المتسجلة في تبويب المسحوبات (اللي تاريخها جوه الدورة). ده اللي هيتنشر للموظف.</div>
+    <div class="note">الصافي النهائي = صافي الإكسيل + عمولة البوشينج المحسوبة تلقائياً من ملف المبيعات + حافز أوردر السوشيال (5 ج × فواتير البيع اللي اسم العميل فيها «سوشيال» من 1/11، مش البائع social) − المسحوبات المتسجلة في تبويب المسحوبات (اللي تاريخها جوه الدورة). ده اللي هيتنشر للموظف.</div>
     ${KPI ? kpiBlock() : '<div class="note">ارفع تقرير الفواتير عشان تظهر مؤشرات المبيعات.</div>'}
     <h2 style="margin-top:18px">٣. اعتماد ونشر</h2>
     <label style="display:flex;gap:10px;align-items:center;font-weight:600">
@@ -3096,6 +3113,9 @@ window.publish = async () => {
     rec.netExcel = +p.net || 0;
     rec.pushAuto = pc;
     if (pc){ rec.bonus = (+p.bonus || 0) + pc; rec.net = Math.round(((+p.net || 0) + pc) * 100) / 100; }
+    const so = autoSocial(code);
+    rec.socialAuto = so.amt; rec.socialN = so.n;
+    if (so.amt){ rec.bonus = (+rec.bonus || 0) + so.amt; rec.net = Math.round(((+rec.net || 0) + so.amt) * 100) / 100; }
     const cp = cashPen(code);
     rec.cashPen = cp.pen; rec.cashN = cp.n;
     if (cp.pen) rec.net = Math.round(((+rec.net || 0) - cp.pen) * 100) / 100;
