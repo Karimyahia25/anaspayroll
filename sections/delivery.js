@@ -400,12 +400,13 @@ function driverStats(list, bm) {
 function render() {
   if (!ROOT) return;
   const act = active(), tabs = [['live', '🛵 شغّال دلوقتي', act.length]];
-  if (seeStats()) tabs.push(['stats', '📊 الطيارين'], ['log', '📋 السجل']);
+  if (seeStats()) tabs.push(['stats', '📊 الطيارين'], ['log', '📋 السجل'], ['audit', '🧾 سجل التغييرات']);
   if (!tabs.some(t => t[0] === ST.view)) ST.view = 'live';
-  const hk = periodRange().join('|'), hist = seeStats() && ST.view !== 'live';
+  const hk = periodRange().join('|'), hist = seeStats() && (ST.view === 'stats' || ST.view === 'log');
   if (hist && ST.histKey !== hk && !ST.loading) { ST.loading = true; loadHist(hk); }
   if (ST.commOpen) commEnsure();
-  const body = !READY ? '<p class="sub">جاري التحميل…</p>' : ST.view === 'live' ? liveHtml(act)
+  if (ST.view === 'audit' && seeStats()) audEnsure();
+  const body = !READY ? '<p class="sub">جاري التحميل…</p>' : ST.view === 'live' ? liveHtml(act) : ST.view === 'audit' ? audHtml()
     : (ST.loading || ST.histKey !== hk) ? `${filterBar()}<div class="empty">⏳ جاري تحميل أوردرات الفترة…</div>` : ST.view === 'stats' ? statsHtml() : logHtml();
   ROOT.innerHTML = `<div class="dbar">${tabs.map(t => `<button class="${ST.view === t[0] ? 'on' : ''}" data-v="${t[0]}">${t[1]}${t[2] != null ? `<span class="n">${t[2]}</span>` : ''}</button>`).join('')}
 </div>
@@ -584,6 +585,36 @@ function filterBar() {
     <select id="fZone"><option value="">كل المناطق</option>${ZONES.map(z => `<option ${ST.zone === z ? 'selected' : ''}>${esc(z)}</option>`).join('')}</select></div>`;
 }
 
+/* ---------- سجل التغييرات (deliv_log) — للأدمن وصاحب الصيدلية، بيتسحب عند الفتح بس (150 سطر) ---------- */
+let AUD = null;
+const AUD_ACT = { assign: 'تعيين مندوب', edit: 'تعديل', delete: 'حذف' }, AUD_F = { driverName: 'المندوب', zone: 'المنطقة', orderValue: 'القيمة', customerName: 'العميل', notes: 'ملاحظات', isVisa: 'فيزا', isVodafoneCash: 'فودافون كاش', changeGiven: 'الفكة', employeeName: 'الموظف', comm: 'العمولة', assignedAt: 'خروج المندوب' };
+function audEnsure() {
+  if (ST.audLoading || (AUD && Date.now() - AUD.at < 120000)) return;
+  ST.audLoading = true;
+  getDocs(query(collection(DB, 'deliv_log'), orderBy('at', 'desc'), limit(150)))
+    .then(s => { AUD = { at: Date.now(), rows: s.docs.map(d => ({ id: d.id, ...d.data() })) }; })
+    .catch(e => { toast('سجل التغييرات: ' + (e.code || e.message)); AUD = { at: Date.now(), rows: [], err: 1 }; })
+    .finally(() => { ST.audLoading = false; safeRender(); });
+}
+function audHtml() {
+  const f = ST.audAct || '', rows = ((AUD && AUD.rows) || []).filter(r => !f || r.act === f);
+  const chips = [['', 'الكل'], ['assign', 'تعيين'], ['edit', 'تعديل'], ['delete', 'حذف']].map(c => `<button class="chip ${f === c[0] ? 'on' : ''}" data-aa="${c[0]}">${c[1]}</button>`).join('');
+  if (!AUD) return `<div class="ctl chips">${chips}</div><div class="empty">⏳ جاري تحميل السجل…</div>`;
+  const tms = r => { const a = r.at; const t = a && a.toMillis ? a.toMillis() : (a && a.seconds ? a.seconds * 1000 : 0); return t; };
+  const val = v => v === true ? 'نعم' : v === false ? 'لا' : v == null || v === '' ? '—' : (typeof v === 'number' && v > 1e12) ? timeStr(v) : String(v);
+  return `<div class="ctl chips">${chips}<button class="chip" data-aref>🔄 تحديث</button></div>
+  <div class="tw"><table><tr><th class="l">الوقت</th><th>العملية</th><th class="l">مين عملها</th><th class="l">الأوردر</th><th class="l">التفاصيل</th></tr>
+  ${rows.map(r => {
+    let o = {}, d = {}; try { o = r.full ? JSON.parse(r.full) : {}; } catch (e) { } try { d = r.d ? JSON.parse(r.d) : {}; } catch (e) { }
+    const t = tms(r), open = ST.audOpen && ST.audOpen[r.id];
+    const det = r.act === 'edit' ? Object.keys(d).map(k => `${AUD_F[k] || k}: ${val(d[k][0])} ← <b>${val(d[k][1])}</b>`).join('<br>') || '—'
+      : r.act === 'assign' ? `${esc(nm(o.driverName))} · ${esc(o.zone || '')}${o.endSource === 'pos' ? ' · اتقفل من السيستم' : ''}`
+      : `<button class="chip" data-ao="${r.id}">${open ? 'إخفاء' : 'نسخة المحذوف'}</button>${open ? `<pre dir="ltr" style="white-space:pre-wrap;text-align:left;font-size:11px;margin:6px 0 0">${esc(JSON.stringify(o, null, 1))}</pre>` : ''}`;
+    return `<tr${r.act === 'delete' ? ' class="late"' : ''}><td class="l">${t ? dateStr(t) + ' ' + timeStr(t) : '—'}</td><td><span class="tag ${r.act === 'delete' ? 'o' : r.act === 'edit' ? 'b' : 'i'}">${AUD_ACT[r.act] || esc(r.act)}</span></td><td class="l">${esc(r.who || '—')}</td><td class="l">${esc(nm(o.driverName) || '—')} ← ${esc(o.customerName || 'عميل')} · ${M(o.orderValue)}${o.posId ? ` <span class="cu">#${o.posId}</span>` : ''}</td><td class="l" style="white-space:normal;min-width:200px">${det}</td></tr>`;
+  }).join('') || '<tr><td colspan="5" class="empty">مفيش تغييرات متسجلة لسه</td></tr>'}</table></div>
+  <p class="sub">آخر ${N(((AUD && AUD.rows) || []).length)} حركة (بتتحمّل عند فتح التبويب بس). الحذف بيحفظ نسخة كاملة من الأوردر هنا. التسليم العادي مش بيتسجل هنا (موجود في السجل).</p>`;
+}
+
 /* ---------- الأحداث ---------- */
 function bind() {
   ROOT.querySelectorAll('[data-p]').forEach(b => b.onclick = () => { ST.period = b.dataset.p; ST.shown = 60; render(); });
@@ -595,6 +626,9 @@ function bind() {
     box.querySelectorAll('[data-az]').forEach(x => x.classList.toggle('on', x === b));
   });
   ROOT.querySelectorAll('[data-asgo]').forEach(b => b.onclick = () => assign(b.dataset.asgo));
+  ROOT.querySelectorAll('[data-aa]').forEach(b => b.onclick = () => { ST.audAct = b.dataset.aa; render(); });
+  const ar = $('[data-aref]', ROOT); if (ar) ar.onclick = () => { AUD = null; render(); };
+  ROOT.querySelectorAll('[data-ao]').forEach(b => b.onclick = () => { ST.audOpen = ST.audOpen || {}; ST.audOpen[b.dataset.ao] = !ST.audOpen[b.dataset.ao]; render(); });
   const rl = $('[data-reload]', ROOT); if (rl) rl.onclick = () => { HC.delete(periodRange().join('|')); ST.histKey = ''; render(); };
   const ws = $('#whoSel', ROOT); if (ws) ws.onchange = () => { ST.ask.sel = ws.value; };
   const wo = $('[data-whook]', ROOT); if (wo) wo.onclick = () => { const v = ($('#whoSel', ROOT).value || '').trim(); if (!v) { toast('اختار اسمك الأول'); return; } localStorage.setItem('del_emp', v); const a = ST.ask; ST.ask = null; render(); a.res(v); };
@@ -649,7 +683,7 @@ async function save() {
     if (EDIT) {
       if (e0 && e0.status === 'COMPLETED') data.comm = commFor(data.zone);                       // أدمن بيعدّل أوردر اتسلّم ← العمولة تتظبط مع المنطقة
       if (e0 && !e0.assignedAt && e0.driverName === '' && drv) data.assignedAt = Date.now();      // أوردر من السيستم اتحدد له مندوب من التعديل
-      const d = {}; Object.keys(data).forEach(k => { if (e0 && String(e0[k] ?? '') !== String(data[k] ?? '')) d[k] = [e0[k] ?? null, data[k]]; });
+      const nz = (k, v) => (k === 'isVisa' || k === 'isVodafoneCash') ? !!v : (v ?? ''), d = {}; Object.keys(data).forEach(k => { if (e0 && String(nz(k, e0[k])) !== String(nz(k, data[k]))) d[k] = [nz(k, e0[k]) === '' ? null : nz(k, e0[k]), data[k]]; });
       await updateDoc(doc(DB, 'deliv_orders', EDIT), data); logAct('edit', e0, { who: isAdm() ? 'admin' : emp, d }); patchLocal(EDIT, data);
       EDIT = null; ST.formOpen = false; toast('اتعدّل ✔');
     } else {
@@ -745,7 +779,7 @@ function tick() {
   if (sy) {
     if (!SYS || !SYS.at) { sy.textContent = '⚪ لسه مفيش إشارة من سيرفر الفواتير'; sy.className = 'pill sys'; }
     else { const ag = Math.max(0, Math.round((now - SYS.at) / 1000));
-      if (ag < 150) { sy.textContent = `🟢 سيرفر الفواتير شغال (آخر فحص من ${ag < 90 ? ag + ' ث' : Math.round(ag / 60) + ' د'})`; sy.className = 'pill sys ok'; }
+      if (ag < 150) { sy.textContent = `🟢 سيرفر الفواتير شغال (آخر فحص من ${ag < 90 ? ag + ' ث' : Math.round(ag / 60) + ' د'})${SYS.src ? ' · ' + (SYS.src === 'task' ? 'مهمة مستقلة' : 'نسخة احتياطية') : ''}`; sy.className = 'pill sys ok'; sy.title = SYS.started ? `اللوب شغال من ${dateStr(SYS.started)} ${timeStr(SYS.started)}` : ''; }
       else { sy.textContent = `🔴 سيرفر الفواتير واقف من ${Math.round(ag / 60)} دقيقة — الفواتير مش بتنزل`; sy.className = 'pill sys bad'; } }
   }
   const mb = ROOT.querySelector('[data-mute]'); if (mb) { const l = muteLbl(); if (mb.textContent !== l) mb.textContent = l; }
