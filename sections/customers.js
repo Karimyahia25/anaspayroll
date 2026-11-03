@@ -170,17 +170,19 @@ function kpis() {
     <div style="border-color:#1B7F3B"><div class="l">اشتروا بعد التواصل (7 أيام)</div><div class="v">${N(wk.won.length)}</div><div class="l">${M(wk.rev)}</div></div>`;
   $('#cmeta', ROOT).textContent = `آخر تحديث من السيرفر: ${META.at || '—'} · الأرقام على مشتريات لحد ${D(META.ref)}`;
 }
+const campBtns = () => `<button class="${ST.tab === 'baby' ? 'on' : ''}" data-tab="baby">🍼 حفاضات ولبن</button><button class="${ST.tab === 'soc' ? 'on' : ''}" data-tab="soc">📣 عملاء السوشيال</button>`;
 function bar() {
   const cnt = s => CARDS.filter(c => c.status === s && !(ST.hideDone && contactedRecently(c)) && !(ROLE === 'emp' && owner(c.id))).length;
   if (ROLE === 'emp') {
     const n = myCards().filter(c => !contactedRecently(c)).length;
     $('#cbar', ROOT).innerHTML = `<button class="${ST.tab === 'mine' ? 'on' : ''}" data-tab="mine">👤 عملائي<span class="n">${n}</span></button>`
       + LISTS.map(([k, t]) => `<button class="${ST.tab === k ? 'on' : ''}" data-tab="${k}">${t}<span class="n">${cnt(k)}</span></button>`).join('')
-      + `<button class="${ST.tab === 'find' ? 'on' : ''}" data-tab="find">🔎 بحث بصنف</button>`;
+      + campBtns() + `<button class="${ST.tab === 'find' ? 'on' : ''}" data-tab="find">🔎 بحث بصنف</button>`;
     $('#cbar', ROOT).querySelectorAll('button').forEach(b => b.onclick = () => { ST.tab = b.dataset.tab; ST.shown = 40; render(); });
     return;
   }
   $('#cbar', ROOT).innerHTML = LISTS.map(([k, t]) => `<button class="${ST.tab === k ? 'on' : ''}" data-tab="${k}">${t}<span class="n">${cnt(k)}</span></button>`).join('')
+    + campBtns()
     + `<button class="${ST.tab === 'find' ? 'on' : ''}" data-tab="find">🔎 بحث بصنف</button>`
     + `<button class="${ST.tab === 'res' ? 'on' : ''}" data-tab="res">📈 النتايج</button>`
     + `<button class="${ST.tab === 'log' ? 'on' : ''}" data-tab="log">🗂️ سجل التواصل<span class="n">${LOG.length}</span></button>`;
@@ -236,7 +238,7 @@ function listView() {
 }
 // أزرار الكارت (القوايم + عملائي)
 function hooks(b) {
-  b.querySelectorAll('[data-copy]').forEach(x => x.onclick = () => copy(cardOf(+x.dataset.copy).msg));
+  b.querySelectorAll('[data-copy]').forEach(x => x.onclick = () => copy(cardFor(+x.dataset.copy).msg));
   // على الكمبيوتر مفيش تليفون يتصل: الدوسة على الرقم بتنسخه بدل ما تفتح برنامج اتصال
   if (!matchMedia('(pointer:coarse)').matches) b.querySelectorAll('.ph a').forEach(x => x.onclick = e => { e.preventDefault(); copy(x.href.replace('tel:', ''), 'الرقم اتنسخ ✓'); });
   b.querySelectorAll('[data-res]').forEach(x => x.onclick = () => record(+x.dataset.id, x.dataset.res, x));
@@ -250,6 +252,8 @@ function hooks(b) {
   });
 }
 // الكارت من قايمة النهارده، ولو العميل خرج منها: النسخة اللي اتحفظت لما الموظف حط اسمه
+const CUSTOM = {};                                        // كروت تبويبات الحملات (حفاضات ولبن / سوشيال) — مش في القوايم اليومية
+const cardFor = id => ((ST.tab === 'baby' || ST.tab === 'soc') && CUSTOM[id]) || cardOf(id);
 const cardOf = id => CARDS.find(c => c.id === id) || (CLAIM[id] && CLAIM[id].d ? JSON.parse(CLAIM[id].d) : null);
 function myCards() {
   return Object.keys(CLAIM).filter(id => mine(+id)).map(id => cardOf(+id)).filter(Boolean);
@@ -261,7 +265,7 @@ function mineView() {
   hooks($('#cbody', ROOT));
 }
 async function record(id, result, btn) {
-  const c = cardOf(id); let note = '';
+  const c = cardFor(id); let note = '';
   if (result === 'تم') note = (prompt('ملاحظة (اختياري) — مثلاً: هيعدّي بكرة / عايز توصيل', '') || '').trim();
   const me = LOCAL ? { uid: 'local' } : getAuth(getApp()).currentUser;
   const rec = { cust: id, name: c.name, result, note, list: c.status, monthly: c.monthly, day: today(), at: new Date().toISOString(),
@@ -390,7 +394,133 @@ function findView() {
   if (!matchMedia('(pointer:coarse)').matches) body.querySelectorAll('.ph a').forEach(x => x.onclick = e => { e.preventDefault(); copy(x.href.replace('tel:', ''), 'الرقم اتنسخ ✓'); });
 }
 
-function render() { kpis(); bar(); if (ST.tab === 'mine') mineView(); else if (ST.tab === 'find') findView(); else if (ST.tab === 'res') resView(); else if (ST.tab === 'log') logView(); else listView(); }
+
+/* ---------- تبويبات الحملات (4/11): حفاضات ولبن + عملاء السوشيال — من نفس بيانات "بحث بصنف" ---------- */
+const DIA_RX = /حفاض|PAMPERS|MOLFIX|BABY ?JOY|DIAPER|\bPANTS\b/i, WIPE_RX = /WIP|WET|مناديل|منديل|TISSUE/i, ADULT_RX = /SANI|ADULT|كبار|TENA/i;
+const MILK_RX = /\bNAN\b|S-?26|NIDO|NESTOGEN|APTAMIL|BEBELAC|HERO ?BABY|NUTRASENSE|NUTRADEFENSE|SIMILAC|ENFAMIL|CERELAC|LACTOGEN|NUTRILON|ALFAMINO|NEOCATE|ISOMIL|MILUPA|FARLEY|لبن اطفال|لبن أطفال/i;
+const FOOD_RX = /CERELAC|فواك|فاكه|خضار|خضروات|مشكل|PUREE|FRUIT/i;     // سيريلاك وبرطمانات الفاكهة أكل مش لبن
+const kindOf = n => WIPE_RX.test(n) || ADULT_RX.test(n) ? '' : DIA_RX.test(n) ? 'd' : MILK_RX.test(n) && !FOOD_RX.test(n) ? 'm' : '';
+const SOC_RX = /سوشيال|social/i;
+let BB = { q: '', kind: '', from: '2026-09-26', shown: 40 }, SO = { q: '', from: '2026-09-01', shown: 40 };
+const ago = d => d ? Math.max(0, Math.round((new Date(today() + 'T12:00:00Z') - new Date(String(d).slice(0, 10) + 'T12:00:00Z')) / 864e5)) : null;
+// اسم التحية: من غير علامات السيستم وكلمة سوشيال
+function greet(name) {
+  const s = String(name).replace(/[*•.]/g, ' ').replace(/(خصم|اجل|آجل|نقدي|مؤجل|فيزا)\s*\d*/g, ' ').replace(/سوشيال|social/ig, ' ')
+    .replace(/(?<![A-Za-zء-ي])[dDoO](?![A-Za-z])/g, ' ').replace(/^\s*[dDoO](?=[ء-ي])/, '').replace(/\d+/g, ' ');
+  return s.replace(/\s+/g, ' ').trim() || 'حضرتك';
+}
+let IK = null, BYC = null;
+function histIndex() {
+  if (BYC) return;
+  IK = {}; BYC = {};
+  for (const [c, it, , last] of H.buys) {
+    const nmI = H.items[it] || ''; if (!(it in IK)) IK[it] = kindOf(nmI);
+    (BYC[c] = BYC[c] || []).push([nmI, last, IK[it]]);
+  }
+}
+function babyRows() {
+  histIndex(); const rows = [];
+  for (const [c, arr] of Object.entries(BYC)) {
+    const keep = arr.filter(x => x[2] && x[1] >= BB.from); if (!keep.length) continue;
+    const hasD = keep.some(x => x[2] === 'd'), hasM = keep.some(x => x[2] === 'm');
+    if (BB.kind === 'd' && !hasD || BB.kind === 'm' && !hasM || BB.kind === 'dm' && !(hasD && hasM)) continue;
+    const info = H.cust[c] || ['', [], null, false], name = nm(info[0]);
+    if (!name) continue;
+    const q = BB.q.trim().toLowerCase();
+    if (q && !name.toLowerCase().includes(q) && !(info[1] || []).join(' ').includes(q)) continue;
+    keep.sort((a, b) => b[1].localeCompare(a[1]));
+    rows.push({ c: +c, name, ph: info[1] || [], deliv: info[3], keep, hasD, hasM, last: keep[0][1] });
+  }
+  return rows.sort((a, b) => a.last.localeCompare(b.last));         // الأقدم الأول
+}
+function lastBox(id) {
+  const L = logsOf(id)[0], won = L && boughtAfter(L); if (!L) return '';
+  return `<div class="last ${won ? 'win' : ''}">${won ? `✅ اشترى بعد التواصل: ${M(won.amt)} يوم ${D(won.day)} — ` : ''}
+    آخر تواصل: ${esc(L.result)} يوم ${D(L.day)}${L.byName ? ' (' + esc(L.byName) + ')' : ''}${L.note ? ' — ' + esc(L.note) : ''}</div>`;
+}
+function campCard(r, color, badges, intro, msg, status) {
+  CUSTOM[r.c] = { id: r.c, name: r.name, status, monthly: 0, msg };
+  const edit = ROLE === 'admin' || ROLE === 'emp';
+  return `<div class="cc" style="--g:${color}" data-id="${r.c}">
+    <div class="top"><div><h4>${esc(r.name)}</h4><div class="meta">${badges}${r.deliv ? '<span class="bd dl">عميل توصيل</span>' : ''}${intro}</div></div></div>
+    <ul class="its">${r.keep.slice(0, 5).map(x => `<li><span>${esc(x[0])}</span><span class="s">${D(x[1])} · من ${days(ago(x[1]))}</span></li>`).join('')}</ul>
+    <div class="ph">${r.ph.length ? r.ph.map(p => `<a href="tel:${p}">📞 ${p}</a>`).join('') : '<span class="meta">مفيش رقم متسجل</span>'}</div>
+    <details class="msg"><summary>الرسالة</summary><pre>${esc(msg)}</pre></details>
+    <div class="act"><button class="ghost" data-copy="${r.c}">📋 نسخ الرسالة</button>
+      ${edit ? RES.map(([k, t, cl]) => `<button class="r-${cl}" data-res="${k}" data-id="${r.c}">${t}</button>`).join('') : ''}</div>
+    ${lastBox(r.c)}</div>`;
+}
+function campShell(html, ctl) {
+  $('#cbody', ROOT).innerHTML = html;
+  const b = $('#cbody', ROOT); ctl(b); hooks(b);
+}
+function histGate(then) {
+  const body = $('#cbody', ROOT);
+  if (!H) {
+    body.innerHTML = '<div class="card"><p class="sub">جاري تحميل مشتريات العملاء…</p></div>';
+    loadHist().then(then).catch(e => { body.innerHTML = `<div class="banner bad">مقدرتش أحمّل المشتريات: ${esc(e.code || e.message)}</div>`; });
+    return false;
+  }
+  if (H.none) { body.innerHTML = '<div class="banner">لسه السيرفر مرفعش سجل المشتريات.</div>'; return false; }
+  return true;
+}
+function babyView() {
+  if (!histGate(babyView)) return;
+  const rows = babyRows();
+  const kinds = [['', 'الكل'], ['d', 'حفاضات'], ['m', 'لبن'], ['dm', 'الاتنين']].map(([k, t]) => `<button class="chip ${BB.kind === k ? 'on' : ''}" data-kind="${k}">${t}</button>`).join('');
+  const html = `<p class="why"><b>🍼 حفاضات ولبن</b> — كل عميل مسجل اشترى حفاضات أو لبن أطفال من <b>${D(BB.from)}</b>، الأقدم شراءً الأول (مفيش حد مخفي). المناديل مش محسوبة. <b>${N(rows.length)}</b> عميل.</p>
+    <div class="ctl"><input type="search" id="bq" placeholder="اسم العميل أو التليفون" value="${esc(BB.q)}">
+      <label class="chip">من <input type="date" id="bfrom" value="${BB.from}" style="width:auto;min-height:0"></label></div>
+    <div class="ctl chips">${kinds}</div>
+    <div id="clist">${rows.slice(0, BB.shown).map(r => {
+      const bd = (r.hasD ? '<span class="bd" style="background:#2A6FB0">حفاضات</span>' : '') + (r.hasM ? '<span class="bd" style="background:#6B5BA8">لبن أطفال</span>' : '');
+      const its = r.keep.slice(0, 3).map(x => '• ' + nm(x[0])).join('\n');
+      const msg = `أهلاً ${greet(r.name)} 🌿\nمعاك صيدلية أنس نحيلة، بنطمن على حضرتك وعلى البيبي.\n\nحسب آخر مرة، الظاهر إن دول قربوا يخلصوا:\n${its}\n\nمتوفرين عندنا بكل المقاسات، ولو تحب نوصلهملك البيت قولنا.\nوأي حاجة تانية تحتاجها، إحنا موجودين 💚`;
+      return campCard(r, r.hasD ? '#2A6FB0' : '#6B5BA8', bd, `<div class="when">🛒 آخر شراء من ${days(ago(r.last))}</div>`, msg, 'حفاضات ولبن');
+    }).join('') || '<div class="banner">مفيش عملاء بالفلاتر دي.</div>'}</div>
+    ${rows.length > BB.shown ? `<button class="ghost more" id="bmore">عرض المزيد (${rows.length - BB.shown})</button>` : ''}`;
+  campShell(html, b => {
+    $('#bq', b).oninput = e => { BB.q = e.target.value; BB.shown = 40; const p = e.target.selectionStart; babyView(); const i = $('#bq', ROOT); i.focus(); i.setSelectionRange(p, p); };
+    $('#bfrom', b).onchange = e => { if (e.target.value) { BB.from = e.target.value; BB.shown = 40; babyView(); } };
+    b.querySelectorAll('[data-kind]').forEach(x => x.onclick = () => { BB.kind = x.dataset.kind; BB.shown = 40; babyView(); });
+    if ($('#bmore', b)) $('#bmore', b).onclick = () => { BB.shown += 40; babyView(); };
+  });
+}
+function socRows() {
+  histIndex(); const rows = [];
+  for (const [c, info] of Object.entries(H.cust)) {
+    if (!SOC_RX.test(info[0] || '')) continue;
+    const last = info[2]; if (!last || last < SO.from) continue;
+    const q = SO.q.trim().toLowerCase(), name = nm(info[0]);
+    if (q && !name.toLowerCase().includes(q) && !(info[1] || []).join(' ').includes(q)) continue;
+    const keep = [...(BYC[c] || [])].sort((a, b) => b[1].localeCompare(a[1])).slice(0, 4);
+    const v90 = (VIS[c] || []).reduce((a, x) => a + x[1], 0);
+    rows.push({ c: +c, name, ph: info[1] || [], deliv: info[3], keep, last, v90 });
+  }
+  return rows.sort((a, b) => a.last.localeCompare(b.last));         // الأقدم الأول
+}
+function socView() {
+  if (!histGate(socView)) return;
+  const rows = socRows();
+  const html = `<p class="why"><b>📣 عملاء السوشيال</b> — العملاء اللي اسمهم فيه «سوشيال» (جُم من الإعلانات)، من آخر زيارة <b>${D(SO.from)}</b>، الأقدم الأول. <b>${N(rows.length)}</b> عميل.</p>
+    <div class="ctl"><input type="search" id="sq" placeholder="اسم العميل أو التليفون" value="${esc(SO.q)}">
+      <label class="chip">من <input type="date" id="sfrom" value="${SO.from}" style="width:auto;min-height:0"></label>
+      <button class="chip" id="sall">كل الوقت</button></div>
+    <div id="clist">${rows.slice(0, SO.shown).map(r => {
+      const msg = `أهلاً ${greet(r.name)} 🌿\nمعاك صيدلية أنس نحيلة. بنطمن على حضرتك، وحابين نفكرك إننا موجودين 24 ساعة والتوصيل لحد البيت.\nلو محتاج حاجة قولنا، وعروضنا على anasnehila.com 💚`;
+      return campCard(r, '#C2417A', '<span class="bd" style="background:#C2417A">سوشيال</span>',
+        `<div class="when">🛒 آخر زيارة من ${days(ago(r.last))}</div>${r.v90 ? `<div>💰 آخر 90 يوم: ${M(r.v90)}</div>` : ''}`, msg, 'سوشيال');
+    }).join('') || '<div class="banner">مفيش عملاء بالفلاتر دي.</div>'}</div>
+    ${rows.length > SO.shown ? `<button class="ghost more" id="smore">عرض المزيد (${rows.length - SO.shown})</button>` : ''}`;
+  campShell(html, b => {
+    $('#sq', b).oninput = e => { SO.q = e.target.value; SO.shown = 40; const p = e.target.selectionStart; socView(); const i = $('#sq', ROOT); i.focus(); i.setSelectionRange(p, p); };
+    $('#sfrom', b).onchange = e => { if (e.target.value) { SO.from = e.target.value; SO.shown = 40; socView(); } };
+    $('#sall', b).onclick = () => { SO.from = '2000-01-01'; SO.shown = 40; socView(); };
+    if ($('#smore', b)) $('#smore', b).onclick = () => { SO.shown += 40; socView(); };
+  });
+}
+
+function render() { kpis(); bar(); if (ST.tab === 'mine') mineView(); else if (ST.tab === 'baby') babyView(); else if (ST.tab === 'soc') socView(); else if (ST.tab === 'find') findView(); else if (ST.tab === 'res') resView(); else if (ST.tab === 'log') logView(); else listView(); }
 
 /* ---------- أدوات ---------- */
 function toast(t) { const d = document.createElement('div'); d.className = 'toast'; d.textContent = t; document.body.appendChild(d); setTimeout(() => d.remove(), 2200); }
