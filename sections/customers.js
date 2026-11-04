@@ -65,6 +65,8 @@ function css() {
 #crmRoot .its li{border-top:1px dashed var(--line);padding:3px 0;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
 #crmRoot .its .s{color:var(--muted);font-size:12px}
 #crmRoot .ph{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
+#crmRoot .ph{align-items:center}
+#crmRoot .ph .cpn{min-height:44px;min-width:44px;padding:6px 10px;border-radius:10px;font-size:16px;background:var(--card);color:var(--green-deep);border:1px solid var(--line);margin-inline-start:-2px}
 #crmRoot .ph a{display:inline-flex;align-items:center;min-height:44px;padding:6px 14px;border-radius:10px;background:var(--green-soft);color:var(--green-deep);font-weight:700;text-decoration:none;direction:ltr}
 #crmRoot .act{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
 #crmRoot .act button{min-height:44px;font-size:13.5px;padding:8px 12px}
@@ -213,7 +215,7 @@ function card(c) {
         <div class="when">${when}</div>${c.status !== 'بعد' && seen ? `<div>${seen}</div>` : ''}${c.area && c.area !== 'مش متسجل' ? `<div>📍 ${esc(c.area)}</div>` : ''}</div></div>
       <div class="val">${M(c.monthly)}<div class="meta" style="text-align:left">${c.grp[0] === 'lapsed' ? 'كان بيدفع في الشهر' : 'في الشهر'}</div></div></div>
     <ul class="its">${its}</ul>
-    <div class="ph">${c.phones.length ? c.phones.map(p => `<a href="tel:${p}">📞 ${p}</a>`).join('') : '<span class="meta">مفيش رقم متسجل</span>'}</div>
+    <div class="ph">${c.phones.length ? c.phones.map(phBtn).join('') : '<span class="meta">مفيش رقم متسجل</span>'}</div>
     <details class="msg"><summary>الرسالة</summary><pre>${esc(c.msg)}</pre></details>
     <div class="act"><button class="ghost" data-copy="${c.id}">📋 نسخ الرسالة</button>
       ${ROLE === 'emp' && !ow ? `<button data-claim="${c.id}">✋ أنا هتابعه</button>` : ''}
@@ -236,11 +238,15 @@ function listView() {
   if ($('#cmore', b)) $('#cmore', b).onclick = () => { ST.shown += 40; listView(); };
   hooks(b);
 }
+// رقم التليفون + زرار نسخ جنبه
+const phBtn = p => `<a href="tel:${p}">📞 ${p}</a><button type="button" class="ghost cpn" data-cpn="${p}" aria-label="نسخ الرقم" title="نسخ الرقم">📋</button>`;
+const wireCpn = b => b.querySelectorAll('[data-cpn]').forEach(x => x.onclick = () => copy(x.dataset.cpn, 'الرقم اتنسخ ✓'));
 // أزرار الكارت (القوايم + عملائي)
 function hooks(b) {
   b.querySelectorAll('[data-copy]').forEach(x => x.onclick = () => copy(cardFor(+x.dataset.copy).msg));
   // على الكمبيوتر مفيش تليفون يتصل: الدوسة على الرقم بتنسخه بدل ما تفتح برنامج اتصال
   if (!matchMedia('(pointer:coarse)').matches) b.querySelectorAll('.ph a').forEach(x => x.onclick = e => { e.preventDefault(); copy(x.href.replace('tel:', ''), 'الرقم اتنسخ ✓'); });
+  wireCpn(b);
   b.querySelectorAll('[data-res]').forEach(x => x.onclick = () => record(+x.dataset.id, x.dataset.res, x));
   b.querySelectorAll('[data-claim]').forEach(x => x.onclick = async () => {
     x.disabled = true;
@@ -369,7 +375,7 @@ function findView() {
         const [name, ph, vis, dl] = H.cust[r.c] || ['', [], null, false];
         return `<div class="hr"><div class="hn">${esc(nm(name))}${dl ? ' <span class="bd dl">توصيل</span>' : ''}${hasDisc(name) ? ' <span class="bd" style="background:#C2417A">خصم</span>' : ''}</div>
           ${HS.sel === '*' ? `<div class="hs">${esc([...r.items].slice(0, 3).join(' · '))}</div>` : ''}
-          <div class="ph">${(ph || []).map(x => `<a href="tel:${x}">📞 ${x}</a>`).join('') || '<span class="hs">مفيش رقم</span>'}</div>
+          <div class="ph">${(ph || []).map(phBtn).join('') || '<span class="hs">مفيش رقم</span>'}</div>
           <div class="hs">اشترى ${times(r.n)} · آخر مرة ${D(r.last)} · آخر زيارة للصيدلية ${D(vis)}</div></div>`;
       }).join('')}
       </div>${rows.length > HS.shown ? `<button class="ghost more" id="hmore">عرض المزيد (${rows.length - HS.shown})</button>` : ''}</div>`;
@@ -392,6 +398,7 @@ function findView() {
     copy(seen.join('\n'), 'الأرقام اتنسخت ✓');
   };
   if (!matchMedia('(pointer:coarse)').matches) body.querySelectorAll('.ph a').forEach(x => x.onclick = e => { e.preventDefault(); copy(x.href.replace('tel:', ''), 'الرقم اتنسخ ✓'); });
+  wireCpn(body);
 }
 
 
@@ -444,7 +451,7 @@ function campCard(r, color, badges, intro, msg, status) {
   return `<div class="cc" style="--g:${color}" data-id="${r.c}">
     <div class="top"><div><h4>${esc(r.name)}</h4><div class="meta">${badges}${r.deliv ? '<span class="bd dl">عميل توصيل</span>' : ''}${intro}</div></div></div>
     <ul class="its">${r.keep.slice(0, 5).map(x => `<li><span>${esc(x[0])}</span><span class="s">${D(x[1])} · من ${days(ago(x[1]))}</span></li>`).join('')}</ul>
-    <div class="ph">${r.ph.length ? r.ph.map(p => `<a href="tel:${p}">📞 ${p}</a>`).join('') : '<span class="meta">مفيش رقم متسجل</span>'}</div>
+    <div class="ph">${r.ph.length ? r.ph.map(phBtn).join('') : '<span class="meta">مفيش رقم متسجل</span>'}</div>
     <details class="msg"><summary>الرسالة</summary><pre>${esc(msg)}</pre></details>
     <div class="act"><button class="ghost" data-copy="${r.c}">📋 نسخ الرسالة</button>
       ${edit ? RES.map(([k, t, cl]) => `<button class="r-${cl}" data-res="${k}" data-id="${r.c}">${t}</button>`).join('') : ''}</div>
