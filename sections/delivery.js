@@ -338,7 +338,7 @@ function suggestZone(district) {
 /* ---------- البيانات ---------- */
 const rebuild = () => { const m = new Map(OPEN); DONE.forEach((v, k) => m.set(k, v)); ORDERS = [...m.values()]; };
 const findOrder = id => ORDERS.find(o => o.id === id) || HIST.find(o => o.id === id);
-const active = () => ORDERS.filter(o => o.status === 'PENDING').sort((a, b) => a.startTime - b.startTime);   // الأقدم الأول (الأطول انتظاراً)
+const active = () => ORDERS.filter(o => o.status === 'PENDING').sort((a, b) => b.startTime - a.startTime);   // (5/11، طلبه) الجديد فوق والقديم تحت
 // كل اللي اتسلّم: الفترة المحمّلة + الحي (الحي بيكسب)
 const pool = () => { const m = new Map(); HIST.forEach(o => m.set(o.id, o)); ORDERS.forEach(o => { if (o.status === 'COMPLETED') m.set(o.id, o); }); return [...m.values()].filter(o => o.status === 'COMPLETED' && o.endTime && o.driverName); };
 const drvList = () => { const s = new Set(DRIVERS.map(d => d.name)); ORDERS.forEach(o => o.driverName && s.add(o.driverName)); HIST.forEach(o => o.driverName && s.add(o.driverName)); return [...s]; };
