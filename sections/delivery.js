@@ -304,18 +304,19 @@ function siren(secs = 2) {   // (2/11) فاتورة توصيل جديدة = نغ
   try {
     armAudio();
     const t0 = AC.currentTime, o = AC.createOscillator(), g = AC.createGain(), n = 4, step = secs / n;
-    o.type = 'sine'; o.connect(g); g.connect(AC.destination);
+    o.type = 'square'; o.connect(g); g.connect(AC.destination);   // (5/11) صوت عالي: موجة مربعة + جين 1.0 (كان sine 0.3)
     g.gain.setValueAtTime(0.0001, t0);
     for (let i = 0; i < n; i++) {
       const t = t0 + i * step;
       o.frequency.setValueAtTime(i % 2 ? 988 : 784, t);                    // صول ← سي
       g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(0.3, t + 0.04);                   // بداية ناعمة
-      g.gain.exponentialRampToValueAtTime(0.0001, t + step * 0.9);          // وتخفت
+      g.gain.exponentialRampToValueAtTime(1.0, t + 0.02);                   // بداية سريعة وعالية
+      g.gain.setValueAtTime(1.0, t + step * 0.8);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + step * 0.95);
     }
     o.start(t0); o.stop(t0 + secs + 0.05);
   } catch (e) { }
-  try { navigator.vibrate && navigator.vibrate([200, 120, 200]); } catch (e) { }
+  try { navigator.vibrate && navigator.vibrate([400, 150, 400, 150, 400]); } catch (e) { }
 }
 let SEEN = null;   // الأوردرات المفتوحة اللي شفناها (أول تحميل مبيرنش)
 function checkNew() {
