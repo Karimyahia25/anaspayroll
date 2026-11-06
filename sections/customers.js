@@ -65,6 +65,7 @@ function css() {
 #crmRoot .its li{border-top:1px dashed var(--line);padding:3px 0;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
 #crmRoot .its .s{color:var(--muted);font-size:12px}
 #crmRoot .ph{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
+#crmRoot .addr{font-size:13px;font-weight:600;margin-top:3px;color:var(--ink);line-height:1.6}
 #crmRoot .ph{align-items:center}
 #crmRoot .ph .cpn{min-height:44px;min-width:44px;padding:6px 10px;border-radius:10px;font-size:16px;background:var(--card);color:var(--green-deep);border:1px solid var(--line);margin-inline-start:-2px}
 #crmRoot .ph a{display:inline-flex;align-items:center;min-height:44px;padding:6px 14px;border-radius:10px;background:var(--green-soft);color:var(--green-deep);font-weight:700;text-decoration:none;direction:ltr}
@@ -449,7 +450,7 @@ function campCard(r, color, badges, intro, msg, status) {
   CUSTOM[r.c] = { id: r.c, name: r.name, status, monthly: 0, msg };
   const edit = ROLE === 'admin' || ROLE === 'emp';
   return `<div class="cc" style="--g:${color}" data-id="${r.c}">
-    <div class="top"><div><h4>${esc(r.name)}</h4><div class="meta">${badges}${r.deliv ? '<span class="bd dl">عميل توصيل</span>' : ''}${intro}</div></div></div>
+    <div class="top"><div><h4>${esc(r.name)}</h4>${r.area || r.street ? `<div class="addr">📍 ${esc([r.area, r.street].filter(Boolean).join(' — '))}</div>` : ''}<div class="meta">${badges}${r.deliv ? '<span class="bd dl">عميل توصيل</span>' : ''}${intro}</div></div></div>
     <ul class="its">${r.keep.slice(0, 5).map(x => `<li><span>${esc(x[0])}</span><span class="s">${D(x[1])} · من ${days(ago(x[1]))}</span></li>`).join('')}</ul>
     <div class="ph">${r.ph.length ? r.ph.map(phBtn).join('') : '<span class="meta">مفيش رقم متسجل</span>'}</div>
     <details class="msg"><summary>الرسالة</summary><pre>${esc(msg)}</pre></details>
@@ -502,7 +503,7 @@ function socRows() {
     if (q && !name.toLowerCase().includes(q) && !(info[1] || []).join(' ').includes(q)) continue;
     const keep = [...(BYC[c] || [])].sort((a, b) => b[1].localeCompare(a[1])).slice(0, 4);
     const v90 = (VIS[c] || []).reduce((a, x) => a + x[1], 0);
-    rows.push({ c: +c, name, ph: info[1] || [], deliv: info[3], keep, last, v90 });
+    rows.push({ c: +c, name, ph: info[1] || [], deliv: info[3], keep, last, v90, area: info[4] || '', street: info[5] || '' });
   }
   return rows.sort((a, b) => a.last.localeCompare(b.last));         // الأقدم الأول
 }
