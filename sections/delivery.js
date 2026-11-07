@@ -303,18 +303,21 @@ function siren(secs = 2) {   // (2/11) فاتورة توصيل جديدة = نغ
   if (ST.mute) return;
   try {
     armAudio();
-    const t0 = AC.currentTime, o = AC.createOscillator(), g = AC.createGain(), n = 4, step = secs / n;
-    o.type = 'square'; o.connect(g); g.connect(AC.destination);   // (5/11) صوت عالي: موجة مربعة + جين 1.0 (كان sine 0.3)
+    // (7/11، طلبه) زغرودة ثانيتين: نغمة عالية بتطلع وتنزل + ترتيش سريع (LFO ~9 مرة/ث)
+    const t0 = AC.currentTime, o = AC.createOscillator(), g = AC.createGain(), f = AC.createBiquadFilter();
+    const l = AC.createOscillator(), lg = AC.createGain();
+    o.type = 'sawtooth'; f.type = 'lowpass'; f.frequency.value = 3200;
+    o.connect(f); f.connect(g); g.connect(AC.destination);
+    l.frequency.value = 9; lg.gain.value = 260; l.connect(lg); lg.connect(o.frequency);   // الترتيش
+    o.frequency.setValueAtTime(1000, t0);
+    o.frequency.linearRampToValueAtTime(1500, t0 + secs * 0.35);
+    o.frequency.linearRampToValueAtTime(1500, t0 + secs * 0.8);
+    o.frequency.linearRampToValueAtTime(1100, t0 + secs);
     g.gain.setValueAtTime(0.0001, t0);
-    for (let i = 0; i < n; i++) {
-      const t = t0 + i * step;
-      o.frequency.setValueAtTime(i % 2 ? 988 : 784, t);                    // صول ← سي
-      g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(1.0, t + 0.02);                   // بداية سريعة وعالية
-      g.gain.setValueAtTime(1.0, t + step * 0.8);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + step * 0.95);
-    }
-    o.start(t0); o.stop(t0 + secs + 0.05);
+    g.gain.exponentialRampToValueAtTime(0.7, t0 + 0.12);
+    g.gain.setValueAtTime(0.7, t0 + secs - 0.25);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + secs);
+    o.start(t0); l.start(t0); o.stop(t0 + secs + 0.05); l.stop(t0 + secs + 0.05);
   } catch (e) { }
   try { navigator.vibrate && navigator.vibrate([400, 150, 400, 150, 400]); } catch (e) { }
 }
