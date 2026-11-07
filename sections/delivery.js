@@ -99,6 +99,7 @@ function css() {
 :is(#adm,#delivery) .delwrap .ocgrid .oc{margin-bottom:0}
 @media(max-width:480px){:is(#adm,#delivery) .delwrap .ocgrid{grid-template-columns:1fr}}
 :is(#adm,#delivery) .delwrap h3.sec.need{color:#b45309;background:#fffbeb;border:1px solid #fcd34d;border-radius:12px;padding:8px 12px}
+.dgrp{margin-bottom:14px}.dgh{display:flex;align-items:center;gap:8px;width:100%;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:12px;padding:8px 12px;min-height:44px;margin-bottom:8px;box-shadow:none;color:#1e293b;font-size:15px}.dgh .dgt{margin-inline-start:auto;font-size:12px;color:#475569}
 .mback{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:70;display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:18px 12px}
 .mdl{position:relative;width:min(560px,100%);margin:auto}
 .mdl .mclose{position:absolute;top:10px;left:10px;z-index:2;width:40px;height:40px;padding:0;border-radius:50%;background:#f1f5f9;color:#334155;border:1px solid #e2e8f0;font-size:18px;box-shadow:none}
@@ -414,6 +415,7 @@ function render() {
 </div>
     ${body}${ST.ask ? askHtml() : ''}`;
   ROOT.querySelectorAll('[data-v]').forEach(b => b.onclick = () => { ST.view = b.dataset.v; EDIT = null; render(); });
+  ROOT.querySelectorAll('[data-hid]').forEach(b => b.onclick = () => { const d = b.dataset.hid; HID.has(d) ? HID.delete(d) : HID.add(d); try { localStorage.setItem('delHid', JSON.stringify([...HID])); } catch (e) { } render(); });
   ROOT.querySelectorAll('[data-mute]').forEach(b => b.onclick = () => { if (!ST.mute && !audioOn()) { armAudio(); beep(880, 2); setTimeout(render, 300); return; } ST.mute = !ST.mute; render(); });
   bind();
 }
@@ -488,10 +490,21 @@ function liveHtml(act) {
       <div class="pane need" id="needSec"><h3><span>🧾 مستنية تأكيد المندوب (${needN})</span></h3>
         ${needN ? `<div class="stack">${needCards.join('')}</div>` : '<div class="empty">مفيش أوردرات مستنية</div>'}</div>
       <div class="pane"><h3><span>🛵 جاري توصيلها (${outCards.length})</span></h3>
-        <div class="tiles">${outCards.join('') || '<div class="empty" style="grid-column:1/-1">مفيش أوردر جاري توصيله دلوقتي</div>'}</div></div>
+        ${outGroups(act, cardArr) || '<div class="empty">مفيش أوردر جاري توصيله دلوقتي</div>'}</div>
     </div>
     ${ST.commOpen ? `<div class="mback" data-mback2><div class="mdl"><button type="button" class="mclose" data-closecomm title="إغلاق">✕</button>${commHtml()}</div></div>` : ''}
     ${canWrite() && (ST.formOpen || EDIT) ? `<div class="mback" data-mback><div class="mdl"><button type="button" class="mclose" data-closeform title="إغلاق">✕</button>${formHtml()}</div></div>` : ''}`;
+}
+
+/* (7/11، طلبه) الجاري توصيلها متقسمة بكل مندوب + زرار إخفاء/إظهار لكل مندوب (بيتحفظ على الجهاز) */
+const HID = (() => { try { return new Set(JSON.parse(localStorage.getItem('delHid') || '[]')); } catch (e) { return new Set(); } })();
+function outGroups(act, cardArr) {
+  const g = new Map();
+  act.forEach((o, n) => { if (o.driverName) { if (!g.has(o.driverName)) g.set(o.driverName, []); g.get(o.driverName).push(cardArr[n]); } });
+  return [...g.entries()].sort((x, y) => String(x[0]).localeCompare(String(y[0]), 'ar')).map(([d, cs]) => {
+    const h = HID.has(d);
+    return `<div class="dgrp"><button type="button" class="dgh" data-hid="${esc(d)}"><b>🛵 ${esc(nm(d))}</b> <span class="pill">${cs.length}</span><span class="dgt">${h ? '👁 إظهار' : '🙈 إخفاء'}</span></button>${h ? '' : `<div class="tiles">${cs.join('')}</div>`}</div>`;
+  }).join('');
 }
 
 function asgCard(o, now) {
