@@ -123,6 +123,7 @@ function css() {
 #ordFx .fxd{background:#7FD6CC;border:0}
 #ordFx .fxc{position:absolute;border-radius:2px}
 @media (prefers-reduced-motion:reduce){#ordRoot *,#ordFx *{animation:none!important;transition:none!important}}
+#ordRoot .loose{margin:4px 0 2px;background:#EFE3FB;color:#5B2A91;border:1px solid #CDB3EC;border-radius:10px;padding:4px 10px;font-weight:800;font-size:13px;line-height:1.6}
 #ordRoot .rare{margin:4px 0 2px;background:#FDE2E1;color:#B3261E;border:1px solid #F3A9A2;border-radius:10px;padding:4px 10px;font-weight:800;font-size:13px;line-height:1.6}
 #ordRoot .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#0F1B2D;color:#fff;padding:10px 18px;border-radius:12px;z-index:80;font-size:14px}
 `;
@@ -442,7 +443,7 @@ async function exportXl(done) {
     const aoa = [[`طلبية النواقص ${DATE.split('-').reverse().join('/')} — ${title} — ${rows.length} صنف`], [], head, ...rows.map(r => {
       const D = DONE[r.code], R = recvOf(r);
       const note = [r.up ? 'السعر زاد' : '', r.sea ? 'صيفي — بمعدل آخر 30 يوم' : '', r.moved || '',
-        r.rare ? `اتباع ${r.rare[0] === 1 ? 'مرة' : 'مرتين'} بس في 90 يوم — آخرها ${r.rare[1]}` : '', r.kept ? 'اتعلّم عليه قبل التحديث' : '', r.cust ? custTxt(r) : '', r.sup !== r._s0 ? `المورد اتغير من ${r._s0}` : '', r.need !== r._n0 ? `الكمية اتغيرت من ${r._n0}` : '', r.pend ? `اتطلب امبارح ولسه موصلش ${String(Math.round(r.pend * 100) / 100)} علبة${r.pend_sup ? ' من ' + r.pend_sup : ''}` : ''].filter(Boolean).join(' · ');
+        r.loose ? `رصيده أقل من علبة (${r.loose[0]}) — بعد العلبة يكفي ~${r.loose[1]} يوم` : '', r.rare ? `اتباع ${r.rare[0] === 1 ? 'مرة' : 'مرتين'} بس في 90 يوم — آخرها ${r.rare[1]}` : '', r.kept ? 'اتعلّم عليه قبل التحديث' : '', r.cust ? custTxt(r) : '', r.sup !== r._s0 ? `المورد اتغير من ${r._s0}` : '', r.need !== r._n0 ? `الكمية اتغيرت من ${r._n0}` : '', r.pend ? `اتطلب امبارح ولسه موصلش ${String(Math.round(r.pend * 100) / 100)} علبة${r.pend_sup ? ' من ' + r.pend_sup : ''}` : ''].filter(Boolean).join(' · ');
       return [r.sup, r.code, r.name, r.abc, r.stock, r.need, r.sd ?? '', r.last || '', r.lsup || '', r.ld ?? '', note,
         ...(done ? [D.by || '', D.at || ''] : []), ...(RECV ? [R ? (R.st === 'extra' ? 'وصل من غير علامة' : RC[R.st]) + (R.q > 0 ? ' ' + Math.round(R.q * 100) / 100 + ' من ' + R.sups.join('، ') : '') : ''] : [])];
     })];
@@ -575,7 +576,7 @@ function row(r) {
     + (R.gain == null ? '' : ` <span class="rc ${R.gain >= 0 ? 'ok' : 'none'}">خصم ${P(R.bd)}% بدل ${P(R.sd)}% (${R.gain >= 0 ? '+' : '−'}${N(Math.abs(R.gain))} ج)</span>`);
   return `<div class="row ${D ? 'ok' : ''} ${r.cust ? 'cu' : ''} ${LASTTICK === String(r.code) ? 'just' : ''}">
     <button class="chk ${D ? 'on' : ''} ${LASTTICK === String(r.code) ? 'pop' : ''}" data-code="${r.code}" ${canEdit() ? '' : 'disabled'} aria-label="تم الطلب">${D ? '✓' : ''}</button>
-    <div><div class="nm">${esc(r.name)}</div>${rareLine(r)}
+    <div><div class="nm">${esc(r.name)}</div>${rareLine(r)}${looseLine(r)}
       <div class="mt"><span class="abc ${r.abc}">${r.abc}</span>كود ${r.code} · الرصيد <span class="${r.oos ? 'oos' : ''}">${esc(r.stock)}</span>
         ${r.sup === r._s0 ? ` · خصم المورد ده <b class="sd">${P(r.sd)}%</b>` : ` · <span class="chg">🔄 اتطلب من ${esc(r.sup)} بدل ${esc(r._s0)} (خصمه كان ${P(r.sd)}%)</span>`}
         ${canEdit() ? (SPOPEN === r.code ? supSelect(r) : ` <button class="spb" data-sp="${r.code}">🔄 غيّر المورد</button>`) : ''}
@@ -635,6 +636,11 @@ function rareLine(r) {
   if (!r.rare) return '';
   const [n, last] = r.rare;
   return `<div class="rare">⚠️ الصنف ده اتباع ${n === 1 ? 'مرة واحدة' : 'مرتين'} بس في آخر 90 يوم — آخرها يوم ${esc(last)}${r.cost >= 500 ? ` · تكلفة الطلب ≈ ${N(r.cost)} ج` : ''}</div>`;
+}
+// رصيده أقل من علبة (شريط/شريطين) والعميل ممكن يطلب علبة ← بنطلب علبة كاملة + تنبيه بنفسجي (7/11، طلبه)
+function looseLine(r) {
+  if (!r.loose) return '';
+  return `<div class="loose">🟣 عندنا ${esc(r.loose[0])} بس — بعد العلبة رصيده هيبقى أكبر من المعدل (يكفي حوالي ${r.loose[1]} يوم)</div>`;
 }
 function sibLine(sb) {
   return sb && sb.length ? `<br><span class="sibs">🔁 نفس الصنف بكارتة تانية: ${sb.map(s => `${esc(s[1])} <small>(كود ${s[0]} · رصيد ${esc(s[2])})</small>`).join(' · ')}</span>` : '';
