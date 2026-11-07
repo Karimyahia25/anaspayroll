@@ -299,27 +299,25 @@ function beep(freq = 880, n = 3) {
 /* ---------- صوت الفاتورة الجديدة ---------- */
 const audioOn = () => !!(AC && AC.state === 'running');
 function armAudio() { try { AC = AC || new (window.AudioContext || window.webkitAudioContext)(); if (AC.state !== 'running') AC.resume(); } catch (e) { } }
-function siren(secs = 2) {   // (2/11) فاتورة توصيل جديدة = نغمة رقيقة متوسطة ثانيتين (4 نقرات ناعمة) + اهتزاز خفيف على الموبايل
+function siren(secs = 3) {   // (7/11) نغمة هادية بس عالية 3 ثواني: 3 نغمات جرس ناعمة (صول ← سي ← ري) بدون حدّة، بجين عالي
   if (ST.mute) return;
   try {
     armAudio();
-    // (7/11، طلبه) زغرودة ثانيتين: نغمة عالية بتطلع وتنزل + ترتيش سريع (LFO ~9 مرة/ث)
-    const t0 = AC.currentTime, o = AC.createOscillator(), g = AC.createGain(), f = AC.createBiquadFilter();
-    const l = AC.createOscillator(), lg = AC.createGain();
-    o.type = 'sawtooth'; f.type = 'lowpass'; f.frequency.value = 3200;
-    o.connect(f); f.connect(g); g.connect(AC.destination);
-    l.frequency.value = 9; lg.gain.value = 260; l.connect(lg); lg.connect(o.frequency);   // الترتيش
-    o.frequency.setValueAtTime(1000, t0);
-    o.frequency.linearRampToValueAtTime(1500, t0 + secs * 0.35);
-    o.frequency.linearRampToValueAtTime(1500, t0 + secs * 0.8);
-    o.frequency.linearRampToValueAtTime(1100, t0 + secs);
-    g.gain.setValueAtTime(0.0001, t0);
-    g.gain.exponentialRampToValueAtTime(0.7, t0 + 0.12);
-    g.gain.setValueAtTime(0.7, t0 + secs - 0.25);
-    g.gain.exponentialRampToValueAtTime(0.0001, t0 + secs);
-    o.start(t0); l.start(t0); o.stop(t0 + secs + 0.05); l.stop(t0 + secs + 0.05);
+    const t0 = AC.currentTime, notes = [784, 988, 1175], step = secs / notes.length;
+    const comp = AC.createDynamicsCompressor(); comp.connect(AC.destination);   // يرفع الإحساس بالعلو من غير تشويه
+    notes.forEach((f, i) => {
+      const t = t0 + i * step;
+      [[f, 1], [f * 2, 0.25]].forEach(([fr, k]) => {                             // نغمة أساسية + هارمونك خفيف = صوت جرس دافي
+        const o = AC.createOscillator(), g = AC.createGain();
+        o.type = 'sine'; o.frequency.value = fr; o.connect(g); g.connect(comp);
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(0.9 * k, t + 0.12);                  // بداية ناعمة
+        g.gain.exponentialRampToValueAtTime(0.0001, t + step * 0.98);            // وتخفت براحة
+        o.start(t); o.stop(t + step);
+      });
+    });
   } catch (e) { }
-  try { navigator.vibrate && navigator.vibrate([400, 150, 400, 150, 400]); } catch (e) { }
+  try { navigator.vibrate && navigator.vibrate([300, 150, 300]); } catch (e) { }
 }
 let SEEN = null;   // الأوردرات المفتوحة اللي شفناها (أول تحميل مبيرنش)
 function checkNew() {
