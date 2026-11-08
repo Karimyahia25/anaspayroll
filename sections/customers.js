@@ -65,6 +65,8 @@ function css() {
 #crmRoot .its li{border-top:1px dashed var(--line);padding:3px 0;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
 #crmRoot .its .s{color:var(--muted);font-size:12px}
 #crmRoot .ph{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
+#crmRoot .cupd{font-size:13px;font-weight:700;padding:7px 12px;border-radius:12px;background:var(--green-soft);color:var(--green-deep);white-space:nowrap}
+#crmRoot .cupd.old{background:#FDECEA;color:#A32E1E}
 #crmRoot .addr{font-size:13px;font-weight:600;margin-top:3px;color:var(--ink);line-height:1.6}
 #crmRoot .ph{align-items:center}
 #crmRoot .ph .cpn{min-height:44px;min-width:44px;padding:6px 10px;border-radius:10px;font-size:16px;background:var(--card);color:var(--green-deep);border:1px solid var(--line);margin-inline-start:-2px}
@@ -153,6 +155,7 @@ function shell() {
   ROOT.innerHTML = `
   <div class="card" style="margin-bottom:12px"><div class="hdr" style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center">
     <div><h2 style="margin:0">متابعة العملاء</h2><p class="sub" id="cmeta" style="margin:4px 0 0"></p></div>
+    <div id="cupd" class="cupd"></div>
   </div></div>
   <div class="ck" id="ckpi"></div>
   <div class="cbar" id="cbar"></div>
@@ -528,7 +531,17 @@ function socView() {
   });
 }
 
-function render() { kpis(); bar(); if (ST.tab === 'mine') mineView(); else if (ST.tab === 'baby') babyView(); else if (ST.tab === 'soc') socView(); else if (ST.tab === 'find') findView(); else if (ST.tab === 'res') resView(); else if (ST.tab === 'log') logView(); else listView(); }
+// آخر تحديث لبيانات العملاء من السيرفر (زي صفحة الطلبية) — أحمر لو أقدم من يوم ونص
+function updBadge() {
+  const el = $('#cupd', ROOT); if (!el) return;
+  const at = META.at || '', day = at.slice(0, 10), hm = at.slice(11, 16);
+  if (!day) { el.textContent = ''; return; }
+  const t = today(), diff = ago(day);
+  const when = day === t ? 'النهارده' : diff === 1 ? 'امبارح' : D(day);
+  el.className = 'cupd' + (diff >= 2 ? ' old' : '');
+  el.textContent = `${diff >= 2 ? '⚠️' : '🔄'} آخر تحديث: ${when} ${hm}${META.ref ? ' · مشتريات لحد ' + D(META.ref) : ''}`;
+}
+function render() { kpis(); updBadge(); bar(); if (ST.tab === 'mine') mineView(); else if (ST.tab === 'baby') babyView(); else if (ST.tab === 'soc') socView(); else if (ST.tab === 'find') findView(); else if (ST.tab === 'res') resView(); else if (ST.tab === 'log') logView(); else listView(); }
 
 /* ---------- أدوات ---------- */
 function toast(t) { const d = document.createElement('div'); d.className = 'toast'; d.textContent = t; document.body.appendChild(d); setTimeout(() => d.remove(), 2200); }
