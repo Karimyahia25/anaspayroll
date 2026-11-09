@@ -520,7 +520,7 @@ function asgCard(o, now) {
       <div class="zones" data-asz="${o.id}">
         <button type="button" data-az="${ZONES[0]}" class="in ${zsel === ZONES[0] ? 'on' : ''}"><span class="ic">📍</span><span><b>داخل المعمورة الشاطئ</b><small>من غير عمولة</small></span></button>
         <button type="button" data-az="${ZONES[1]}" class="out ${zsel === ZONES[1] ? 'on' : ''}"><span class="ic">🧭</span><span><b>خارج المعمورة</b><small>عمولة الدليفري ${COMM_OUT} ج</small></span></button></div>
-      <div class="btns"><button class="fin" data-asgo="${o.id}">🛵 تأكيد وبدء التوصيل</button><button class="del" data-rm="${o.id}">🗑 حذف</button></div></div>` : ''}</div>`;
+      <div class="btns"><button class="fin" data-asgo="${o.id}">🛵 تأكيد وبدء التوصيل</button><button class="edt" data-brn="${o.id}">🏷 خصم عميل (من الفرع)</button><button class="del" data-rm="${o.id}">🗑 حذف</button></div></div>` : ''}</div>`;
 }
 
 async function assign(id) {
@@ -602,7 +602,7 @@ function filterBar() {
 
 /* ---------- سجل التغييرات (deliv_log) — للأدمن وصاحب الصيدلية، بيتسحب عند الفتح بس (150 سطر) ---------- */
 let AUD = null;
-const AUD_ACT = { assign: 'تعيين مندوب', edit: 'تعديل', delete: 'حذف' }, AUD_F = { driverName: 'المندوب', zone: 'المنطقة', orderValue: 'القيمة', customerName: 'العميل', notes: 'ملاحظات', isVisa: 'فيزا', isVodafoneCash: 'فودافون كاش', changeGiven: 'الفكة', employeeName: 'الموظف', comm: 'العمولة', assignedAt: 'خروج المندوب' };
+const AUD_ACT = { assign: 'تعيين مندوب', edit: 'تعديل', delete: 'حذف', branch: 'خصم عميل' }, AUD_F = { driverName: 'المندوب', zone: 'المنطقة', orderValue: 'القيمة', customerName: 'العميل', notes: 'ملاحظات', isVisa: 'فيزا', isVodafoneCash: 'فودافون كاش', changeGiven: 'الفكة', employeeName: 'الموظف', comm: 'العمولة', assignedAt: 'خروج المندوب' };
 function audEnsure() {
   if (ST.audLoading || (AUD && Date.now() - AUD.at < 120000)) return;
   ST.audLoading = true;
@@ -613,7 +613,7 @@ function audEnsure() {
 }
 function audHtml() {
   const f = ST.audAct || '', rows = ((AUD && AUD.rows) || []).filter(r => !f || r.act === f);
-  const chips = [['', 'الكل'], ['assign', 'تعيين'], ['edit', 'تعديل'], ['delete', 'حذف']].map(c => `<button class="chip ${f === c[0] ? 'on' : ''}" data-aa="${c[0]}">${c[1]}</button>`).join('');
+  const chips = [['', 'الكل'], ['assign', 'تعيين'], ['edit', 'تعديل'], ['delete', 'حذف'], ['branch', 'خصم عميل']].map(c => `<button class="chip ${f === c[0] ? 'on' : ''}" data-aa="${c[0]}">${c[1]}</button>`).join('');
   if (!AUD) return `<div class="ctl chips">${chips}</div><div class="empty">⏳ جاري تحميل السجل…</div>`;
   const tms = r => { const a = r.at; const t = a && a.toMillis ? a.toMillis() : (a && a.seconds ? a.seconds * 1000 : 0); return t; };
   const val = v => v === true ? 'نعم' : v === false ? 'لا' : v == null || v === '' ? '—' : (typeof v === 'number' && v > 1e12) ? timeStr(v) : String(v);
@@ -665,6 +665,7 @@ function bind() {
   const mb2 = $('[data-mback2]', ROOT); if (mb2) mb2.onclick = e => { if (e.target === mb2) closeComm(); };
   const cc = $('[data-closecomm]', ROOT); if (cc) cc.onclick = closeComm;
   ROOT.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => remove(b.dataset.rm));
+  ROOT.querySelectorAll('[data-brn]').forEach(b => b.onclick = () => branchOrder(b.dataset.brn));
   ROOT.querySelectorAll('[data-adddrv]').forEach(b => b.onclick = addDrv);
   const f = $('#dForm', ROOT); if (!f) return;
   f.querySelectorAll('[data-z]').forEach(b => b.onclick = () => { f.querySelectorAll('[data-z]').forEach(x => x.classList.remove('on')); b.classList.add('on'); $('#dZone', f).classList.remove('miss'); draft(); });
@@ -718,6 +719,19 @@ async function finish(id) {
   try {
     await updateDoc(doc(DB, 'deliv_orders', id), { status: 'COMPLETED', endTime: Date.now(), endSource: 'app', comm: commFor(o.zone) });
     beep(990, 2); toast('تم التسليم ✔'); if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); render();
+  } catch (e) { toast('مقدرتش: ' + (e.code || e.message)); }
+}
+async function branchOrder(id) {   // (9/11، طلبه) فاتورة اتحفظت توصيل بس العميل في الفرع (خصم) ← تتشال من الدليفري وتتسجل «خصم عميل»
+  const o = findOrder(id); if (!o || o.driverName) return;
+  let who = 'admin';
+  if (!isAdm()) { who = await askWho(`الأوردر ده خصم عميل في الفرع (مش توصيل): ${o.customerName || 'عميل'} (${M(o.orderValue)}) — يتشال من الدليفري؟`); if (!who) return; }
+  else if (!confirm(`الأوردر ده خصم عميل في الفرع (مش توصيل)؟ هيتشال من الدليفري.
+${o.customerName || 'عميل'} (${M(o.orderValue)})`)) return;
+  try {
+    await logAct('branch', o, { who });
+    await deleteDoc(doc(DB, 'deliv_orders', id));
+    HIST = HIST.filter(x => x.id !== id); HC.forEach(c => { c.rows = c.rows.filter(x => x.id !== id); });
+    toast('اتشال — خصم عميل ✔'); render();
   } catch (e) { toast('مقدرتش: ' + (e.code || e.message)); }
 }
 async function remove(id) {
