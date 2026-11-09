@@ -504,10 +504,13 @@ function parseBook(wb){
     ['وزن نسبة قيمة البوشينج', v => W.p = v], ['وزن نسبة تسجيل اسم العميل', v => W.c = v],
     ['عمولة البوشينج العامة', v => RATES.gen = v], ['عمولة XICLAVE', v => RATES.xic = v],
     ['عمولة NEBULA', v => RATES.neb = v], ['عمولة XICLAVE (٢)', v => RATES.xic2 = v]];
+  /* normL بيشيل الأقواس بس ويسيب اللي جواها — norm العادية بتمسح «(٢)» فـ «عمولة XICLAVE» و«(٢)» كانوا بيبقوا اسم واحد
+     وكانت الـ 20٪ بتتطبق على الشهر كله (اتصلح 9/11) */
+  const normL = s => norm(String(s == null ? '' : s).replace(/[()]/g, ''));
   guideG.forEach(r => (r || []).forEach((c, j) => {
-    const t = norm(c); if (!t) return;
-    pick.forEach(([lbl, set]) => { if (t === norm(lbl)){ const v = +r[j+1]; if (!isNaN(v) && v > 0) set(v); } });
-    if (t === norm('عمولة XICLAVE (٢) من تاريخ')) xicFromRaw = r[j+1];
+    const t = normL(c); if (!t) return;
+    pick.forEach(([lbl, set]) => { if (t === normL(lbl)){ const v = +r[j+1]; if (!isNaN(v) && v > 0) set(v); } });
+    if (t === normL('عمولة XICLAVE (٢) من تاريخ')) xicFromRaw = r[j+1];
   }));
   const toD = v => { if (v instanceof Date) return v;
     if (!v) return null;
