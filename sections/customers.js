@@ -30,7 +30,8 @@ let ROOT, ROLE, DB = null, LOCAL = null, META = {}, CARDS = [], VIS = {}, LOG = 
 let ST = { tab: 'قرّب', q: '', grp: '', leak: false, deliv: false, hideDone: true, shown: 40 };
 let H = null, HS = { q: '', sel: null, months: 0, shown: 60 };   // بحث بصنف
 let CLAIM = {}, MY = { uid: '', name: '' };                    // مين حاطط اسمه على العميل {كود العميل: {uid, name, at, d}}
-const CLAIM_DAYS = 14;         // الاسم بيفضل على العميل 14 يوم وبعدها يرجع متاح للكل
+const LOG_DAYS = 90;           // سجل التواصل اللي بيتحمّل (الأقدم موجود في Firebase بس مبيتقراش)
+const CLAIM_DAYS = 14;        // الاسم بيفضل على العميل 14 يوم وبعدها يرجع متاح للكل
 
 /* ---------- ستايل ---------- */
 function css() {
@@ -103,8 +104,9 @@ async function load() {
   const v = await getDoc(doc(DB, 'crm', 'visits')); VIS = v.exists() ? JSON.parse(v.data().d) : {};
   LOG = ROLE === 'emp' && !MY.dev                          // الموظف بيقرا تسجيلاته هو بس (القواعد) — الجهاز المشترك بيقرا الكل
     ? (await getDocs(query(collection(DB, 'crm_log'), where('by', '==', MY.uid)))).docs.map(d => ({ _id: d.id, ...d.data() }))
-    : (await getDocs(collection(DB, 'crm_log'))).docs.map(d => ({ _id: d.id, ...d.data() }));
-  CLAIM = {}; (await getDocs(collection(DB, 'crm_claim'))).docs.forEach(d => { CLAIM[d.id] = d.data(); });
+    /* (9/11) آخر LOG_DAYS بس — الحسابات كلها محتاجة 30 يوم بالكتير، والقراية الكاملة كانت بتكبر كل يوم (حد Firebase المجاني) */
+    : (await getDocs(query(collection(DB, 'crm_log'), where('day', '>=', addDays(today(), -LOG_DAYS))))).docs.map(d => ({ _id: d.id, ...d.data() }));
+  CLAIM = {}; (await getDocs(query(collection(DB, 'crm_claim'), where('at', '>=', addDays(today(), -CLAIM_DAYS))))).docs.forEach(d => { CLAIM[d.id] = d.data(); });
   return true;
 }
 // مين حاطط اسمه على العميل ده (آخر 14 يوم)

@@ -401,7 +401,7 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="crmdev" class="hide"></div>
 <div id="delivery" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-11-03-S</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-11-09-A</b></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
@@ -836,7 +836,17 @@ window.doLogin = async () => {
   $('loginErr').textContent = '';
   if (!u || !p) { $('loginErr').textContent = 'اكتب الكود والرقم السري'; return; }
   const email = /^\d+$/.test(u) ? emailFor(u) : `${u}@${DOMAIN}`;
-  try { await signInWithEmailAndPassword(auth, email, p); }
+  try { await signInWithEmailAndPassword(auth, email, p);
+    /* (9/11) لسه بالرقم السري الافتراضي (متولد من الكود) ← نوديه على شاشة التغيير بتنبيه */
+    if (/^\d+$/.test(u) && p === defPass(u)) {
+      let n = 0; const t = setInterval(() => {
+        if ($('ep4') && !$('emp').classList.contains('hide')) { clearInterval(t); etab(4);
+          $('npErr').style.color = 'var(--red)';
+          $('npErr').textContent = '⚠️ الرقم السري بتاعك لسه الافتراضي — أي حد يعرف كودك يقدر يدخل بحسابك. غيّره دلوقتي.'; }
+        else if (++n > 40) clearInterval(t);
+      }, 250);
+    }
+  }
   catch (e) {
     $('loginErr').textContent =
       (e.code === 'auth/invalid-credential' || e.code === 'auth/wrong-password' || e.code === 'auth/user-not-found')
@@ -915,7 +925,7 @@ async function crmDevStart(name){
   try { sessionStorage.setItem('crmWho', name); } catch(e){}
   $('cdPick').classList.add('hide'); $('myCustRoot').classList.remove('hide');
   $('cdWho').innerHTML = `شغال باسم <b>${esc(name)}</b> · <a href="#" onclick="crmDevSwitch();return false">مش انت؟ غيّر الاسم</a>`;
-  try { const m = await import('./sections/customers.js?v=18'); await m.mountEmployee($('myCustRoot'), ME.uid, name, true); }
+  try { const m = await import('./sections/customers.js?v=19'); await m.mountEmployee($('myCustRoot'), ME.uid, name, true); }
   catch (e) { $('myCustRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل العملاء: ${esc(e.code || e.message)}</div>`; }
 }
 window.crmDevSwitch = () => { try { sessionStorage.removeItem('crmWho'); } catch(e){} renderCrmDev(); };
@@ -1129,7 +1139,7 @@ async function openMyCustomers(){
   if (MYCUST_ON) return; MYCUST_ON = true;
   let nm_ = '';
   try { const x = await getDoc(doc(db, 'staff', ME.uid)); if (x.exists()) nm_ = x.data().name || ''; } catch(e){}
-  try { const m = await import('./sections/customers.js?v=18'); await m.mountEmployee($('myCustRoot'), ME.uid, nm_); }
+  try { const m = await import('./sections/customers.js?v=19'); await m.mountEmployee($('myCustRoot'), ME.uid, nm_); }
   catch (e) { MYCUST_ON = false; $('myCustRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل عملائك: ${esc(e.code || e.message)}</div>`; }
 }
 window.etab = n => { if (n === 6) otMine(); if (n === 7) cashEmp(); if (n === 8) openMyCustomers(); [1,2,3,4,5,6,7,8].forEach(i => {
@@ -1141,6 +1151,7 @@ window.etab = n => { if (n === 6) otMine(); if (n === 7) cashEmp(); if (n === 8)
 window.chpass = async () => {
   const v = $('np').value;
   if (!v || v.length < 6) { $('npErr').textContent = 'لازم ٦ على الأقل'; return; }
+  if (/^anas\d{4}$/i.test(v)) { $('npErr').textContent = 'اختار رقم سري غير الافتراضي'; return; }
   try { await updatePassword(auth.currentUser, v); $('npErr').style.color = 'var(--good)';
     $('npErr').textContent = 'اتغير. استخدمه المرة الجاية.'; $('np').value = ''; }
   catch (e) { $('npErr').textContent = e.code === 'auth/requires-recent-login'
@@ -2614,7 +2625,7 @@ let CRM_ON = false;
 async function openCustomers(){
   if (CRM_ON) return; CRM_ON = true;
   if (ROLE === 'admin') crmAcct();
-  try { const m = await import('./sections/customers.js?v=18'); await m.mountCustomers($('crmRoot'), ROLE); }
+  try { const m = await import('./sections/customers.js?v=19'); await m.mountCustomers($('crmRoot'), ROLE); }
   catch (e) { CRM_ON = false; $('crmRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل قسم العملاء: ${esc(e.code || e.message)}</div>`; }
 }
 
