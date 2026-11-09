@@ -2666,7 +2666,7 @@ let DEL_ON = false;
 async function openDelivery(root, role){
   if (DEL_ON) return; DEL_ON = true;
   if (!root && ROLE === 'admin') delAcct();
-  try { const m = await import('./sections/delivery.js?v=20'); await m.mountDelivery(root || $('delRoot'), role || ROLE); }
+  try { const m = await import('./sections/delivery.js?v=21'); await m.mountDelivery(root || $('delRoot'), role || ROLE); }
   catch (e) { DEL_ON = false; (root || $('delRoot')).innerHTML = `<div class="banner bad">مقدرتش أحمّل قسم الدليفري: ${esc(e.code || e.message)}</div>`; }
 }
 
