@@ -235,19 +235,24 @@ function css() {
 :is(#adm,#delivery) .delwrap .btns .edt{background:#f1f5f9;color:#334155;border:1px solid #e2e8f0}
 :is(#adm,#delivery) .delwrap .btns .del{background:#f8fafc;color:#64748b;border:1px solid #e2e8f0}
 :is(#adm,#delivery) .delwrap .oc.asg{background:#fffbeb;border:2px dashed #f59e0b}
-:is(#adm,#delivery) .delwrap .oc.asg{gap:7px;padding:11px}
-:is(#adm,#delivery) .delwrap .oc.asg .tms.asgt{flex-direction:row;flex-wrap:wrap;align-items:center;gap:6px}
-:is(#adm,#delivery) .delwrap .oc.asg .asgt .cu{background:#f1f5f9;border-radius:99px;padding:3px 10px;font-size:11px;font-weight:600;color:#64748b}
-:is(#adm,#delivery) .delwrap .asgval{display:flex;align-items:baseline;justify-content:space-between;background:#fff7ed;border-radius:12px;padding:6px 12px}
-:is(#adm,#delivery) .delwrap .asgval small{font-size:11px;color:#78350f;font-weight:600}
-:is(#adm,#delivery) .delwrap .asgval b{font-size:17px;color:#5b3a1e;font-weight:900}
+:is(#adm,#delivery) .delwrap .oc.asg{gap:8px;padding:12px}
+:is(#adm,#delivery) .delwrap .asgh{display:flex;justify-content:space-between;align-items:center;gap:8px}
+:is(#adm,#delivery) .delwrap .asgh h4{margin:0;font-size:17px;font-weight:900;color:#1e293b}
+:is(#adm,#delivery) .delwrap .asgm{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12.5px;font-weight:600;color:#475569}
+:is(#adm,#delivery) .delwrap .asgm .okc{color:#047857}
+:is(#adm,#delivery) .delwrap .asgt2{font-size:11.5px;color:#94a3b8;padding-top:6px;border-top:1px solid #fde68a}
+:is(#adm,#delivery) .delwrap .asgval{display:flex;align-items:center;justify-content:space-between;border:2px dashed #92400e;border-radius:12px;padding:8px 14px;background:#fff7ed}
+:is(#adm,#delivery) .delwrap .asgval small{font-size:13px;color:#78350f;font-weight:700}
+:is(#adm,#delivery) .delwrap .asgval b{font-size:26px;color:#5b3a1e;font-weight:900;line-height:1.1}
 :is(#adm,#delivery) .delwrap .asgbox .zones button.in{background:#f0fdf4;border-color:#86efac;color:#166534}
 :is(#adm,#delivery) .delwrap .asgbox .zones button.in small{color:#15803d}
 :is(#adm,#delivery) .delwrap .asgbox .zones button.on.in{background:#bbf7d0;border-color:#4ade80;color:#14532d;box-shadow:0 3px 8px rgba(74,222,128,.4)}
 :is(#adm,#delivery) .delwrap .asgbox .zones button.on.in small{color:#166534}:is(#adm,#delivery) .delwrap .asgbox .zones button.on.in .ic{background:#fff}
-:is(#adm,#delivery) .delwrap .asgbox .btns .fin.tq{background:#5eead4;color:#134e4a;border:1px solid #2dd4bf;box-shadow:0 3px 8px rgba(94,234,212,.5);flex:1 1 100%}
-:is(#adm,#delivery) .delwrap .asgbox .btns .brn{background:#ede9fe;color:#5b21b6;border:1px solid #c4b5fd;flex:1 1 60%}
-:is(#adm,#delivery) .delwrap .asgbox .btns .rd{background:#dc2626;color:#fff;border:1px solid #b91c1c;flex:1 1 30%}
+:is(#adm,#delivery) .delwrap .asgbox .btns{flex-direction:column}
+:is(#adm,#delivery) .delwrap .asgbox .btns button{flex:0 0 auto;width:100%}
+:is(#adm,#delivery) .delwrap .asgbox .btns .fin.tq{background:#5eead4;color:#134e4a;border:1px solid #2dd4bf;box-shadow:0 3px 8px rgba(94,234,212,.5)}
+:is(#adm,#delivery) .delwrap .asgbox .btns .rd{background:#fff;color:#dc2626;border:2px solid #fca5a5}
+:is(#adm,#delivery) .delwrap .asgbox .brnbtn{width:100%;min-height:42px;border-radius:12px;padding:8px 14px;font-size:14px;font-weight:800;background:#ec4899;color:#fff;border:0;box-shadow:0 4px 8px rgba(236,72,153,.35);cursor:pointer}
 :is(#adm,#delivery) .delwrap .asgbox{display:flex;flex-direction:column;gap:8px;border-top:1px solid #fde68a;padding-top:9px}
 :is(#adm,#delivery) .delwrap .asgbox select{width:100%;background:#fff;border:1px solid #fcd34d;border-radius:12px;padding:10px 12px;font-size:15px;font-weight:700;min-height:44px}
 :is(#adm,#delivery) .delwrap .asgbox .zones button{min-height:56px;padding:6px 10px;gap:3px}
@@ -535,18 +540,18 @@ function outGroups(act, cardArr) {
 
 function asgCard(o, now) {
   const a = ASG[o.id] || {}, min = Math.floor((now - o.startTime) / MIN), drs = drvList(), sug = suggestZone(o.district), zsel = a.zone !== undefined ? a.zone : sug;
+  const dly = o.importedAt ? `<span>⏱ نزل بعد ${Math.max(0, Math.round((o.importedAt - o.startTime) / 1000))} ث</span>` : '';
   return `<div class="oc asg" data-id="${o.id}" data-start="${o.startTime}" data-bs="${o.startTime}" data-th="${LATE_SINGLE}" data-out="0" data-batch="0">
-    <div class="top"><div class="who"><div class="av">🧾</div><div>
-      <h4>${esc(nm(o.customerName) || 'عميل بدون اسم')}<span class="bg bat">من السيستم #${o.posId || ''}</span></h4>
-      <div class="chips">${o.district ? `<span class="cu">🏠 ${esc(o.district)}</span>` : ''}${o.employeeName ? `<span class="bg emp">الكاشير: ${esc(nm(o.employeeName))}</span>` : ''}${o.posEndTime ? `<span class="bg cm">✅ اتقفل في السيستم ${timeStr(o.posEndTime)}</span>` : ''}</div></div></div>
-      <div class="tms asgt">${o.importedAt ? `<span class="cu" title="الوقت من حفظ الفاتورة لحد نزولها هنا">⏱ نزل بعد ${Math.max(0, Math.round((o.importedAt - o.startTime) / 1000))} ث</span>` : ''}<span class="bd" data-bd>🕒 منذ ${min} د</span><div class="dt"><span>📅 ${dateStr(o.startTime)}</span><span>الفاتورة: ${timeStr(o.startTime)}</span></div></div></div>
+    <div class="asgh"><h4>${esc(nm(o.customerName) || 'عميل بدون اسم')}</h4><span class="bg bat">من السيستم #${o.posId || ''}</span></div>
+    <div class="asgm">${o.district ? `<span>🏠 ${esc(o.district)}</span>` : ''}${o.employeeName ? `<span>👤 الموظف: ${esc(nm(o.employeeName))}</span>` : ''}${o.posEndTime ? `<span class="okc">✅ اتقفل في السيستم ${timeStr(o.posEndTime)}</span>` : ''}</div>
+    <div class="asgm asgt2">${dly}<span data-bd>🕒 منذ ${min} د</span><span>📅 ${dateStr(o.startTime)} · ${timeStr(o.startTime)}</span></div>
     <div class="asgval"><small>قيمة الطلب</small><b>${M(o.orderValue)}</b></div>
     ${canWrite() ? `<div class="asgbox">${canDrv() ? '<div><button type="button" class="lnk" data-adddrv>+ إضافة مندوب جديد</button></div>' : ''}<select data-asd="${o.id}"><option value="">-- اختر المندوب (إجباري) --</option>${drs.map(x => `<option ${a.drv === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
-      ${sug && a.zone === undefined ? `<div class="sugh">💡 المنطقة اتحدّدت من العنوان «${esc(o.district)}» — غيّرها لو غلط</div>` : ''}
+      <button type="button" class="brnbtn" data-brn="${o.id}">🏷 خصم عميل (من الفرع)</button>
       <div class="zones" data-asz="${o.id}">
         <button type="button" data-az="${ZONES[0]}" class="in ${zsel === ZONES[0] ? 'on' : ''}"><span class="ic">📍</span><span><b>داخل المعمورة الشاطئ</b><small>من غير عمولة</small></span></button>
         <button type="button" data-az="${ZONES[1]}" class="out ${zsel === ZONES[1] ? 'on' : ''}"><span class="ic">🧭</span><span><b>خارج المعمورة</b><small>عمولة الدليفري ${COMM_OUT} ج</small></span></button></div>
-      <div class="btns"><button class="fin tq" data-asgo="${o.id}">🛵 تأكيد وبدء التوصيل</button><button class="edt brn" data-brn="${o.id}">🏷 خصم عميل (من الفرع)</button><button class="del rd" data-rm="${o.id}">🗑 حذف</button></div></div>` : ''}</div>`;
+      <div class="btns"><button class="fin tq" data-asgo="${o.id}">🛵 تأكيد وبدء التوصيل</button><button class="del rd" data-rm="${o.id}">🗑 حذف</button></div></div>` : ''}</div>`;
 }
 
 async function assign(id) {
