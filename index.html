@@ -920,7 +920,7 @@ async function renderCrmDev(){
   try {
     const snap = await getDocs(collection(db, 'staff'));
     snap.forEach(d => { const v = d.data(); if (v.name && v.code && v.active !== false && !NO_CLOSE_CODES.includes(String(v.code)) && !NO_CLOSE_NAME.test(v.name)) list.push(v.name); });
-    ['د. محمد وجيه', 'أحمد طارق'].forEach(n => { if (!list.includes(n)) list.push(n); });   // أسماء إضافية لجهاز المتابعة (مش على المرتبات) — 5/11
+    ['د. محمد وجيه', 'أحمد طارق'].forEach(n => { const k = x => String(x).replace(/^د\.?\s*/, '').trim(); if (!list.some(x => k(x) === k(n))) list.push(n); });   // (9/11) من غير تكرار لو الاسم موجود في المرتبات بدون «د.»   // أسماء إضافية لجهاز المتابعة (مش على المرتبات) — 5/11
     list.sort((x, y) => String(x).localeCompare(String(y), 'ar'));
   } catch (e) { $('cdPick').innerHTML = `<p class="err">مقدرتش أقرا أسماء الموظفين: ${esc(e.code || e.message)}${e.code === 'permission-denied' ? ' — حط قواعد Firebase الجديدة الأول' : ''}</p>`; return; }
   let saved = ''; try { saved = sessionStorage.getItem('crmWho') || ''; } catch(e){}
