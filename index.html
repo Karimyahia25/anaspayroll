@@ -314,6 +314,13 @@ th{background:color-mix(in srgb,var(--paper) 70%,var(--card));color:var(--muted)
   .tabs button:hover{background:rgba(255,255,255,.08);color:#fff}
   .tabs button.on,.tabs button.on:hover{background:linear-gradient(135deg,#0B8577,#2DD4BF);color:#04201B;transform:none;font-weight:700}
 }
+/* (9/11) جهاز الكاشير: التبويبات الأربعة فوق جنب بعض (مش قايمة جانبية) */
+#emp.stn:not(.hide){display:block}
+#emp.stn>.tabs{position:sticky;top:0;z-index:5;flex-direction:row;flex-wrap:nowrap;overflow-x:auto;background:color-mix(in srgb,var(--paper) 88%,transparent);backdrop-filter:blur(10px);border-radius:0;padding:8px 2px;margin:0 0 10px;box-shadow:none;gap:8px}
+#emp.stn>.tabs::before{content:none}
+#emp.stn>.tabs button{flex:1 1 0;text-align:center;white-space:nowrap;background:var(--card);color:var(--muted);border-radius:999px;padding:12px 10px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+#emp.stn>.tabs button:hover{background:var(--green-soft);color:var(--green)}
+#emp.stn>.tabs button.on,#emp.stn>.tabs button.on:hover{background:var(--navy);color:#fff;transform:none}
 @media (max-width:899px){
   .tabs{position:sticky;top:0;z-index:5;margin-inline:-12px;padding:8px 12px;
     background:color-mix(in srgb,var(--paper) 88%,transparent);backdrop-filter:blur(10px)}
@@ -884,6 +891,7 @@ onAuthStateChanged(auth, async user => {
   if (ROLE === 'emp'){
     try { if ((await getDoc(doc(db, 'deliverydevs', user.uid))).exists()) ROLE = 'delivery'; } catch(e){}
   }
+  $('emp').classList.toggle('stn', ROLE === 'cashier');
   idleReset();                                   // بعد ما الدور اتعرف — قبل كده الكاشير كان بيتقفل بعد 15 دقيقة
   DASH = { periods: [], staff: [], rows: [], period: null };
   if (ROLE === 'admin' || ROLE === 'viewer') { $('adm').classList.remove('hide'); renderAdmin(); }
