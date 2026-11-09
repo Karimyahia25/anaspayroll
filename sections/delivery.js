@@ -235,9 +235,22 @@ function css() {
 :is(#adm,#delivery) .delwrap .btns .edt{background:#f1f5f9;color:#334155;border:1px solid #e2e8f0}
 :is(#adm,#delivery) .delwrap .btns .del{background:#f8fafc;color:#64748b;border:1px solid #e2e8f0}
 :is(#adm,#delivery) .delwrap .oc.asg{background:#fffbeb;border:2px dashed #f59e0b}
-:is(#adm,#delivery) .delwrap .asgbox{display:flex;flex-direction:column;gap:10px;border-top:1px solid #fde68a;padding-top:12px}
+:is(#adm,#delivery) .delwrap .oc.asg{gap:7px;padding:11px}
+:is(#adm,#delivery) .delwrap .oc.asg .tms.asgt{flex-direction:row;flex-wrap:wrap;align-items:center;gap:6px}
+:is(#adm,#delivery) .delwrap .oc.asg .asgt .cu{background:#f1f5f9;border-radius:99px;padding:3px 10px;font-size:11px;font-weight:600;color:#64748b}
+:is(#adm,#delivery) .delwrap .asgval{display:flex;align-items:baseline;justify-content:space-between;background:#fff7ed;border-radius:12px;padding:6px 12px}
+:is(#adm,#delivery) .delwrap .asgval small{font-size:11px;color:#78350f;font-weight:600}
+:is(#adm,#delivery) .delwrap .asgval b{font-size:17px;color:#5b3a1e;font-weight:900}
+:is(#adm,#delivery) .delwrap .asgbox .zones button.in{background:#f0fdf4;border-color:#86efac;color:#166534}
+:is(#adm,#delivery) .delwrap .asgbox .zones button.in small{color:#15803d}
+:is(#adm,#delivery) .delwrap .asgbox .zones button.on.in{background:#bbf7d0;border-color:#4ade80;color:#14532d;box-shadow:0 3px 8px rgba(74,222,128,.4)}
+:is(#adm,#delivery) .delwrap .asgbox .zones button.on.in small{color:#166534}:is(#adm,#delivery) .delwrap .asgbox .zones button.on.in .ic{background:#fff}
+:is(#adm,#delivery) .delwrap .asgbox .btns .fin.tq{background:#5eead4;color:#134e4a;border:1px solid #2dd4bf;box-shadow:0 3px 8px rgba(94,234,212,.5);flex:1 1 100%}
+:is(#adm,#delivery) .delwrap .asgbox .btns .brn{background:#ede9fe;color:#5b21b6;border:1px solid #c4b5fd;flex:1 1 60%}
+:is(#adm,#delivery) .delwrap .asgbox .btns .rd{background:#dc2626;color:#fff;border:1px solid #b91c1c;flex:1 1 30%}
+:is(#adm,#delivery) .delwrap .asgbox{display:flex;flex-direction:column;gap:8px;border-top:1px solid #fde68a;padding-top:9px}
 :is(#adm,#delivery) .delwrap .asgbox select{width:100%;background:#fff;border:1px solid #fcd34d;border-radius:12px;padding:10px 12px;font-size:15px;font-weight:700;min-height:44px}
-:is(#adm,#delivery) .delwrap .asgbox .zones button{min-height:66px;padding:8px 10px;gap:4px}
+:is(#adm,#delivery) .delwrap .asgbox .zones button{min-height:56px;padding:6px 10px;gap:3px}
 :is(#adm,#delivery) .delwrap .asgbox .zones button b{font-size:15px}
 :is(#adm,#delivery) .delwrap .asgbox .zones.miss button{box-shadow:0 0 0 3px #fca5a5}
 :is(#adm,#delivery) .delwrap .pill.am{background:#fef3c7;color:#92400e;border:1px solid #fcd34d}
@@ -294,6 +307,19 @@ function beep(freq = 880, n = 3) {
       o.frequency.value = freq; o.connect(g); g.connect(AC.destination);
       g.gain.setValueAtTime(0.25, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.2); o.start(t); o.stop(t + 0.22);
     }
+  } catch (e) { }
+}
+
+function trashSound() {   // صوت «تفريغ سلة المحذوفات» — بيتولّد بالكود (خشخشة ورق بتتلاشى)، مش ملف ويندوز
+  if (ST.mute) return;
+  try {
+    AC = AC || new (window.AudioContext || window.webkitAudioContext)(); if (AC.state !== 'running') AC.resume();
+    const T = AC.currentTime, len = Math.floor(AC.sampleRate * 0.9), buf = AC.createBuffer(1, len, AC.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) { const x = i / len, crackle = Math.random() < 0.06 ? 1 : 0.25; d[i] = (Math.random() * 2 - 1) * crackle * Math.pow(1 - x, 1.6); }
+    const src = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain();
+    src.buffer = buf; f.type = 'bandpass'; f.Q.value = 0.8; f.frequency.setValueAtTime(5200, T); f.frequency.exponentialRampToValueAtTime(900, T + 0.85);
+    g.gain.setValueAtTime(0.9, T); g.gain.exponentialRampToValueAtTime(0.01, T + 0.9);
+    src.connect(f); f.connect(g); g.connect(AC.destination); src.start(T);
   } catch (e) { }
 }
 
@@ -512,15 +538,15 @@ function asgCard(o, now) {
   return `<div class="oc asg" data-id="${o.id}" data-start="${o.startTime}" data-bs="${o.startTime}" data-th="${LATE_SINGLE}" data-out="0" data-batch="0">
     <div class="top"><div class="who"><div class="av">🧾</div><div>
       <h4>${esc(nm(o.customerName) || 'عميل بدون اسم')}<span class="bg bat">من السيستم #${o.posId || ''}</span></h4>
-      <div class="chips">${o.district ? `<span class="cu">🏠 ${esc(o.district)}</span>` : ''}${o.employeeName ? `<span class="bg emp">الكاشير: ${esc(nm(o.employeeName))}</span>` : ''}${o.posEndTime ? `<span class="bg cm">✅ اتقفل في السيستم ${timeStr(o.posEndTime)}</span>` : ''}${o.importedAt ? `<span class="cu" title="الوقت من حفظ الفاتورة لحد نزولها هنا">⏱ نزل بعد ${Math.max(0, Math.round((o.importedAt - o.startTime) / 1000))} ث</span>` : ''}</div></div></div>
-      <div class="tms"><span class="bd" data-bd>🕒 منذ ${min} د</span><div class="dt"><span>📅 ${dateStr(o.startTime)}</span><span>الفاتورة: ${timeStr(o.startTime)}</span></div></div></div>
-    <div class="dgrid"><div><small>قيمة الطلب</small><b>${M(o.orderValue)}</b></div><div><small>الحالة</small><b style="color:#b45309">محتاج مندوب ومنطقة</b></div></div>
+      <div class="chips">${o.district ? `<span class="cu">🏠 ${esc(o.district)}</span>` : ''}${o.employeeName ? `<span class="bg emp">الكاشير: ${esc(nm(o.employeeName))}</span>` : ''}${o.posEndTime ? `<span class="bg cm">✅ اتقفل في السيستم ${timeStr(o.posEndTime)}</span>` : ''}</div></div></div>
+      <div class="tms asgt">${o.importedAt ? `<span class="cu" title="الوقت من حفظ الفاتورة لحد نزولها هنا">⏱ نزل بعد ${Math.max(0, Math.round((o.importedAt - o.startTime) / 1000))} ث</span>` : ''}<span class="bd" data-bd>🕒 منذ ${min} د</span><div class="dt"><span>📅 ${dateStr(o.startTime)}</span><span>الفاتورة: ${timeStr(o.startTime)}</span></div></div></div>
+    <div class="asgval"><small>قيمة الطلب</small><b>${M(o.orderValue)}</b></div>
     ${canWrite() ? `<div class="asgbox">${canDrv() ? '<div><button type="button" class="lnk" data-adddrv>+ إضافة مندوب جديد</button></div>' : ''}<select data-asd="${o.id}"><option value="">-- اختر المندوب (إجباري) --</option>${drs.map(x => `<option ${a.drv === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
       ${sug && a.zone === undefined ? `<div class="sugh">💡 المنطقة اتحدّدت من العنوان «${esc(o.district)}» — غيّرها لو غلط</div>` : ''}
       <div class="zones" data-asz="${o.id}">
         <button type="button" data-az="${ZONES[0]}" class="in ${zsel === ZONES[0] ? 'on' : ''}"><span class="ic">📍</span><span><b>داخل المعمورة الشاطئ</b><small>من غير عمولة</small></span></button>
         <button type="button" data-az="${ZONES[1]}" class="out ${zsel === ZONES[1] ? 'on' : ''}"><span class="ic">🧭</span><span><b>خارج المعمورة</b><small>عمولة الدليفري ${COMM_OUT} ج</small></span></button></div>
-      <div class="btns"><button class="fin" data-asgo="${o.id}">🛵 تأكيد وبدء التوصيل</button><button class="edt" data-brn="${o.id}">🏷 خصم عميل (من الفرع)</button><button class="del" data-rm="${o.id}">🗑 حذف</button></div></div>` : ''}</div>`;
+      <div class="btns"><button class="fin tq" data-asgo="${o.id}">🛵 تأكيد وبدء التوصيل</button><button class="edt brn" data-brn="${o.id}">🏷 خصم عميل (من الفرع)</button><button class="del rd" data-rm="${o.id}">🗑 حذف</button></div></div>` : ''}</div>`;
 }
 
 async function assign(id) {
@@ -743,7 +769,7 @@ async function remove(id) {
     await logAct('delete', o, { who });                      // نسخة كاملة في deliv_log قبل المسح
     await deleteDoc(doc(DB, 'deliv_orders', id));
     HIST = HIST.filter(x => x.id !== id); HC.forEach(c => { c.rows = c.rows.filter(x => x.id !== id); });
-    toast('اتمسح'); render();
+    trashSound(); toast('اتمسح'); render();
   } catch (e) { toast('مقدرتش أمسح: ' + (e.code || e.message) + (e.code === 'permission-denied' ? ' — بعد تأكيد المندوب الحذف من الأدمن' : '')); }
 }
 async function addDrv() {
