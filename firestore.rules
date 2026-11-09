@@ -27,7 +27,8 @@ service cloud.firestore {
     // (29/10) جهاز متابعة العملاء المشترك (crm) — الموظف بيختار اسمه من القايمة (من غير رقم سري، زي الكاشير)
     function isCrmDev() {
       return request.auth != null &&
-        exists(/databases/$(database)/documents/crmdevs/$(request.auth.uid));
+        exists(/databases/$(database)/documents/crmdevs/$(request.auth.uid))
+        || exists(/databases/$(database)/documents/cashiers/$(request.auth.uid));   // (9/11) حساب الكاشير بيفتح متابعة العملاء من غير خروج
     }
 
     match /crmdevs/{uid} {
@@ -98,7 +99,8 @@ service cloud.firestore {
     // مسؤول المشتريات (buyer) — طلبية النواقص بس
     function isBuyer() {
       return request.auth != null &&
-        exists(/databases/$(database)/documents/buyers/$(request.auth.uid));
+        exists(/databases/$(database)/documents/buyers/$(request.auth.uid))
+        || exists(/databases/$(database)/documents/cashiers/$(request.auth.uid));   // (9/11) حساب الكاشير بيفتح الطلبية من غير خروج
     }
 
     match /buyers/{uid} {

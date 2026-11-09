@@ -890,8 +890,10 @@ function renderDeliveryDev(){
 }
 
 async function renderCrmDev(){
-  const b = $('crmdev'); b.classList.remove('hide');
-  b.innerHTML = `<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div><h2 style="margin:0">📞 متابعة العملاء</h2><p class="sub" id="cdWho" style="margin:2px 0 0"></p></div><button class="ghost sm" onclick="doOut()">خروج</button></div>
+  const inl = ROLE === 'cashier', b = inl ? $('stP3') : $('crmdev');
+  if (!inl) b.classList.remove('hide');
+  b.innerHTML = (inl ? `<div class="card"><p class="sub" id="cdWho" style="margin:0"></p></div>`
+    : `<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div><h2 style="margin:0">📞 متابعة العملاء</h2><p class="sub" id="cdWho" style="margin:2px 0 0"></p></div><button class="ghost sm" onclick="doOut()">خروج</button></div>`) + `
     <div id="cdPick" class="card"><p class="sub">جاري تحميل الأسماء…</p></div><div id="myCustRoot" class="hide"></div>`;
   let list = [];
   try {
@@ -919,6 +921,9 @@ window.crmDevSwitch = () => { try { sessionStorage.removeItem('crmWho'); } catch
 async function renderBuyer(){
   const b = $('buyer'); b.classList.remove('hide');
   b.innerHTML = `<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div><h2 style="margin:0">🛒 طلبية النواقص</h2><p class="sub" style="margin:2px 0 0">مسؤول المشتريات</p></div><button class="ghost sm" onclick="doOut()">خروج</button></div><div id="orderRoot"></div><div id="buyerRoot" style="margin-top:14px"></div>`;
+  await buyerBody();
+}
+async function buyerBody(){
   try { const o = await import('./sections/order.js?v=21'); await o.mountOrder($('orderRoot'), 'buyer'); } catch (e) {}
   try { const m = await import('./sections/inventory.js?v=25'); await m.mountBuyer($('buyerRoot')); }
   catch (e) { $('buyerRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل الشاشة: ${esc(e.code || e.message)}</div>`; }
@@ -1890,11 +1895,24 @@ const NO_CLOSE_CODES = ['79', '82', '84', '85', '47', '80', '81', '72', '19'];  
 const NO_CLOSE_NAME = /youssef|yousef|يوسف/i;
 const STATION_ORDER = [['76', 'ا عبدربه'], ['19', 'د اسراء'], ['63', 'د عادل'], ['70', 'ا آيـه'],
   ['38', 'ا إيمان'], ['9', 'ا احمد علي'], ['78', 'ا العربي'], ['72', 'ا جمال']];
+// (9/11، طلبه) نفس حساب الكاشير بيفتح التقفيل والدليفري والطلبية ومتابعة العملاء من غير خروج — كل تبويب بيتحمّل أول ما تدوس عليه وبيفضل محفوظ
+let ST_ORD = false, ST_CRM = false;
+window.stTab = n => {
+  [0,1,2,3].forEach(i => { const p = $('stP'+i), t = $('stT'+i); if (p) p.classList.toggle('hide', i !== n); if (t) t.classList.toggle('on', i === n); });
+  if (n === 1) openDelivery($('delRootS'), 'cashier');
+  if (n === 2 && !ST_ORD){ ST_ORD = true; buyerBody(); }
+  if (n === 3 && !ST_CRM){ ST_CRM = true; renderCrmDev(); }
+};
 async function renderStation(){
-  $('emp').innerHTML = `<div class="card"><div class="hdr"><div><h1>تقفيل الخزنة</h1>
+  DEL_ON = false; ST_ORD = false; ST_CRM = false;
+  $('emp').innerHTML = `<div class="card"><div class="hdr"><div><h1>جهاز الكاشير</h1>
 </div>
       <button class="ghost sm" onclick="doOut()">خروج</button></div></div>
-    <div class="card"><div id="cashBox"><p class="sub">جاري التحميل…</p></div></div>`;
+    <div class="tabs" id="stTabs"><button id="stT0" class="on" onclick="stTab(0)">💰 التقفيل</button><button id="stT1" onclick="stTab(1)">🛵 الدليفري</button><button id="stT2" onclick="stTab(2)">🛒 الطلبية</button><button id="stT3" onclick="stTab(3)">📞 متابعة العملاء</button></div>
+    <div id="stP0"><div class="card"><div id="cashBox"><p class="sub">جاري التحميل…</p></div></div></div>
+    <div id="stP1" class="hide"><div id="delRootS"></div></div>
+    <div id="stP2" class="hide"><div id="orderRoot"></div><div id="buyerRoot" style="margin-top:14px"></div></div>
+    <div id="stP3" class="hide"></div>`;
   try {
     const snap = await getDocs(collection(db, 'staff'));
     STAFFL = []; snap.forEach(d => { const v = d.data();
