@@ -330,7 +330,7 @@ function trashSound() {   // صوت «تفريغ سلة المحذوفات» —
 
 /* ---------- صوت الفاتورة الجديدة ---------- */
 const audioOn = () => !!(AC && AC.state === 'running');
-function armAudio() { try { AC = AC || new (window.AudioContext || window.webkitAudioContext)(); if (AC.state !== 'running') AC.resume(); } catch (e) { } }
+function armAudio() { try { AC = AC || new (window.AudioContext || window.webkitAudioContext)(); if (AC.state !== 'running') AC.resume(); } catch (e) { } try { if (!armAudio.sp && window.speechSynthesis) { armAudio.sp = 1; const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); } } catch (e) { } }
 function siren(secs = 3) {   // (10/11، طلبه) نغمة عالية وقوية 3 ثواني: نبضات متبادلة 1500/1050 هرتز موجة مربعة بأعلى جين
   if (ST.mute) return;
   try {
@@ -350,6 +350,42 @@ function siren(secs = 3) {   // (10/11، طلبه) نغمة عالية وقوي�
     }
   } catch (e) { }
   try { navigator.vibrate && navigator.vibrate([400, 150, 400, 150, 400]); } catch (e) { }
+}
+/* ---------- (11/11، طلبه) تنبيه الأوردرات اللي مستنية مندوب — للكاشير بس، كل 5 دقايق، وليه زرار كتم مستقل ---------- */
+const NEED_MS = 5 * 60000;
+let NEED_MUTE = false; try { NEED_MUTE = localStorage.getItem('delNeedMute') === '1'; } catch (e) { }
+let NEED_LAST = 0; const SYS_LAST = new Map();
+const needMuteLbl = () => NEED_MUTE ? '🔕 تنبيه المندوب مكتوم' : '🔔 تنبيه المندوب شغال';
+function needChime() {   // نغمة «دينج-دونج» هادية مختلفة عن صفارة الأوردر الجديد
+  try {
+    armAudio(); const t0 = AC.currentTime;
+    [[659, 0], [523, 0.35], [659, 0.7], [523, 1.05]].forEach(([f, d]) => {
+      const o = AC.createOscillator(), g = AC.createGain(), t = t0 + d;
+      o.type = 'triangle'; o.frequency.value = f; o.connect(g); g.connect(AC.destination);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.6, t + 0.03); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.32);
+      o.start(t); o.stop(t + 0.34);
+    });
+  } catch (e) { }
+}
+function sayAr(text) {
+  try {
+    const sp = window.speechSynthesis; if (!sp) return;
+    const u = new SpeechSynthesisUtterance(text), vs = sp.getVoices() || [];
+    const v = vs.find(x => /^ar[-_]EG/i.test(x.lang)) || vs.find(x => /^ar/i.test(x.lang));
+    if (v) u.voice = v; u.lang = v ? v.lang : 'ar-EG'; u.rate = 0.9; u.volume = 1;
+    sp.speak(u);
+  } catch (e) { }
+}
+function needWatch() {
+  if (ROLE !== 'cashier' || ST.mute || NEED_MUTE || !audioOn()) return;
+  const now = Date.now(), waiting = [...OPEN.values()].filter(o => !o.driverName && o.status === 'PENDING' && now - (o.startTime || now) >= NEED_MS);
+  SYS_LAST.forEach((_, id) => { if (!waiting.some(o => o.id === id)) SYS_LAST.delete(id); });
+  const open = waiting.filter(o => !o.posEndTime), closed = waiting.filter(o => o.posEndTime && (now - (SYS_LAST.get(o.id) || 0) >= NEED_MS));
+  const doOpen = open.length && now - NEED_LAST >= NEED_MS;
+  if (!doOpen && !closed.length) return;
+  needChime();
+  if (doOpen) { NEED_LAST = now; sayAr('يوجد أوردرات تأكيد المندوب'); }
+  closed.forEach(o => { SYS_LAST.set(o.id, now); sayAr(`يوجد أوردر باسم ${o.customerName || 'بدون اسم'} تم تقفيله سيستم ولم يعين مندوب`); });
 }
 let SEEN = null;   // الأوردرات المفتوحة اللي شفناها (أول تحميل مبيرنش)
 function checkNew() {
@@ -447,6 +483,7 @@ function render() {
     ${body}${ST.ask ? askHtml() : ''}`;
   ROOT.querySelectorAll('[data-v]').forEach(b => b.onclick = () => { ST.view = b.dataset.v; EDIT = null; render(); });
   ROOT.querySelectorAll('[data-hid]').forEach(b => b.onclick = () => { const d = b.dataset.hid; HID.has(d) ? HID.delete(d) : HID.add(d); try { localStorage.setItem('delHid', JSON.stringify([...HID])); } catch (e) { } render(); });
+  ROOT.querySelectorAll('[data-mutend]').forEach(b => b.onclick = () => { NEED_MUTE = !NEED_MUTE; try { localStorage.setItem('delNeedMute', NEED_MUTE ? '1' : '0'); } catch (e) { } if (!NEED_MUTE) NEED_LAST = 0; render(); });
   ROOT.querySelectorAll('[data-mute]').forEach(b => b.onclick = () => { if (!ST.mute && !audioOn()) { armAudio(); beep(880, 2); setTimeout(render, 300); return; } ST.mute = !ST.mute; render(); });
   bind();
 }
@@ -516,7 +553,7 @@ function liveHtml(act) {
   act.forEach((o, n) => (o.driverName ? outCards : needCards).push(cardArr[n]));
   return `<div class="topbar">${canWrite() ? `<button type="button" class="newbar" data-new><span>➕ تسجيل أوردر جديد</span><small>للأوردر اللي ملوش فاتورة</small></button>` : ''}<button type="button" class="newbar comm" data-comm><span>💰 عمولة الدليفري</span><small>اضغط لعرض عمولة كل مندوب</small></button></div>
     <div class="lhead"><div><h2 style="display:inline">الأوردرات النشطة حالياً</h2><span class="pill">${act.length - needN} جاري توصيلها</span>${needN ? `<span class="pill am" data-goneed style="cursor:pointer">🧾 ${needN} محتاج مندوب ↓</span>` : ''}${lateN ? `<span class="pill red">⚠ ${lateN} عدّى 30 دقيقة من الفاتورة</span>` : ''}<span class="pill sys" data-sys>⚪ …</span></div>
-      <button class="sndb ${ST.mute ? 'off' : ''}" data-mute>${muteLbl()}</button></div>
+      <span>${ROLE === 'cashier' ? `<button class="sndb ${NEED_MUTE ? 'off' : ''}" data-mutend>${needMuteLbl()}</button> ` : ''}<button class="sndb ${ST.mute ? 'off' : ''}" data-mute>${muteLbl()}</button></span></div>
     <div class="split">
       <div class="pane need" id="needSec"><h3><span>🧾 مستنية تأكيد المندوب (${needN})</span></h3>
         ${needN ? `<div class="stack">${needCards.join('')}</div>` : '<div class="empty">مفيش أوردرات مستنية</div>'}</div>
@@ -835,6 +872,8 @@ function exportXl() {
 /* ---------- تايمر ---------- */
 function tick() {
   const now = Date.now();
+  needWatch();
+  const nb = ROOT.querySelector('[data-mutend]'); if (nb) { const l = needMuteLbl(); if (nb.textContent !== l) { nb.textContent = l; nb.classList.toggle('off', NEED_MUTE); } }
   const sy = ROOT.querySelector('[data-sys]');
   if (sy) {
     if (!SYS || !SYS.at) { sy.textContent = '⚪ لسه مفيش إشارة من سيرفر الفواتير'; sy.className = 'pill sys'; }
