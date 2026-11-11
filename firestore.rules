@@ -352,6 +352,26 @@ service cloud.firestore {
       allow delete: if isAdmin();                         // (3/11، طلبه) شيل المندوب من القايمة للأدمن بس (أوردراته القديمة بتفضل)
     }
 
+    // ===== تتبع موقع المندوب (11/11، GPS) =====
+    // موبايل المندوب (دخول حساب delivery) بيكتب موقعه في deliv_loc/{اسم المندوب}: خطوط الطول والعرض فقط + وقت السيرفر. المسح للأدمن.
+    // deliv_cfg/track {enabled:false} = زرار الأدمن اللي بيوقف الخاصية كلها.
+    match /deliv_loc/{id} {
+      allow read:   if isAdmin() || isViewer() || isCashier() || isDelDev();
+      allow create, update: if (isAdmin() || isDelDev())
+                    && request.resource.data.keys().hasOnly(['name', 'on', 'lat', 'lng', 'acc', 'spd', 'at'])
+                    && request.resource.data.name is string && request.resource.data.on is bool
+                    && request.resource.data.at == request.time
+                    && (request.resource.data.on == false
+                        || (request.resource.data.lat is number && request.resource.data.lng is number
+                            && request.resource.data.lat >= -90 && request.resource.data.lat <= 90
+                            && request.resource.data.lng >= -180 && request.resource.data.lng <= 180));
+      allow delete: if isAdmin();
+    }
+    match /deliv_cfg/{id} {
+      allow read:  if isAdmin() || isViewer() || isCashier() || isDelDev();
+      allow write: if isAdmin();
+    }
+
     match /{document=**} { allow read, write: if false; }
   }
 }

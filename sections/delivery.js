@@ -99,6 +99,7 @@ function css() {
 :is(#adm,#delivery,#emp) .delwrap .ocgrid .oc{margin-bottom:0}
 @media(max-width:480px){:is(#adm,#delivery,#emp) .delwrap .ocgrid{grid-template-columns:1fr}}
 :is(#adm,#delivery,#emp) .delwrap h3.sec.need{color:#b45309;background:#fffbeb;border:1px solid #fcd34d;border-radius:12px;padding:8px 12px}
+.loc{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;justify-content:space-between;font-size:13px;font-weight:700;padding:6px 12px;margin:-4px 0 8px;border-radius:10px;background:#f8fafc;color:#475569}.loc a{color:#0f766e;text-decoration:none;min-height:32px;display:inline-flex;align-items:center}.loc.live{background:#dcfce7;color:#166534}.loc.old{background:#fef3c7;color:#92400e}.loc.lost{background:#fee2e2;color:#991b1b}.loc.off{font-weight:500}
 .dgrp{margin-bottom:14px}.dgh{display:flex;align-items:center;gap:8px;width:100%;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:12px;padding:8px 12px;min-height:44px;margin-bottom:8px;box-shadow:none;color:#1e293b;font-size:15px}.dgh .dgt{margin-inline-start:auto;font-size:12px;color:#475569}
 .mback{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:70;display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:18px 12px}
 .mdl{position:relative;width:min(560px,100%);margin:auto}
@@ -403,6 +404,7 @@ function checkNew() {
   if (SEEN) { let n = 0; ids.forEach(id => { if (!SEEN.has(id)) { const o = OPEN.get(id); if (o && !o.driverName && o.source === 'pos') n++; } }); if (n) siren(); }
   SEEN = ids;
 }
+let LOC = new Map(), TRK = { enabled: true };   // (11/11) مواقع المناديب (deliv_loc بالاسم) · زرار الأدمن اللي بيوقف الخاصية (deliv_cfg/track)
 let SYS = null;    // نبضة سيرفر الصيدلية (deliv_sys/sync)
 
 /* ---------- اقتراح المنطقة من عنوان العميل (تجربة 2/11 — الكاشير يغيّره عادي، ودقته بتظهر في الإحصائيات) ---------- */
@@ -495,6 +497,8 @@ function render() {
   ROOT.querySelectorAll('[data-hid]').forEach(b => b.onclick = () => { const d = b.dataset.hid; HID.has(d) ? HID.delete(d) : HID.add(d); try { localStorage.setItem('delHid', JSON.stringify([...HID])); } catch (e) { } render(); });
   ROOT.querySelectorAll('[data-mutend]').forEach(b => b.onclick = () => { NEED_MUTE = !NEED_MUTE; try { localStorage.setItem('delNeedMute', NEED_MUTE ? '1' : '0'); } catch (e) { } if (!NEED_MUTE) NEED_LAST = 0; render(); });
   ROOT.querySelectorAll('[data-mute]').forEach(b => b.onclick = () => { if (!ST.mute && !audioOn()) { armAudio(); beep(880, 2); setTimeout(render, 300); return; } ST.mute = !ST.mute; render(); });
+  ROOT.querySelectorAll('[data-trk]').forEach(b => b.onclick = async () => { try { await setDoc(doc(DB, 'deliv_cfg', 'track'), { enabled: !TRK.enabled }); toast(TRK.enabled ? 'اتوقف التتبع' : 'اتشغّل التتبع'); } catch (e) { toast('مقدرتش: ' + (e.code || e.message)); } });
+  ROOT.querySelectorAll('[data-trklink]').forEach(b => b.onclick = () => { const u = new URL('track.html', location.href).href; (navigator.clipboard ? navigator.clipboard.writeText(u) : Promise.reject()).then(() => toast('اللينك اتنسخ ✔'), () => prompt('انسخ اللينك:', u)); });
   bind();
 }
 
@@ -563,7 +567,7 @@ function liveHtml(act) {
   act.forEach((o, n) => (o.driverName ? outCards : needCards).push(cardArr[n]));
   return `<div class="topbar">${canWrite() ? `<button type="button" class="newbar" data-new><span>➕ تسجيل أوردر جديد</span><small>للأوردر اللي ملوش فاتورة</small></button>` : ''}<button type="button" class="newbar comm" data-comm><span>💰 عمولة الدليفري</span><small>اضغط لعرض عمولة كل مندوب</small></button></div>
     <div class="lhead"><div><h2 style="display:inline">الأوردرات النشطة حالياً</h2><span class="pill">${act.length - needN} جاري توصيلها</span>${needN ? `<span class="pill am" data-goneed style="cursor:pointer">🧾 ${needN} محتاج مندوب ↓</span>` : ''}${lateN ? `<span class="pill red">⚠ ${lateN} عدّى 30 دقيقة من الفاتورة</span>` : ''}<span class="pill sys" data-sys>⚪ …</span></div>
-      <span>${ROLE === 'cashier' ? `<button class="sndb ${NEED_MUTE ? 'off' : ''}" data-mutend>${needMuteLbl()}</button> ` : ''}<button class="sndb ${ST.mute ? 'off' : ''}" data-mute>${muteLbl()}</button></span></div>
+      <span>${ROLE === 'cashier' ? `<button class="sndb ${NEED_MUTE ? 'off' : ''}" data-mutend>${needMuteLbl()}</button> ` : ''}<button class="sndb ${ST.mute ? 'off' : ''}" data-mute>${muteLbl()}</button>${isAdm() ? ` <button class="sndb ${TRK.enabled ? '' : 'off'}" data-trk title="تشغيل/إيقاف تتبع موقع المناديب كله">${TRK.enabled ? '📍 التتبع شغال — إيقاف' : '📍 التتبع متوقف — تشغيل'}</button> <button class="sndb" data-trklink title="انسخ اللينك وابعته للمندوب">🔗 لينك المندوب</button>` : ''}</span></div>
     <div class="split">
       <div class="pane need" id="needSec"><h3><span>🧾 مستنية تأكيد المندوب (${needN})</span></h3>
         ${needN ? `<div class="stack">${needCards.join('')}</div>` : '<div class="empty">مفيش أوردرات مستنية</div>'}</div>
@@ -574,6 +578,19 @@ function liveHtml(act) {
     ${canWrite() && (ST.formOpen || EDIT) ? `<div class="mback" data-mback><div class="mdl"><button type="button" class="mclose" data-closeform title="إغلاق">✕</button>${formHtml()}</div></div>` : ''}`;
 }
 
+/* (11/11، طلبه) موقع المندوب GPS: الموبايل بيبعت من track.html · هنا بنعرض الحالة + لينك الخريطة */
+const atMs = x => x && x.toMillis ? x.toMillis() : (+x || 0);
+function locRow(d) {
+  if (!TRK.enabled) return '<div class="loc off">⛔ تتبع الموقع متوقف من الإدارة</div>';
+  const l = LOC.get(nm(d).toLowerCase());
+  if (!l || !l.on || l.lat == null) return '<div class="loc off">⚪ موقعه مش مفعّل (المندوب لازم يشغّل التتبع من موبايله)</div>';
+  const age = Math.max(0, Date.now() - atMs(l.at)), sec = Math.round(age / 1000), mn = Math.round(age / MIN);
+  const cls = age <= 90e3 ? 'live' : age <= 10 * MIN ? 'old' : 'lost';
+  const txt = cls === 'live' ? `🟢 مباشر · آخر تحديث من ${sec} ث` : cls === 'old' ? `🟡 آخر موقع من ${mn} د` : `🔴 فقدنا الإشارة من ${mn >= 60 ? Math.floor(mn / 60) + ' س ' + (mn % 60) + ' د' : mn + ' د'} (الموبايل اتقفل أو النت واقع)`;
+  const mp = `https://www.google.com/maps?q=${l.lat},${l.lng}`;
+  return `<div class="loc ${cls}"><span>${txt}</span><a href="${mp}" target="_blank" rel="noopener">🗺 افتح الخريطة</a></div>`;
+}
+
 /* (7/11، طلبه) الجاري توصيلها متقسمة بكل مندوب + زرار إخفاء/إظهار لكل مندوب (بيتحفظ على الجهاز) */
 const HID = (() => { try { return new Set(JSON.parse(localStorage.getItem('delHid') || '[]')); } catch (e) { return new Set(); } })();
 function outGroups(act, cardArr) {
@@ -581,7 +598,7 @@ function outGroups(act, cardArr) {
   act.forEach((o, n) => { if (o.driverName) { if (!g.has(o.driverName)) g.set(o.driverName, []); g.get(o.driverName).push(cardArr[n]); } });
   return [...g.entries()].sort((x, y) => String(x[0]).localeCompare(String(y[0]), 'ar')).map(([d, cs]) => {
     const h = HID.has(d);
-    return `<div class="dgrp"><button type="button" class="dgh" data-hid="${esc(d)}"><b>🛵 ${esc(nm(d))}</b> <span class="pill">${cs.length}</span><span class="dgt">${h ? '👁 إظهار' : '🙈 إخفاء'}</span></button>${h ? '' : `<div class="tiles">${cs.join('')}</div>`}</div>`;
+    return `<div class="dgrp"><button type="button" class="dgh" data-hid="${esc(d)}"><b>🛵 ${esc(nm(d))}</b> <span class="pill">${cs.length}</span><span class="dgt">${h ? '👁 إظهار' : '🙈 إخفاء'}</span></button>${locRow(d)}${h ? '' : `<div class="tiles">${cs.join('')}</div>`}</div>`;
   }).join('');
 }
 
@@ -929,6 +946,8 @@ export async function mountDelivery(root, role) {
     DRIVERS = s.docs.map(d => ({ id: d.id, ...d.data() }));
     safeRender();
   }, e => toast('قايمة المناديب: ' + (e.code || e.message))));
+  UNSUB.push(onSnapshot(collection(DB, 'deliv_loc'), s => { LOC = new Map(s.docs.map(d => [nm(d.data().name || d.id).toLowerCase(), d.data()])); safeRender(); }, () => { LOC = new Map(); }));
+  UNSUB.push(onSnapshot(doc(DB, 'deliv_cfg', 'track'), s => { TRK = { enabled: !s.exists() || s.data().enabled !== false }; safeRender(); }, () => { }));
   TICK = setInterval(() => { if (ROOT.isConnected) tick(); }, 1000);
   REFRESH = setInterval(() => { if (!ROOT.isConnected) return; if (ST.liveDay !== opDay(Date.now())) subDone(); if (ST.view === 'live') safeRender(); }, 30000);
   render();
