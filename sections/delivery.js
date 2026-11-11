@@ -383,9 +383,12 @@ function needWatch() {
   const closed = noDrv.filter(o => o.posEndTime && now - o.posEndTime >= NEED_FIRST && now - (SYS_LAST.get(o.id) || 0) >= NEED_MS);   // اتقفل في فارما فلاي من دقيقة
   const doOpen = open.length && now - NEED_LAST >= NEED_MS;
   if (!doOpen && !closed.length) return;
-  needChime();
-  if (doOpen) { NEED_LAST = now; playVoice('need'); }
-  closed.forEach(o => { SYS_LAST.set(o.id, now); playVoice('closed'); toast(`🔔 أوردر ${o.customerName ? 'باسم ' + o.customerName : 'بدون اسم'} اتقفل سيستم ومفيش مندوب`); });
+  if (doOpen) NEED_LAST = now; closed.forEach(o => SYS_LAST.set(o.id, now));   // يمنع تكرار التنبيه أثناء الانتظار
+  needChime();   // النغمة الأول (حوالي 1.4 ثانية) وبعدها الكلام — مش مع بعض
+  setTimeout(() => {
+    if (doOpen) playVoice('need');
+    if (closed.length) { playVoice('closed'); closed.forEach(o => toast(`🔔 أوردر ${o.customerName ? 'باسم ' + o.customerName : 'بدون اسم'} اتقفل سيستم ومفيش مندوب`)); }
+  }, 1700);
 }
 let SEEN = null;   // الأوردرات المفتوحة اللي شفناها (أول تحميل مبيرنش)
 function checkNew() {
