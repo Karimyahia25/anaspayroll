@@ -367,14 +367,13 @@ function needChime() {   // نغمة «دينج-دونج» هادية مختلف
     });
   } catch (e) { }
 }
-function sayAr(text) {
-  try {
-    const sp = window.speechSynthesis; if (!sp) return;
-    const u = new SpeechSynthesisUtterance(text), vs = sp.getVoices() || [];
-    const v = vs.find(x => /^ar[-_]EG/i.test(x.lang)) || vs.find(x => /^ar/i.test(x.lang));
-    if (v) u.voice = v; u.lang = v ? v.lang : 'ar-EG'; u.rate = 0.9; u.volume = 1;
-    sp.speak(u);
-  } catch (e) { }
+const VQ = []; let VBUSY = false;   // صوت الجمل: ملفات mp3 جاهزة (صوت مصري) — أضمن من نطق المتصفح اللي مش بيشتغل على كل الأجهزة
+function playVoice(name) { VQ.push(name); if (!VBUSY) nextVoice(); }
+function nextVoice() {
+  const f = VQ.shift(); if (!f) { VBUSY = false; return; }
+  VBUSY = true;
+  try { const a = new Audio('sounds/' + f + '.mp3'); a.volume = 1; a.onended = a.onerror = nextVoice; const p = a.play(); if (p && p.catch) p.catch(nextVoice); }
+  catch (e) { nextVoice(); }
 }
 function needWatch() {
   if (ROLE !== 'cashier' || ST.mute || NEED_MUTE || !audioOn()) return;
@@ -385,8 +384,8 @@ function needWatch() {
   const doOpen = open.length && now - NEED_LAST >= NEED_MS;
   if (!doOpen && !closed.length) return;
   needChime();
-  if (doOpen) { NEED_LAST = now; sayAr('يوجد أوردرات تأكيد المندوب'); }
-  closed.forEach(o => { SYS_LAST.set(o.id, now); sayAr(`يوجد أوردر باسم ${o.customerName || 'بدون اسم'} تم تقفيله سيستم ولم يعين مندوب`); });
+  if (doOpen) { NEED_LAST = now; playVoice('need'); }
+  closed.forEach(o => { SYS_LAST.set(o.id, now); playVoice('closed'); toast(`🔔 أوردر ${o.customerName ? 'باسم ' + o.customerName : 'بدون اسم'} اتقفل سيستم ومفيش مندوب`); });
 }
 let SEEN = null;   // الأوردرات المفتوحة اللي شفناها (أول تحميل مبيرنش)
 function checkNew() {
