@@ -330,7 +330,7 @@ function trashSound() {   // صوت «تفريغ سلة المحذوفات» —
 
 /* ---------- صوت الفاتورة الجديدة ---------- */
 const audioOn = () => !!(AC && AC.state === 'running');
-function armAudio() { try { AC = AC || new (window.AudioContext || window.webkitAudioContext)(); if (AC.state !== 'running') AC.resume(); } catch (e) { } try { if (!armAudio.sp && window.speechSynthesis) { armAudio.sp = 1; const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); } } catch (e) { } }
+function armAudio() { try { AC = AC || new (window.AudioContext || window.webkitAudioContext)(); if (AC.state !== 'running') AC.resume(); } catch (e) { } }
 function siren(secs = 3) {   // (10/11، طلبه) نغمة عالية وقوية 3 ثواني: نبضات متبادلة 1500/1050 هرتز موجة مربعة بأعلى جين
   if (ST.mute) return;
   try {
@@ -356,24 +356,17 @@ const NEED_MS = 5 * 60000, NEED_FIRST = 60000;   // أول تنبيه بعد د�
 let NEED_MUTE = false; try { NEED_MUTE = localStorage.getItem('delNeedMute') === '1'; } catch (e) { }
 let NEED_LAST = 0; const SYS_LAST = new Map();
 const needMuteLbl = () => NEED_MUTE ? '🔕 تنبيه المندوب مكتوم' : '🔔 تنبيه المندوب شغال';
-function needChime() {   // نغمة «دينج-دونج» هادية مختلفة عن صفارة الأوردر الجديد
+function needChime(kind) {   // نغمتين مختلفتين: «دينج-دونج» = مستني مندوب · ثلاث نغمات طالعة سريعة = اتقفل سيستم ومفيش مندوب
   try {
     armAudio(); const t0 = AC.currentTime;
-    [[659, 0], [523, 0.35], [659, 0.7], [523, 1.05]].forEach(([f, d]) => {
+    const seq = kind === 'closed' ? [[523, 0], [659, 0.18], [784, 0.36], [523, 0.9], [659, 1.08], [784, 1.26]] : [[659, 0], [523, 0.35], [659, 0.9], [523, 1.25]];
+    seq.forEach(([f, d]) => {
       const o = AC.createOscillator(), g = AC.createGain(), t = t0 + d;
-      o.type = 'triangle'; o.frequency.value = f; o.connect(g); g.connect(AC.destination);
-      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.6, t + 0.03); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.32);
-      o.start(t); o.stop(t + 0.34);
+      o.type = kind === 'closed' ? 'square' : 'triangle'; o.frequency.value = f; o.connect(g); g.connect(AC.destination);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(kind === 'closed' ? 0.35 : 0.6, t + 0.03); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+      o.start(t); o.stop(t + 0.32);
     });
   } catch (e) { }
-}
-const VQ = []; let VBUSY = false;   // صوت الجمل: ملفات mp3 جاهزة (صوت مصري) — أضمن من نطق المتصفح اللي مش بيشتغل على كل الأجهزة
-function playVoice(name) { VQ.push(name); if (!VBUSY) nextVoice(); }
-function nextVoice() {
-  const f = VQ.shift(); if (!f) { VBUSY = false; return; }
-  VBUSY = true;
-  try { const a = new Audio('sounds/' + f + '.mp3'); a.volume = 1; a.onended = a.onerror = nextVoice; const p = a.play(); if (p && p.catch) p.catch(nextVoice); }
-  catch (e) { nextVoice(); }
 }
 function needWatch() {
   if (ROLE !== 'cashier' || ST.mute || NEED_MUTE || !audioOn()) return;
@@ -384,11 +377,11 @@ function needWatch() {
   const doOpen = open.length && now - NEED_LAST >= NEED_MS;
   if (!doOpen && !closed.length) return;
   if (doOpen) NEED_LAST = now; closed.forEach(o => SYS_LAST.set(o.id, now));   // يمنع تكرار التنبيه أثناء الانتظار
-  needChime();   // النغمة الأول (حوالي 1.4 ثانية) وبعدها الكلام — مش مع بعض
-  setTimeout(() => {
-    if (doOpen) playVoice('need');
-    if (closed.length) { playVoice('closed'); closed.forEach(o => toast(`🔔 أوردر ${o.customerName ? 'باسم ' + o.customerName : 'بدون اسم'} اتقفل سيستم ومفيش مندوب`)); }
-  }, 1700);
+  if (doOpen) needChime('need');
+  if (closed.length) {
+    setTimeout(() => needChime('closed'), doOpen ? 2000 : 0);
+    closed.forEach(o => toast(`🔔 أوردر ${o.customerName ? 'باسم ' + o.customerName : 'بدون اسم'} اتقفل سيستم ومفيش مندوب`));
+  }
 }
 let SEEN = null;   // الأوردرات المفتوحة اللي شفناها (أول تحميل مبيرنش)
 function checkNew() {
