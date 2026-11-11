@@ -439,7 +439,7 @@ async function exportXl(done) {
     const rows = pick.filter(r => r.sheet === k);
     if (!rows.length) return;
     const n = {}; rows.forEach(r => n[r.sup] = (n[r.sup] || 0) + 1);
-    rows.sort((a, b) => (a.sup === 'مورد مش محدد') - (b.sup === 'مورد مش محدد') || n[b.sup] - n[a.sup] || a.sup.localeCompare(b.sup) || a.name.localeCompare(b.name));
+    rows.sort((a, b) => (a.sup === 'مورد مش محدد') - (b.sup === 'مورد مش محدد') || n[b.sup] - n[a.sup] || a.sup.localeCompare(b.sup) || !!b.oos - !!a.oos || (b._n0 ?? b.need) - (a._n0 ?? a.need) || a.name.localeCompare(b.name));
     const aoa = [[`طلبية النواقص ${DATE.split('-').reverse().join('/')} — ${title} — ${rows.length} صنف`], [], head, ...rows.map(r => {
       const D = DONE[r.code], R = recvOf(r);
       const note = [r.up ? 'السعر زاد' : '', r.sea ? 'صيفي — بمعدل آخر 30 يوم' : '', r.moved || '',
@@ -527,7 +527,8 @@ function render() {
       ${SAVED ? `<div class="savedat">آخر حفظ الساعة ${esc(SAVED.at)}${SAVED.by ? ' — ' + esc(SAVED.by) : ''} · ${SAVED.n} صنف</div>` : ''}</div>
     ${ST.sheet === 'market' ? marketHtml() : sups.map((s, i) => {
       const list = g[s], d = list.filter(r => DONE[r.code]).length, cost = list.reduce((a, r) => a + (r.cost || 0), 0);
-      const shown = list.filter(keep).sort((a, b) => !!b.cust - !!a.cust);      // 🧍 طلب العميل الأول في المورد
+      // 🧍 طلب العميل الأول، وبعده الرصيد صفر، وبعدين الأكتر مطلوب (بالكمية الأصلية علشان الصف ميتنططش وانت بتعدّل الكمية) — 11/11، طلبه
+      const shown = list.filter(keep).sort((a, b) => !!b.cust - !!a.cust || !!b.oos - !!a.oos || (b._n0 ?? b.need) - (a._n0 ?? a.need));
       const closed = ST.open[s] === false;
       return `<div class="grp ${animIn ? 'ent' : ''}" style="animation-delay:${Math.min(i, 8) * 70}ms"><div class="gh" data-g="${esc(s)}" style="background:${GRP_COLORS[i % GRP_COLORS.length]}">
           <span>🏷️ ${esc(s)} <span class="n">— ${list.length} صنف · حوالي ${N(cost)} ج</span></span>

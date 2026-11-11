@@ -945,7 +945,7 @@ async function renderBuyer(){
   await buyerBody();
 }
 async function buyerBody(){
-  try { const o = await import('./sections/order.js?v=21'); await o.mountOrder($('orderRoot'), 'buyer'); } catch (e) {}
+  try { const o = await import('./sections/order.js?v=23'); await o.mountOrder($('orderRoot'), 'buyer'); } catch (e) {}
   try { const m = await import('./sections/inventory.js?v=25'); await m.mountBuyer($('buyerRoot')); }
   catch (e) { $('buyerRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل الشاشة: ${esc(e.code || e.message)}</div>`; }
 }
@@ -2681,7 +2681,7 @@ async function openDelivery(root, role){
 let ORD_ON = false;
 async function openOrder(){
   if (ORD_ON) return; ORD_ON = true;
-  try { const m = await import('./sections/order.js?v=21'); await m.mountOrder($('orderRoot'), ROLE); }
+  try { const m = await import('./sections/order.js?v=23'); await m.mountOrder($('orderRoot'), ROLE); }
   catch (e) { ORD_ON = false; $('orderRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل الطلبية: ${esc(e.code || e.message)}</div>`; }
 }
 
