@@ -352,7 +352,7 @@ function siren(secs = 3) {   // (10/11، طلبه) نغمة عالية وقوي�
   try { navigator.vibrate && navigator.vibrate([400, 150, 400, 150, 400]); } catch (e) { }
 }
 /* ---------- (11/11، طلبه) تنبيه الأوردرات اللي مستنية مندوب — للكاشير بس، كل 5 دقايق، وليه زرار كتم مستقل ---------- */
-const NEED_MS = 5 * 60000, NEED_FIRST = 60000;   // أول تنبيه بعد دقيقة، وبعدها كل 5 دقايق
+const NEED_MS = 5 * 60000, NEED_FIRST = 5 * 60000;   // أول تنبيه بعد 5 دقايق، وبعدها كل 5 دقايق
 let NEED_MUTE = false; try { NEED_MUTE = localStorage.getItem('delNeedMute') === '1'; } catch (e) { }
 let NEED_LAST = 0; const SYS_LAST = new Map();
 const needMuteLbl = () => NEED_MUTE ? '🔕 تنبيه المندوب مكتوم' : '🔔 تنبيه المندوب شغال';
@@ -368,19 +368,33 @@ function needChime(kind) {   // نغمتين مختلفتين: «دينج-دون
     });
   } catch (e) { }
 }
+function needBanner(o) {   // رسالة على الشاشة دقيقة وتختفي، وفيها X للإغلاق
+  try {
+    const old = document.getElementById('nb_' + o.id); if (old) old.remove();
+    let box = document.getElementById('needBnrs');
+    if (!box) { box = document.createElement('div'); box.id = 'needBnrs'; box.style.cssText = 'position:fixed;top:10px;left:10px;right:10px;z-index:99999;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none'; document.body.appendChild(box); }
+    const d = document.createElement('div'); d.id = 'nb_' + o.id;
+    d.style.cssText = 'pointer-events:auto;max-width:520px;width:100%;background:#fff7ed;border:2px solid #f97316;color:#7c2d12;border-radius:14px;padding:12px 44px 12px 14px;font-weight:700;font-size:15px;box-shadow:0 6px 20px rgba(0,0,0,.25);position:relative;direction:rtl;line-height:1.6';
+    d.textContent = `🔔 يوجد أوردر ${o.customerName ? 'باسم ' + o.customerName : 'بدون اسم'} تم تقفيله سيستم ولم يعين مندوب`;
+    const x = document.createElement('button'); x.type = 'button'; x.textContent = '✕'; x.setAttribute('aria-label', 'إغلاق');
+    x.style.cssText = 'position:absolute;top:6px;right:8px;width:32px;height:32px;min-height:0;border:0;border-radius:50%;background:#fed7aa;color:#7c2d12;font-size:16px;font-weight:700;cursor:pointer;padding:0';
+    x.onclick = () => d.remove(); d.appendChild(x); box.appendChild(d);
+    setTimeout(() => d.remove(), 60000);
+  } catch (e) { }
+}
 function needWatch() {
   if (ROLE !== 'cashier' || ST.mute || NEED_MUTE || !audioOn()) return;
   const now = Date.now(), noDrv = [...OPEN.values()].filter(o => !o.driverName && o.status === 'PENDING');
   SYS_LAST.forEach((_, id) => { if (!noDrv.some(o => o.id === id)) SYS_LAST.delete(id); });
-  const open = noDrv.filter(o => !o.posEndTime && now - (o.startTime || now) >= NEED_FIRST);                       // مستني مندوب من دقيقة
-  const closed = noDrv.filter(o => o.posEndTime && now - o.posEndTime >= NEED_FIRST && now - (SYS_LAST.get(o.id) || 0) >= NEED_MS);   // اتقفل في فارما فلاي من دقيقة
+  const open = noDrv.filter(o => !o.posEndTime && now - (o.startTime || now) >= NEED_FIRST);                       // مستني مندوب من 5 دقايق
+  const closed = noDrv.filter(o => o.posEndTime && now - o.posEndTime >= NEED_FIRST && now - (SYS_LAST.get(o.id) || 0) >= NEED_MS);   // اتقفل في فارما فلاي من 5 دقايق
   const doOpen = open.length && now - NEED_LAST >= NEED_MS;
   if (!doOpen && !closed.length) return;
   if (doOpen) NEED_LAST = now; closed.forEach(o => SYS_LAST.set(o.id, now));   // يمنع تكرار التنبيه أثناء الانتظار
   if (doOpen) needChime('need');
   if (closed.length) {
     setTimeout(() => needChime('closed'), doOpen ? 2000 : 0);
-    closed.forEach(o => toast(`🔔 أوردر ${o.customerName ? 'باسم ' + o.customerName : 'بدون اسم'} اتقفل سيستم ومفيش مندوب`));
+    closed.forEach(o => needBanner(o));
   }
 }
 let SEEN = null;   // الأوردرات المفتوحة اللي شفناها (أول تحميل مبيرنش)
