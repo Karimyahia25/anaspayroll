@@ -730,10 +730,10 @@ function renderLog() {
 function vOrders() {
   const html = `<div class="ivcard"><h3>🛒 الشغل اليومي — ارفع ملفات الصبح</h3><p class="why">ارفع <b>الملفين مع بعض</b>: تقرير النواقص (بيطلّع طلبية النهارده) وتقرير مشتريات امبارح (بيقيس طلبية امبارح ويحدّث خصومات الموردين). الموقع بيعرف نوع كل ملف لوحده. القاعدة: كل صنف عند المورد اللي <b>أعلى خصم</b> ليه في آخر 3 شهور (من غير outting والصلاحية القصيرة)، <b>بس لو الفرق عن المورد الأخير أقل من ${MINSW} نقطة بيفضل عنده</b>، ومبنحوّلش لمورد إلا لو اشترينا منه الصنف <b>في فاتورتين على الأقل</b> (فاتورة واحدة ممكن تكون عرض مؤقت — بتظهر كاقتراح بس). الأصناف اللي عليها "طلب من 0 يوم" بتتستبعد، واللي عليها "طلب من 1 يوم" أو أكتر بتفضل في الطلبية بعلامة ⚠ (اتطلبت ومجتش). الخدمات (توصيل، قياس ضغط، حقن…) بتتشال.</p>
     <p style="margin:6px 0;display:flex;gap:10px;flex-wrap:wrap;align-items:center"><label class="sm ghost" style="cursor:pointer;display:inline-block;border:1px solid var(--line);border-radius:999px;padding:9px 18px;font-size:14px;color:var(--green)">📤 ارفع ملفات الصبح (Excel)<input type="file" id="upAny" accept=".xlsx,.xls" multiple style="display:none"></label><label class="sm">تاريخ المشتريات <input type="date" id="buyDate" value="${yesterday()}"></label></p><div class="note" id="ordUpMsg"></div></div>
-    ${ROLE === 'admin' ? '<div class="ivcard" id="buyerAcct"></div><div class="note" id="buyerSync" style="margin:-6px 4px 10px"></div>' : ''}
+    ${ROLE === 'admin' ? '<div class="note" id="buyerSync" style="margin:-6px 4px 10px"></div>' : ''}
     <div id="ordPlan">${renderPlan()}</div><div id="ordLogBox">${renderLog()}</div>`;
   return { html, after() {
-    if (ROLE === 'admin') { buyerAcct(); syncBuyerData(); }
+    if (ROLE === 'admin') { syncBuyerData(); }
     const c = $('#ivbody', ROOT), plan = () => { const e = $('#ordPlan', ROOT); e.innerHTML = renderPlan(); sortable(e); }, logBox = () => { const e = $('#ordLogBox', ROOT); e.innerHTML = renderLog(); sortable(e); };
     const back = async () => { if (!ORD.plan && await restorePlan()) { plan(); const m0 = $('#ordUpMsg', ROOT); if (m0) m0.textContent = 'رجّعت آخر ملف نواقص رفعته النهارده ✓'; } };
     if (ORD.log == null || ORD.buys == null) Promise.all([ORD.log == null ? loadOrderLog() : 0, ORD.buys == null ? loadBuys() : 0]).then(() => { if (VIEW === 'or') { logBox(); back(); } }).catch(() => { ORD.log = ORD.log || []; ORD.buys = ORD.buys || []; if (VIEW === 'or') back(); });

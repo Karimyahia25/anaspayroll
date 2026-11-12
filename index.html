@@ -875,6 +875,7 @@ onAuthStateChanged(auth, async user => {
     let msg = '';
     try { if (sessionStorage.getItem('idleOut')) { msg = `اتقفلت الجلسة تلقائياً بعد ${IDLE_MIN} دقيقة من غير استخدام. ادخل تاني.`;
       sessionStorage.removeItem('idleOut'); } } catch(e){}
+    try { const lm = sessionStorage.getItem('loginMsg'); if (lm) { msg = lm; sessionStorage.removeItem('loginMsg'); } } catch(e){}
     $('loginErr').textContent = msg;
     $('login').classList.remove('hide'); return;
   }
@@ -888,13 +889,13 @@ onAuthStateChanged(auth, async user => {
     try { if ((await getDoc(doc(db, 'cashiers', user.uid))).exists()) ROLE = 'cashier'; } catch(e){}
   }
   if (ROLE === 'emp'){
-    try { if ((await getDoc(doc(db, 'buyers', user.uid))).exists()) { ROLE = 'buyer'; } } catch(e){}
+    try { if ((await getDoc(doc(db, 'buyers', user.uid))).exists()) { ROLE = 'retired'; } } catch(e){}
   }
   if (ROLE === 'emp'){
-    try { if ((await getDoc(doc(db, 'crmdevs', user.uid))).exists()) ROLE = 'crmdev'; } catch(e){}
+    try { if ((await getDoc(doc(db, 'crmdevs', user.uid))).exists()) ROLE = 'retired'; } catch(e){}
   }
   if (ROLE === 'emp'){
-    try { if ((await getDoc(doc(db, 'deliverydevs', user.uid))).exists()) ROLE = 'delivery'; } catch(e){}
+    try { if ((await getDoc(doc(db, 'deliverydevs', user.uid))).exists()) ROLE = 'retired'; } catch(e){}
   }
   let DRV_ACCT = null;
   if (ROLE === 'emp'){   // (11/11) حساب مندوب: كل مندوب له يوزر خاص (driveraccts/{uid}.driverName)
@@ -905,9 +906,8 @@ onAuthStateChanged(auth, async user => {
   DASH = { periods: [], staff: [], rows: [], period: null };
   if (ROLE === 'admin' || ROLE === 'viewer') { $('adm').classList.remove('hide'); renderAdmin(); }
   else if (ROLE === 'cashier') { $('emp').classList.remove('hide'); await renderStation(); }
-  else if (ROLE === 'buyer') { renderBuyer(); }
-  else if (ROLE === 'crmdev') { renderCrmDev(); }
-  else if (ROLE === 'delivery') { renderDeliveryDev(); }
+  // (12/11، طلبه) حسابات buyer و crm و delivery اتلغت — الكاشير فيه التبويبات الأربعة (التقفيل · الدليفري · الطلبية · متابعة العملاء)
+  else if (ROLE === 'retired') { try { sessionStorage.setItem('loginMsg', 'الحساب ده اتلغى. ادخل بحساب الكاشير (cashier) — فيه التقفيل والدليفري والطلبية ومتابعة العملاء.'); } catch(e){} signOut(auth); }
   else if (ROLE === 'driver') { renderDriverApp(DRV_ACCT); }
   else { $('emp').classList.remove('hide'); await renderEmp(); }
 });
@@ -964,7 +964,7 @@ async function renderBuyer(){
 }
 async function buyerBody(){
   try { const o = await import('./sections/order.js?v=23'); await o.mountOrder($('orderRoot'), 'buyer'); } catch (e) {}
-  try { const m = await import('./sections/inventory.js?v=25'); await m.mountBuyer($('buyerRoot')); }
+  try { const m = await import('./sections/inventory.js?v=26'); await m.mountBuyer($('buyerRoot')); }
   catch (e) { $('buyerRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل الشاشة: ${esc(e.code || e.message)}</div>`; }
 }
 
@@ -2594,9 +2594,9 @@ function renderAdmin(){
   <div id="ap7" class="card hide"><h2>الخزنة وتقفيل الشيفتات</h2><div id="cashAdm"></div></div>
   <div id="ap11" class="card hide"><h2>مسحوبات الموظفين</h2><div id="advBox"></div></div>
   <div id="ap8" class="hide"><div id="stockRoot"></div></div>
-  <div id="ap9" class="hide"><div id="crmAcct"></div><div id="crmRoot"></div></div>
+  <div id="ap9" class="hide"><div id="crmRoot"></div></div>
   <div id="ap10" class="hide"><div id="orderRoot"></div></div>
-  <div id="ap12" class="hide"><div id="drvAccts"></div><div id="delAcct"></div><div id="delRoot"></div></div>
+  <div id="ap12" class="hide"><div id="drvAccts"></div><div id="delRoot"></div></div>
   ${isAdm ? `
   <div id="ap1" class="card hide">${adminUploadUI()}</div>
   <div id="ap2" class="card hide"><h2>الموظفين وحساباتهم</h2><div id="staffBox"><p class="sub">جاري التحميل…</p></div></div>
@@ -2612,7 +2612,7 @@ function renderAdmin(){
 let INV_ON = false;
 async function openInventory(){
   if (INV_ON) return; INV_ON = true;
-  try { const m = await import('./sections/inventory.js?v=25'); await m.mountInventory($('stockRoot'), ROLE); }
+  try { const m = await import('./sections/inventory.js?v=26'); await m.mountInventory($('stockRoot'), ROLE); }
   catch (e) { INV_ON = false; $('stockRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل قسم المخزون: ${esc(e.code || e.message)}</div>`; }
 }
 
@@ -2652,7 +2652,6 @@ window.crmAcctMake = async () => {
 let CRM_ON = false;
 async function openCustomers(){
   if (CRM_ON) return; CRM_ON = true;
-  if (ROLE === 'admin') crmAcct();
   try { const m = await import('./sections/customers.js?v=19'); await m.mountCustomers($('crmRoot'), ROLE); }
   catch (e) { CRM_ON = false; $('crmRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل قسم العملاء: ${esc(e.code || e.message)}</div>`; }
 }
@@ -2737,7 +2736,7 @@ window.delAcctMake = async () => {
 let DEL_ON = false;
 async function openDelivery(root, role){
   if (DEL_ON) return; DEL_ON = true;
-  if (!root && ROLE === 'admin') { delAcct(); drvAccts(); }
+  if (!root && ROLE === 'admin') drvAccts();
   try { const m = await import('./sections/delivery.js?v=33'); await m.mountDelivery(root || $('delRoot'), role || ROLE); }
   catch (e) { DEL_ON = false; (root || $('delRoot')).innerHTML = `<div class="banner bad">مقدرتش أحمّل قسم الدليفري: ${esc(e.code || e.message)}</div>`; }
 }
