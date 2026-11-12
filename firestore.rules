@@ -67,7 +67,8 @@ service cloud.firestore {
     // سجل التواصل: مين كلّم مين وإيه النتيجة — بيتسجل باسم اللي كتبه، ومحدش يعدّله غير الأدمن
     // الموظف بيقرا تسجيلاته هو بس، وبيسجّل باسمه هو بس
     match /crm_log/{id} {
-      allow read:   if isAdmin() || isViewer() || isCrmDev()
+      // (12/11) السيرفر (feeder) بيقرا السجل علشان رسايل تليجرام (5م/11م/9ص): كام عميل اتكلموا وكل موظف كلّم كام
+      allow read:   if isAdmin() || isViewer() || isCrmDev() || isFeeder()
                     || (request.auth != null && resource.data.by == request.auth.uid);
       allow create: if request.auth != null && request.resource.data.by == request.auth.uid
                     && (isAdmin() || isCrmDev() || exists(/databases/$(database)/documents/staff/$(request.auth.uid)));
@@ -152,7 +153,7 @@ service cloud.firestore {
     }
 
     match /staff/{uid} {
-      allow read:  if request.auth != null && (request.auth.uid == uid || isAdmin() || isViewer() || isCashier() || isCrmDev());
+      allow read:  if request.auth != null && (request.auth.uid == uid || isAdmin() || isViewer() || isCashier() || isCrmDev() || isFeeder());
       allow write: if isAdmin();
     }
 
