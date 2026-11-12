@@ -560,7 +560,7 @@ function liveHtml(act) {
       return `<div class="oc tile dlv" data-id="${o.id}" data-out="${out ? 1 : 0}">
       <div class="th"><b class="dn">${esc(nm(o.driverName))}</b>${b.batch ? `<span class="bg bat" title="طلعة مجمعة: أوردر ${b.idx} من ${b.size}">🔗 ${b.idx}/${b.size}</span>` : ''}</div>
       <div class="tt"><span class="bd dlvb">✅ سُلّم للعميل ${timeStr(dl)}</span></div>
-      <div class="rd" data-wt="${dl}">${wtTxt(now - dl)}</div>
+      <div class="rd"><span data-ride="${t0(o)}">${rideTxt(now - t0(o))}</span><br><span data-wt="${dl}">${wtTxt(now - dl)}</span></div>
       <div class="tc" title="${esc(o.customerName || '')}">${o.customerName ? '👤 ' + esc(o.customerName) : '&nbsp;'}</div>
       <div class="tm2"><b>${M(tot)}</b>${o.changeGiven ? `<small>قيمة ${N(o.orderValue)} + فكة ${N(o.changeGiven)}</small>` : '<small>&nbsp;</small>'}</div>
       <div class="tb"><span class="bg ${out ? 'zout' : 'zin'}">${out ? `🧭 خارج · 💰${COMM_OUT}` : '📍 داخل'}</span>${o.isVisa ? '<span class="pb v" title="فيزا">💳</span>' : ''}${o.isVodafoneCash ? '<span class="pb f" title="فودافون كاش">📱</span>' : ''}${mp ? `<a class="mapl" href="${mp}" target="_blank" rel="noopener" title="مكان التسليم${o.deliveredLoc.acc ? ' (دقة ±' + o.deliveredLoc.acc + ' م)' : ''}">🗺 مكان التسليم</a>` : `<span class="nt" title="اتسلّم من غير موقع">📍✖</span>`}${o.notes ? `<span class="nt" title="${esc(o.notes)}">📝</span>` : ''}</div>
@@ -600,6 +600,7 @@ function todayHtml() {
   ${list.map(o => `<tr><td>${o.deliveredAt ? '<b>' + timeStr(o.deliveredAt) + '</b>' : '—'}</td><td>${timeStr(o.endTime)}</td><td>${o.deliveredAt ? durMin(o.deliveredAt - o.startTime) : '—'}</td><td class="l">${esc(nm(o.driverName))}</td><td class="l">${esc(o.customerName || '—')}</td><td>${M(o.orderValue)}</td><td>${o.isVisa ? 'فيزا' : o.isVodafoneCash ? 'فودافون' : 'كاش'}</td><td>${locCell(o)}</td></tr>`).join('') || '<tr><td colspan="8" class="empty">مفيش أوردرات اتقفلت من 9 الصبح</td></tr>'}</table></div>
   <p class="sub">${N(list.length)} أوردر اتقفل النهارده (من 9 الصبح) · ${N(withLoc)} منهم بموقع تسليم. «سُلّم للعميل» = لحظة ضغط المندوب من موبايله، و«اتقفل» = لحظة قفل الكاشير بعد الفلوس. الأوردر اللي اتقفل من الكاشير مباشرة (من غير المندوب) مفيهوش وقت ولا موقع.</p>`;
 }
+const rideTxt = ms => `🛵 خرج من ${Math.max(0, Math.floor(ms / MIN))} د`;   // (12/11، طلبه) بيفضل ظاهر حتى بعد ما المندوب يسلّم للعميل
 const wtTxt = ms => `⏳ مستني الفلوس من ${Math.max(0, Math.floor(ms / MIN))} د`;
 
 /* (7/11، طلبه) الجاري توصيلها متقسمة بكل مندوب + زرار إخفاء/إظهار لكل مندوب (بيتحفظ على الجهاز) */
@@ -913,6 +914,7 @@ function tick() {
   needWatch();
   const nb = ROOT.querySelector('[data-mutend]'); if (nb) { const l = needMuteLbl(); if (nb.textContent !== l) { nb.textContent = l; nb.classList.toggle('off', NEED_MUTE); } }
   const mb = ROOT.querySelector('[data-mute]'); if (mb) { const l = muteLbl(); if (mb.textContent !== l) mb.textContent = l; }
+  ROOT.querySelectorAll('[data-ride]').forEach(e => { const t = rideTxt(now - +e.dataset.ride); if (e.textContent !== t) e.textContent = t; });
   ROOT.querySelectorAll('[data-wt]').forEach(e => { const t = wtTxt(now - +e.dataset.wt); if (e.textContent !== t) e.textContent = t; });
   ROOT.querySelectorAll('.oc[data-start]').forEach(c => {
     const out = c.dataset.out === '1', min = Math.floor((now - +c.dataset.start) / MIN);
