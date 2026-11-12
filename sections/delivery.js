@@ -121,9 +121,6 @@ function css() {
 :is(#adm,#delivery,#emp) .delwrap .tile .bd{font-size:13px;padding:3px 10px}
 :is(#adm,#delivery,#emp) .delwrap .tile .tc{font-size:12px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 :is(#adm,#delivery,#emp) .delwrap .sugh{font-size:12px;color:#92400e;background:#fffbeb;border:1px dashed #fcd34d;border-radius:10px;padding:6px 10px}
-:is(#adm,#delivery,#emp) .delwrap .pill.sys{background:#f1f5f9;color:#475569;border:1px solid #e2e8f0}
-:is(#adm,#delivery,#emp) .delwrap .pill.sys.ok{background:#dcfce7;color:#166534;border-color:#bbf7d0}
-:is(#adm,#delivery,#emp) .delwrap .pill.sys.bad{background:#fee2e2;color:#991b1b;border-color:#fecaca;font-weight:800}
 :is(#adm,#delivery,#emp) .delwrap .tile .rd{font-size:10.5px;color:#64748b;margin-top:-3px}
 :is(#adm,#delivery,#emp) .delwrap .tile .tm2 b{font-size:18px;font-weight:900;color:#047857}
 :is(#adm,#delivery,#emp) .delwrap .tile.late .tm2 b{color:#b91c1c}
@@ -410,7 +407,6 @@ function checkNew() {
   SEEN = ids;
 }
 let TRK = { enabled: true }, DLV = null;   // (11/11) TRK = زرار الأدمن (deliv_cfg/track) اللي بيوقف تسجيل موقع التسليم · DLV = أوردرات اتسلّمت للعميل (علشان التنبيه)
-let SYS = null;    // نبضة سيرفر الصيدلية (deliv_sys/sync)
 
 /* ---------- اقتراح المنطقة من عنوان العميل (تجربة 2/11 — الكاشير يغيّره عادي، ودقته بتظهر في الإحصائيات) ---------- */
 const nrm = t => String(t || '').toLowerCase().replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').replace(/[\u064B-\u0652]/g, '');
@@ -582,7 +578,7 @@ function liveHtml(act) {
   const outCards = [], needCards = [];
   act.forEach((o, n) => (o.driverName ? outCards : needCards).push(cardArr[n]));
   return `<div class="topbar">${canWrite() ? `<button type="button" class="newbar" data-new><span>➕ تسجيل أوردر جديد</span><small>للأوردر اللي ملوش فاتورة</small></button>` : ''}<button type="button" class="newbar comm" data-comm><span>💰 عمولة الدليفري</span><small>اضغط لعرض عمولة كل مندوب</small></button></div>
-    <div class="lhead"><div><h2 style="display:inline">الأوردرات النشطة حالياً</h2><span class="pill">${act.length - needN} جاري توصيلها</span>${needN ? `<span class="pill am" data-goneed style="cursor:pointer">🧾 ${needN} محتاج مندوب ↓</span>` : ''}${lateN ? `<span class="pill red">⚠ ${lateN} عدّى 30 دقيقة من الفاتورة</span>` : ''}<span class="pill sys" data-sys>⚪ …</span></div>
+    <div class="lhead"><div><h2 style="display:inline">الأوردرات النشطة حالياً</h2><span class="pill">${act.length - needN} جاري توصيلها</span>${needN ? `<span class="pill am" data-goneed style="cursor:pointer">🧾 ${needN} محتاج مندوب ↓</span>` : ''}${lateN ? `<span class="pill red">⚠ ${lateN} عدّى 30 دقيقة من الفاتورة</span>` : ''}</div>
       <span>${ROLE === 'cashier' ? `<button class="sndb ${NEED_MUTE ? 'off' : ''}" data-mutend>${needMuteLbl()}</button> ` : ''}<button class="sndb ${ST.mute ? 'off' : ''}" data-mute>${muteLbl()}</button>${isAdm() ? ` <button class="sndb ${TRK.enabled ? '' : 'off'}" data-trk title="لما يتوقف: المندوب بيسلّم من غير ما يتسجل مكانه">${TRK.enabled ? '📍 موقع التسليم شغال — إيقاف' : '📍 موقع التسليم متوقف — تشغيل'}</button>` : ''}</span></div>
     <div class="split">
       <div class="pane need" id="needSec"><h3><span>🧾 مستنية تأكيد المندوب (${needN})</span></h3>
@@ -881,8 +877,8 @@ function copyReport() {
   (navigator.clipboard ? navigator.clipboard.writeText(t).then(() => toast('اتنسخ — الصقه في الواتساب ✔')) : Promise.reject()).catch(() => prompt('انسخ التقرير:', t));
 }
 
-function exportXl() {
-  if (!window.XLSX) { toast('مكتبة الإكسل مش محملة'); return; }
+async function exportXl() {
+  try { await window.loadXlsx(); } catch (e) { toast(e.message || 'مكتبة الإكسل مش محملة'); return; }
   const list = filtered().sort((a, b) => a.endTime - b.endTime), bm = batchMap(pool(), Date.now());
   const log = [['اليوم التشغيلي (9ص–9ص)', 'وقت الفاتورة/التسجيل', 'خروج المندوب', 'وقت التسليم', 'مصدر وقت التسليم', 'من الفاتورة (دقيقة)', 'من الخروج (دقيقة)', 'طلعة مجمعة (عدد)', 'الطيار', 'العميل', 'المنطقة', 'القيمة', 'الفكة', 'الدفع', 'عمولة الدليفري', 'سجّله', 'ملاحظات']]
     .concat(list.map(o => { const b = bm.get(o.id); return [opDay(o.endTime), timeStr(o.startTime), o.assignedAt ? timeStr(o.assignedAt) : '', timeStr(o.endTime), endSrc(o) === 'app' ? 'تطبيق' : 'فارما فلاي', +(totMs(o) / MIN).toFixed(1), +(rideMs(o, b) / MIN).toFixed(1), b && b.batch ? b.size : 1, o.driverName, o.customerName, o.zone || ZONES[0], o.orderValue, o.changeGiven, o.isVisa ? 'فيزا' : o.isVodafoneCash ? 'فودافون كاش' : 'كاش', commOf(o), o.employeeName, o.notes]; }));
@@ -906,13 +902,6 @@ function tick() {
   const now = Date.now();
   needWatch();
   const nb = ROOT.querySelector('[data-mutend]'); if (nb) { const l = needMuteLbl(); if (nb.textContent !== l) { nb.textContent = l; nb.classList.toggle('off', NEED_MUTE); } }
-  const sy = ROOT.querySelector('[data-sys]');
-  if (sy) {
-    if (!SYS || !SYS.at) { sy.textContent = '⚪ لسه مفيش إشارة من سيرفر الفواتير'; sy.className = 'pill sys'; }
-    else { const ag = Math.max(0, Math.round((now - SYS.at) / 1000));
-      if (ag < 150) { sy.textContent = `🟢 سيرفر الفواتير شغال (آخر فحص من ${ag < 90 ? ag + ' ث' : Math.round(ag / 60) + ' د'})${SYS.src ? ' · ' + (SYS.src === 'task' ? 'مهمة مستقلة' : 'نسخة احتياطية') : ''}`; sy.className = 'pill sys ok'; sy.title = SYS.started ? `اللوب شغال من ${dateStr(SYS.started)} ${timeStr(SYS.started)}` : ''; }
-      else { sy.textContent = `🔴 سيرفر الفواتير واقف من ${Math.round(ag / 60)} دقيقة — الفواتير مش بتنزل`; sy.className = 'pill sys bad'; } }
-  }
   const mb = ROOT.querySelector('[data-mute]'); if (mb) { const l = muteLbl(); if (mb.textContent !== l) mb.textContent = l; }
   ROOT.querySelectorAll('[data-wt]').forEach(e => { const t = wtTxt(now - +e.dataset.wt); if (e.textContent !== t) e.textContent = t; });
   ROOT.querySelectorAll('.oc[data-start]').forEach(c => {
@@ -946,7 +935,6 @@ export async function mountDelivery(root, role) {
     OPEN = new Map(s.docs.map(d => [d.id, { id: d.id, ...d.data() }])); READY = 1; checkDelivered(); checkNew(); rebuild(); safeRender();
   }, fail));
   subDone();
-  UNSUB.push(onSnapshot(doc(DB, 'deliv_sys', 'sync'), s => { SYS = s.exists() ? s.data() : null; }, () => { SYS = null; }));
   if (!ROOT._wired) { ROOT._wired = 1; ROOT.addEventListener('input', () => { LAST_UI = Date.now(); }); document.addEventListener('pointerdown', armAudio, true); }
   UNSUB.push(onSnapshot(collection(DB, 'deliv_drivers'), s => {
     DRIVERS = s.docs.map(d => ({ id: d.id, ...d.data() }));

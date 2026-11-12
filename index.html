@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>مرتبات صيدلية أنس نحيلة</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Kufi+Arabic:wght@500;600;700&text=%D9%A0%D9%A1%D9%A2%D9%A3%D9%A4%D9%A5%D9%A6%D9%A7%D9%A8%D9%A9%D9%AB%D9%AC%D9%AA0123456789&display=swap" rel="stylesheet">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Alexandria:wght@500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Kufi+Arabic:wght@500;600;700&text=%D9%A0%D9%A1%D9%A2%D9%A3%D9%A4%D9%A5%D9%A6%D9%A7%D9%A8%D9%A9%D9%AB%D9%AC%D9%AA0123456789&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Alexandria:wght@500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <style>
 :root{
   --paper:#EBF1F5; --card:#FFFFFF; --ink:#0F1B2D; --muted:#66768A; --line:#E4EBF2;
@@ -411,7 +411,6 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 
 <div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-11-09-A</b></div>
 </div>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged,
@@ -437,6 +436,11 @@ const db = initializeFirestore(app, { experimentalAutoDetectLongPolling: true })
 const errTxt = e => e.code === 'unavailable' ? 'مفيش اتصال بالسيرفر — اتأكد من النت وجرب تاني' : (e.code || e.message);
 
 const $ = id => document.getElementById(id);
+// (12/11) مكتبة الإكسل (~900 ك.ب) كانت بتعطّل فتح الموقع — بقت بتتحمّل أول ما حد يصدّر أو يرفع ملف
+let XL_P = null;
+window.loadXlsx = () => window.XLSX ? Promise.resolve() : (XL_P = XL_P || new Promise((ok, no) => {
+  const sc = document.createElement('script'); sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+  sc.onload = ok; sc.onerror = () => { XL_P = null; no(new Error('مقدرتش أحمّل مكتبة الإكسل — اتأكد من النت')); }; document.head.appendChild(sc); }));
 const F = n => Math.round(+n || 0).toLocaleString('ar-EG');
 const HN = n => (Math.round((+n || 0) * 100) / 100).toLocaleString('ar-EG', {minimumFractionDigits:2, maximumFractionDigits:2});
 const esc = t => String(t == null ? '' : t).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -1585,6 +1589,7 @@ window.reqExport = async () => {
     b.forEach(d => { const v = d.data(); if (v.status === 'معتمد')
       rows.push([v.date, +v.code || v.code, v.name || '', v.kind, '', v.minutes || '', v.days || '', v.reason || '', d.id]); });
     rows.sort((x, y) => x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : String(x[1]).localeCompare(String(y[1])));
+    await loadXlsx();
     const ws = XLSX.utils.aoa_to_sheet([['الطلبات المعتمدة — اتحمّلت ' + new Date().toLocaleString('ar-EG')],
       ['التاريخ', 'كود الموظف', 'اسم الموظف', 'النوع', 'ساعات', 'دقائق', 'أيام', 'السبب', 'رقم الطلب'], ...rows]);
     const wb = XLSX.utils.book_new(); wb.Workbook = { Views: [{ RTL: true }] };
@@ -2422,7 +2427,8 @@ window.safeAdd = async () => {
   catch (e) { m.textContent = 'متسجلش: ' + (e.code || e.message); }
 };
 
-window.cashExport = () => {
+window.cashExport = async () => {
+  try { await loadXlsx(); } catch (e) { alert(e.message); return; }
   const S = cashStats(), all = CM.list;
   const head = ['اليوم التشغيلي','التقفيلة','الساعة','الكود','الكاشير','إجمالي الدرج','الأرضية','نقدي للخزنة','فيزا','فودافون كاش','إنستاباي',
     'مصاريف','إجمالي التقفيلة','نتيجة السيستم','مبلغ السيستم','الفرق المعتمد','الخصم','الأرضية استلمها كاملة','ملغية','تصحيح','المصاريف بالتفصيل','ملاحظات'];
@@ -2671,8 +2677,7 @@ async function drvAccts(){
       <label for="daPw">الرقم السري (٦ على الأقل)</label><input id="daPw" type="text" autocomplete="off">
       <button class="sm" style="margin-top:10px" onclick="drvAcctMake()">إنشاء الحساب</button><div class="err" id="daMsg"></div></details></div>`;
 }
-window.drvLinkCopy = () => { const u = new URL('driver.html', location.href).href; (navigator.clipboard ? navigator.clipboard.writeText(u) : Promise.reject()).then(() => alert('اللينك اتنسخ:
-' + u), () => prompt('انسخ اللينك:', u)); };
+window.drvLinkCopy = () => { const u = new URL('driver.html', location.href).href; (navigator.clipboard ? navigator.clipboard.writeText(u) : Promise.reject()).then(() => alert('اللينك اتنسخ: ' + u), () => prompt('انسخ اللينك:', u)); };
 window.drvAcctToggle = async (id, on) => {
   try { await updateDoc(doc(db, 'driveraccts', id), { active: on }); } catch (e) { alert('مقدرتش: ' + (e.code || e.message)); }
   drvAccts();
@@ -2733,7 +2738,7 @@ let DEL_ON = false;
 async function openDelivery(root, role){
   if (DEL_ON) return; DEL_ON = true;
   if (!root && ROLE === 'admin') { delAcct(); drvAccts(); }
-  try { const m = await import('./sections/delivery.js?v=29'); await m.mountDelivery(root || $('delRoot'), role || ROLE); }
+  try { const m = await import('./sections/delivery.js?v=30'); await m.mountDelivery(root || $('delRoot'), role || ROLE); }
   catch (e) { DEL_ON = false; (root || $('delRoot')).innerHTML = `<div class="banner bad">مقدرتش أحمّل قسم الدليفري: ${esc(e.code || e.message)}</div>`; }
 }
 
@@ -2756,10 +2761,9 @@ async function loadDash(force){
   if (!DASH.periods.length || force){
     $('ap0').innerHTML = '<p class="sub">جاري تحميل الكشوف المنشورة…</p>';
     try {
-      const ps = await getDocs(collection(db, 'periods'));
+      const [ps, st] = await Promise.all([getDocs(collection(db, 'periods')), getDocs(collection(db, 'staff'))]);
       DASH.periods = []; ps.forEach(d => DASH.periods.push({ id: d.id, ...d.data() }));
       DASH.periods.sort((a,b) => a.id < b.id ? 1 : -1);
-      const st = await getDocs(collection(db, 'staff'));
       DASH.staff = []; st.forEach(d => DASH.staff.push({ uid: d.id, ...d.data() }));
     } catch (e) { $('ap0').innerHTML = `<p class="err">مقدرتش أقرا البيانات: ${esc(e.code || e.message)}</p>`; return; }
   }
@@ -2786,15 +2790,23 @@ async function loadPeriod(pid){
   $('ap0').innerHTML = $('ap4').innerHTML = '<p class="sub">جاري التحميل…</p>';
 
   const rows = [];
-  for (const s of DASH.staff){
-    try { const d = await getDoc(doc(db, 'payslips', pid, 'employees', s.uid));
-      if (d.exists()) { rows.push(d.data()); continue; } } catch(e){}
-    try { const h = await getDoc(doc(db, 'payslips', pid, 'private', s.uid));
-      if (h.exists()) rows.push({ ...h.data(), hidden: true }); } catch(e){}
+  // (12/11) كانت قراية لكل موظف ورا بعض (٢×عدد الموظفين رحلة للسيرفر). دلوقتي قراية واحدة للمجموعتين مع بعض، وبنرجع للطريقة القديمة لو فشلت.
+  let emp = null, prv = null;
+  try { [emp, prv] = await Promise.all([getDocs(collection(db, 'payslips', pid, 'employees')), getDocs(collection(db, 'payslips', pid, 'private'))]); } catch (e) { emp = prv = null; }
+  if (emp && prv) {
+    const E = new Map(), H = new Map(); emp.forEach(d => E.set(d.id, d.data())); prv.forEach(d => H.set(d.id, d.data()));
+    for (const s of DASH.staff) { if (E.has(s.uid)) rows.push(E.get(s.uid)); else if (H.has(s.uid)) rows.push({ ...H.get(s.uid), hidden: true }); }
+    prv.forEach(d => { if (d.id.startsWith('nouser_')) rows.push({ ...d.data(), hidden: true }); });
+  } else {
+    for (const s of DASH.staff){
+      try { const d = await getDoc(doc(db, 'payslips', pid, 'employees', s.uid));
+        if (d.exists()) { rows.push(d.data()); continue; } } catch(e){}
+      try { const h = await getDoc(doc(db, 'payslips', pid, 'private', s.uid));
+        if (h.exists()) rows.push({ ...h.data(), hidden: true }); } catch(e){}
+    }
+    try { (await getDocs(collection(db, 'payslips', pid, 'private'))).forEach(d => {
+        if (d.id.startsWith('nouser_')) rows.push({ ...d.data(), hidden: true }); }); } catch(e){}
   }
-  // موظفين من غير حساب (ساب الشغل — سطر في الإجماليات بس): كشوفهم في private بـ id يبدأ بـ nouser_
-  try { (await getDocs(collection(db, 'payslips', pid, 'private'))).forEach(d => {
-      if (d.id.startsWith('nouser_')) rows.push({ ...d.data(), hidden: true }); }); } catch(e){}
   rows.sort((a,b) => (+a.code||0) - (+b.code||0));
   DASH.rows = rows;
   $('ap0').innerHTML = payPanel(rows);
@@ -2972,7 +2984,8 @@ window.secTog = id => { const e = $(id); if (!e) return;
   e.classList.toggle('hide'); const b = e.previousElementSibling;
   if (b) b.classList.toggle('open', !e.classList.contains('hide')); };
 
-window.exportDash = () => {
+window.exportDash = async () => {
+  try { await loadXlsx(); } catch (e) { alert(e.message); return; }
   const P = DASH.periods.find(p => p.id === DASH.period) || {};
   const head = ['الكود','الاسم','الوظيفة','سعر الساعة الشهري','معدل الساعة','الساعات الفعلية','ساعات مرحّلة',
     'أجر الساعات','عدد التأخيرات','المعفاة','ربع يوم','نص يوم','خصم التأخير','أيام غياب','جزاء الغياب','جزاءات إدارية','إجمالي الخصومات','إجمالي الحوافز',
@@ -3014,7 +3027,7 @@ function readXlsx(ev, fn){
   const f = ev.target.files[0]; if (!f) return;
   $('upErr').textContent = '';
   const rd = new FileReader();
-  rd.onload = e => { try { fn(XLSX.read(new Uint8Array(e.target.result), { type:'array', cellDates:true }), f.name); }
+  rd.onload = async e => { try { await loadXlsx(); fn(XLSX.read(new Uint8Array(e.target.result), { type:'array', cellDates:true }), f.name); }
     catch (err) { $('upErr').textContent = 'مقدرتش أقرا الملف: ' + err.message; } };
   rd.readAsArrayBuffer(f);
 }
