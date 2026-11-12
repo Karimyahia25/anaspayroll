@@ -407,6 +407,7 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="buyer" class="hide"></div>
 <div id="crmdev" class="hide"></div>
 <div id="delivery" class="hide"></div>
+<div id="driverapp" class="hide"></div>
 
 <div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-11-09-A</b></div>
 </div>
@@ -822,7 +823,7 @@ function buildKPI(people, sales, items, W0){
 /* ================= قفل الجلسة بعد سكون ================= */
 const IDLE_MIN = 15;
 let idleTimer = null;
-const NO_IDLE = ['cashier', 'buyer', 'crmdev', 'delivery'];   // (27/10، طلبه) الكاشير وشاشة الطلبية مبيقفلوش لوحدهم خالص
+const NO_IDLE = ['cashier', 'buyer', 'crmdev', 'delivery', 'driver'];   // (27/10، طلبه) الكاشير وشاشة الطلبية مبيقفلوش لوحدهم خالص
 function idleReset(){
   clearTimeout(idleTimer);
   if (!ME || !ROLE || NO_IDLE.includes(ROLE)) return;
@@ -864,7 +865,7 @@ window.doOut = () => signOut(auth);
 
 onAuthStateChanged(auth, async user => {
   $('boot').classList.add('hide');
-  ['login','emp','adm','buyer','crmdev','delivery'].forEach(x => $(x).classList.add('hide'));
+  ['login','emp','adm','buyer','crmdev','delivery','driverapp'].forEach(x => $(x).classList.add('hide'));
   if (!user) {
     clearTimeout(idleTimer); $('p').value = '';
     let msg = '';
@@ -891,6 +892,10 @@ onAuthStateChanged(auth, async user => {
   if (ROLE === 'emp'){
     try { if ((await getDoc(doc(db, 'deliverydevs', user.uid))).exists()) ROLE = 'delivery'; } catch(e){}
   }
+  let DRV_ACCT = null;
+  if (ROLE === 'emp'){   // (11/11) حساب مندوب: كل مندوب له يوزر خاص (driveraccts/{uid}.driverName)
+    try { const d = await getDoc(doc(db, 'driveraccts', user.uid)); if (d.exists() && d.data().active !== false) { ROLE = 'driver'; DRV_ACCT = d.data(); } } catch(e){}
+  }
   $('emp').classList.toggle('stn', ROLE === 'cashier');
   idleReset();                                   // بعد ما الدور اتعرف — قبل كده الكاشير كان بيتقفل بعد 15 دقيقة
   DASH = { periods: [], staff: [], rows: [], period: null };
@@ -899,10 +904,19 @@ onAuthStateChanged(auth, async user => {
   else if (ROLE === 'buyer') { renderBuyer(); }
   else if (ROLE === 'crmdev') { renderCrmDev(); }
   else if (ROLE === 'delivery') { renderDeliveryDev(); }
+  else if (ROLE === 'driver') { renderDriverApp(DRV_ACCT); }
   else { $('emp').classList.remove('hide'); await renderEmp(); }
 });
 
 /* ================= جهاز متابعة العملاء المشترك (29/10): الموظف بيختار اسمه بس ================= */
+// (11/11) شاشة المندوب على موبايله: يستلم الأوردر من الكاشير ويسلّمه للعميل ويسجّل مكانه — الكاشير هو اللي بيقفل الأوردر
+async function renderDriverApp(acct){
+  const b = $('driverapp'); b.classList.remove('hide');
+  b.innerHTML = `<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div><h2 style="margin:0">🛵 توصيل الصيدلية</h2><p class="sub" style="margin:2px 0 0">صيدلية د. أنس نحيلة</p></div><button class="ghost sm" onclick="doOut()">خروج</button></div><div id="drvRoot"></div>`;
+  try { const m = await import('./sections/driver.js?v=1'); m.mountDriver($('drvRoot'), { db, driverName: acct.driverName }); }
+  catch (e) { $('drvRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل شاشة المندوب: ${esc(e.code || e.message)}</div>`; }
+}
+
 // جهاز الدليفري المشترك (1/11، طلبه): حساب بيدخل على شاشة الدليفري بس، من غير زرار خروج ومن غير قفل تلقائي
 function renderDeliveryDev(){
   const b = $('delivery'); b.classList.remove('hide');
@@ -2576,7 +2590,7 @@ function renderAdmin(){
   <div id="ap8" class="hide"><div id="stockRoot"></div></div>
   <div id="ap9" class="hide"><div id="crmAcct"></div><div id="crmRoot"></div></div>
   <div id="ap10" class="hide"><div id="orderRoot"></div></div>
-  <div id="ap12" class="hide"><div id="delAcct"></div><div id="delRoot"></div></div>
+  <div id="ap12" class="hide"><div id="drvAccts"></div><div id="delAcct"></div><div id="delRoot"></div></div>
   ${isAdm ? `
   <div id="ap1" class="card hide">${adminUploadUI()}</div>
   <div id="ap2" class="card hide"><h2>الموظفين وحساباتهم</h2><div id="staffBox"><p class="sub">جاري التحميل…</p></div></div>
@@ -2637,6 +2651,48 @@ async function openCustomers(){
   catch (e) { CRM_ON = false; $('crmRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل قسم العملاء: ${esc(e.code || e.message)}</div>`; }
 }
 
+// ===== حسابات المناديب (11/11): يوزر لكل مندوب (drv1، drv2…) مربوط باسمه في قايمة المناديب =====
+let DRV_APP = null;
+async function drvAccts(){
+  const b = $('drvAccts'); if (!b) return;
+  let accts = [], names = [];
+  try {
+    accts = (await getDocs(collection(db, 'driveraccts'))).docs.map(d => ({ id: d.id, ...d.data() })).sort((x, y) => String(x.username).localeCompare(String(y.username)));
+    names = (await getDocs(collection(db, 'deliv_drivers'))).docs.map(d => d.data().name).filter(Boolean).sort((x, y) => x.localeCompare(y, 'ar'));
+  } catch (e) { b.innerHTML = `<p class="err">حسابات المناديب: ${esc(e.code || e.message)}${e.code === 'permission-denied' ? ' — حط قواعد Firebase الجديدة الأول' : ''}</p>`; return; }
+  const free = names.filter(n => !accts.some(a => a.driverName === n && a.active !== false));
+  b.innerHTML = `<div class="card" style="margin-bottom:12px"><b>🛵 حسابات المناديب (${accts.filter(a => a.active !== false).length})</b>
+    <p class="sub">كل مندوب يدخل من موبايله بيوزر خاص، يشوف أوردراته بس، ويسجّل «سلّمت للعميل» بمكانه. الكاشير بيقفل الأوردر بعد ما يستلم الفلوس.</p>
+    ${accts.map(a => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:1px solid #e2e8f0"><span><b>${esc(a.driverName)}</b> <small dir="ltr" style="color:#64748b">${esc(a.username)}</small>${a.active === false ? ' <span class="pill red">موقوف</span>' : ''}</span><button class="ghost sm" onclick="drvAcctToggle('${a.id}',${a.active === false})">${a.active === false ? '▶ تفعيل' : '⏸ إيقاف'}</button></div>`).join('') || '<p class="sub">لسه مفيش حسابات.</p>'}
+    <details style="margin-top:10px"><summary><b>➕ إضافة حساب مندوب</b></summary>
+      <label for="daName">المندوب (من قايمة المناديب)</label><select id="daName">${free.length ? free.map(n => `<option>${esc(n)}</option>`).join('') : '<option value="">كل المناديب ليهم حسابات (أو ضيف مندوب من شاشة التوصيل)</option>'}</select>
+      <label for="daUser">اسم الدخول (إنجليزي صغير وأرقام)</label><input id="daUser" dir="ltr" autocapitalize="none" autocomplete="off" placeholder="drv1" value="drv${accts.length + 1}">
+      <label for="daPw">الرقم السري (٦ على الأقل)</label><input id="daPw" type="text" autocomplete="off">
+      <button class="sm" style="margin-top:10px" onclick="drvAcctMake()">إنشاء الحساب</button><div class="err" id="daMsg"></div></details></div>`;
+}
+window.drvAcctToggle = async (id, on) => {
+  try { await updateDoc(doc(db, 'driveraccts', id), { active: on }); } catch (e) { alert('مقدرتش: ' + (e.code || e.message)); }
+  drvAccts();
+};
+window.drvAcctMake = async () => {
+  const m = $('daMsg'), name = $('daName').value, user = $('daUser').value.trim().toLowerCase(), pw = $('daPw').value; m.style.color = 'var(--red)'; m.textContent = '';
+  if (!name) { m.textContent = 'اختار المندوب'; return; }
+  if (!/^[a-z0-9._-]{3,30}$/.test(user)) { m.textContent = 'اسم الدخول: حروف إنجليزي صغيرة وأرقام، من 3 لـ 30'; return; }
+  if (!pw || pw.length < 6) { m.textContent = 'الرقم السري ٦ حروف أو أرقام على الأقل'; return; }
+  try {
+    if (!DRV_APP) DRV_APP = initializeApp(CFG, 'drvAcct');
+    const a2 = getAuth(DRV_APP);
+    const cr = await createUserWithEmailAndPassword(a2, `${user}@${DOMAIN}`, pw);
+    const uid = cr.user.uid; await signOut(a2);
+    await setDoc(doc(db, 'driveraccts', uid), { username: user, driverName: name, active: true, at: serverTimestamp() });
+    drvAccts();
+  } catch (e) {
+    m.textContent = e.code === 'auth/email-already-in-use' ? `الاسم ${user} متعمل قبل كده. اختار اسم تاني.`
+      : e.code === 'auth/admin-restricted-operation' ? 'التسجيل مقفول من Firebase (Prevent new sign-ups). افتحه مؤقتاً: Firebase Console ← Authentication ← Settings ← User actions ← علّم Enable create (sign-up) ← Save، اعمل الحسابات، وارجع اقفله.'
+      : 'مشكلة: ' + (e.code || e.message);
+  }
+};
+
 // حساب جهاز الدليفري (deliverydevs) — بيتعمل من هنا (أدمن)، زي حساب الكاشير وحساب متابعة العملاء
 async function delAcct(){
   const b = $('delAcct'); if (!b) return;
@@ -2673,8 +2729,8 @@ window.delAcctMake = async () => {
 let DEL_ON = false;
 async function openDelivery(root, role){
   if (DEL_ON) return; DEL_ON = true;
-  if (!root && ROLE === 'admin') delAcct();
-  try { const m = await import('./sections/delivery.js?v=28'); await m.mountDelivery(root || $('delRoot'), role || ROLE); }
+  if (!root && ROLE === 'admin') { delAcct(); drvAccts(); }
+  try { const m = await import('./sections/delivery.js?v=29'); await m.mountDelivery(root || $('delRoot'), role || ROLE); }
   catch (e) { DEL_ON = false; (root || $('delRoot')).innerHTML = `<div class="banner bad">مقدرتش أحمّل قسم الدليفري: ${esc(e.code || e.message)}</div>`; }
 }
 

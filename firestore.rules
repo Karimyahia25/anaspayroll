@@ -273,6 +273,15 @@ service cloud.firestore {
       return request.auth != null &&
         exists(/databases/$(database)/documents/deliverydevs/$(request.auth.uid));
     }
+    // (11/11) حساب مندوب (يوزر لكل مندوب) — مربوط باسمه في قايمة المناديب
+    function isDrvAcct() {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/driveraccts/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/driveraccts/$(request.auth.uid)).data.get('active', true) != false;
+    }
+    function myDrvName() {
+      return get(/databases/$(database)/documents/driveraccts/$(request.auth.uid)).data.driverName;
+    }
     match /deliverydevs/{uid} {
       allow read:  if request.auth != null;
       allow write: if isAdmin();
@@ -282,7 +291,8 @@ service cloud.firestore {
     // endSource: app = ضغطة «تسليم» (وقتها لازم يكون وقت السيرفر تقريباً) · pos = «إتمام التوصيل» في فارما فلاي (= posEndTime بالظبط).
     // بعد تعيين المندوب: المنطقة والقيمة مقفولين على الجهاز (الأدمن بس يغيّرهم). الحذف من الجهاز: لأوردر من غير مندوب، أو أوردر يدوي في أول 10 دقايق.
     match /deliv_orders/{id} {
-      allow read:   if isAdmin() || isViewer() || isCashier() || isDelDev() || isFeeder();
+      allow read:   if isAdmin() || isViewer() || isCashier() || isDelDev() || isFeeder()
+                    || (isDrvAcct() && resource.data.driverName == myDrvName());
       allow create: if ((isAdmin() || isCashier() || isDelDev())
                     && request.resource.data.status == 'PENDING'
                     && request.resource.data.endTime == null
@@ -305,6 +315,18 @@ service cloud.firestore {
                     && request.resource.data.orderValue is number
                     && request.resource.data.startTime is number);
       allow update: if isAdmin()
+                    // (11/11) المندوب بيسجّل التسليم للعميل (مرة واحدة) من موبايله: وقت + مكان فقط، والكاشير هو اللي بيقفل
+                    || (isDrvAcct() && resource.data.status == 'PENDING' && resource.data.driverName == myDrvName()
+                        && !('deliveredAt' in resource.data)
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deliveredAt','deliveredLoc','locStatus'])
+                        && request.resource.data.deliveredAt is number
+                        && request.resource.data.deliveredAt > request.time.toMillis() - 300000
+                        && request.resource.data.deliveredAt < request.time.toMillis() + 60000
+                        && request.resource.data.locStatus is string
+                        && (!('deliveredLoc' in request.resource.data)
+                            || (request.resource.data.deliveredLoc.lat is number && request.resource.data.deliveredLoc.lng is number
+                                && request.resource.data.deliveredLoc.lat >= -90 && request.resource.data.deliveredLoc.lat <= 90
+                                && request.resource.data.deliveredLoc.lng >= -180 && request.resource.data.deliveredLoc.lng <= 180)))
                     || (isFeeder() && resource.data.get('source', '') == 'pos' && resource.data.status == 'PENDING'
                         && request.resource.data.diff(resource.data).affectedKeys()
                              .hasOnly(['customerName','district','orderValue','posEndTime','endTime','status','comm','endSource'])
@@ -352,23 +374,16 @@ service cloud.firestore {
       allow delete: if isAdmin();                         // (3/11، طلبه) شيل المندوب من القايمة للأدمن بس (أوردراته القديمة بتفضل)
     }
 
-    // ===== تتبع موقع المندوب (11/11، GPS) =====
-    // موبايل المندوب (دخول حساب delivery) بيكتب موقعه في deliv_loc/{اسم المندوب}: خطوط الطول والعرض فقط + وقت السيرفر. المسح للأدمن.
-    // deliv_cfg/track {enabled:false} = زرار الأدمن اللي بيوقف الخاصية كلها.
-    match /deliv_loc/{id} {
-      allow read:   if isAdmin() || isViewer() || isCashier() || isDelDev();
-      allow create, update: if (isAdmin() || isDelDev())
-                    && request.resource.data.keys().hasOnly(['name', 'on', 'lat', 'lng', 'acc', 'spd', 'at'])
-                    && request.resource.data.name is string && request.resource.data.on is bool
-                    && request.resource.data.at == request.time
-                    && (request.resource.data.on == false
-                        || (request.resource.data.lat is number && request.resource.data.lng is number
-                            && request.resource.data.lat >= -90 && request.resource.data.lat <= 90
-                            && request.resource.data.lng >= -180 && request.resource.data.lng <= 180));
-      allow delete: if isAdmin();
+    // ===== حسابات المناديب (11/11) =====
+    // driveraccts/{uid} = {username, driverName, active}: المندوب بيقرا مستنده هو بس (علشان الدخول)، والأدمن بس بيكتب.
+    // المندوب: يقرا أوردراته الشغّالة بس (driverName بتاعه)، وكل اللي يقدر يكتبه على الأوردر: deliveredAt + deliveredLoc + locStatus (مرة واحدة) — مبيقفلش الأوردر ومبيمسحش.
+    // deliv_cfg/track {enabled:false} = زرار الأدمن اللي بيوقف تسجيل موقع التسليم.
+    match /driveraccts/{uid} {
+      allow read:  if isAdmin() || (request.auth != null && request.auth.uid == uid);
+      allow write: if isAdmin();
     }
     match /deliv_cfg/{id} {
-      allow read:  if isAdmin() || isViewer() || isCashier() || isDelDev();
+      allow read:  if isAdmin() || isViewer() || isCashier() || isDelDev() || isDrvAcct();
       allow write: if isAdmin();
     }
 
