@@ -494,6 +494,7 @@ function render() {
   ROOT.innerHTML = `<div class="dbar">${tabs.map(t => `<button class="${ST.view === t[0] ? 'on' : ''}" data-v="${t[0]}">${t[1]}${t[2] != null ? `<span class="n">${t[2]}</span>` : ''}</button>`).join('')}
 </div>
     ${body}${ST.ask ? askHtml() : ''}`;
+  ROOT.querySelectorAll('[data-tdrv]').forEach(e => e.onchange = () => { ST.todayDrv = e.value; render(); });
   ROOT.querySelectorAll('[data-v]').forEach(b => b.onclick = () => { ST.view = b.dataset.v; EDIT = null; render(); });
   ROOT.querySelectorAll('[data-hid]').forEach(b => b.onclick = () => { const d = b.dataset.hid; HID.has(d) ? HID.delete(d) : HID.add(d); try { localStorage.setItem('delHid', JSON.stringify([...HID])); } catch (e) { } render(); });
   ROOT.querySelectorAll('[data-mutend]').forEach(b => b.onclick = () => { NEED_MUTE = !NEED_MUTE; try { localStorage.setItem('delNeedMute', NEED_MUTE ? '1' : '0'); } catch (e) { } if (!NEED_MUTE) NEED_LAST = 0; render(); });
@@ -594,11 +595,14 @@ const mapUrl = o => o.deliveredLoc ? `https://www.google.com/maps?q=${o.delivere
 const locCell = o => o.deliveredLoc ? `<a class="mapl" href="${mapUrl(o)}" target="_blank" rel="noopener" title="دقة ±${o.deliveredLoc.acc || '?'} م">📍 الموقع</a>` : o.deliveredAt ? '<span class="sub">من غير موقع</span>' : '—';
 /* (12/11، طلبه) «اتسلّمت النهارده»: الأوردرات اللي اتقفلت من 9 الصبح مع وقت تسليم المندوب للعميل وموقعه — بتظهر للكاشير والأدمن (من غير قراية زيادة، بنفس اشتراك «اللي اتسلّم النهارده») */
 function todayHtml() {
-  const list = [...DONE.values()].filter(o => o.driverName && o.endTime).sort((a, b) => (b.deliveredAt || b.endTime) - (a.deliveredAt || a.endTime));
+  const all = [...DONE.values()].filter(o => o.driverName && o.endTime), names = [...new Set(all.map(o => o.driverName))].sort((a, b) => nm(a).localeCompare(nm(b), 'ar'));
+  if (ST.todayDrv && !names.includes(ST.todayDrv)) ST.todayDrv = '';
+  const list = all.filter(o => !ST.todayDrv || o.driverName === ST.todayDrv).sort((a, b) => (b.deliveredAt || b.endTime) - (a.deliveredAt || a.endTime));
   const withLoc = list.filter(o => o.deliveredLoc).length;
-  return `<div class="tw"><table><tr><th>سُلّم للعميل</th><th>اتقفل</th><th>من الفاتورة للتسليم</th><th class="l">الطيار</th><th class="l">العميل</th><th>القيمة</th><th>الدفع</th><th>الموقع</th></tr>
+  return `<div class="ctl"><select data-tdrv aria-label="الطيار"><option value="">كل الطيارين (${N(all.length)})</option>${names.map(d => `<option value="${esc(d)}" ${ST.todayDrv === d ? 'selected' : ''}>${esc(nm(d))} (${N(all.filter(o => o.driverName === d).length)})</option>`).join('')}</select></div>
+  <div class="tw"><table><tr><th>سُلّم للعميل</th><th>اتقفل</th><th>من الفاتورة للتسليم</th><th class="l">الطيار</th><th class="l">العميل</th><th>القيمة</th><th>الدفع</th><th>الموقع</th></tr>
   ${list.map(o => `<tr><td>${o.deliveredAt ? '<b>' + timeStr(o.deliveredAt) + '</b>' : '—'}</td><td>${timeStr(o.endTime)}</td><td>${o.deliveredAt ? durMin(o.deliveredAt - o.startTime) : '—'}</td><td class="l">${esc(nm(o.driverName))}</td><td class="l">${esc(o.customerName || '—')}</td><td>${M(o.orderValue)}</td><td>${o.isVisa ? 'فيزا' : o.isVodafoneCash ? 'فودافون' : 'كاش'}</td><td>${locCell(o)}</td></tr>`).join('') || '<tr><td colspan="8" class="empty">مفيش أوردرات اتقفلت من 9 الصبح</td></tr>'}</table></div>
-  <p class="sub">${N(list.length)} أوردر اتقفل النهارده (من 9 الصبح) · ${N(withLoc)} منهم بموقع تسليم. «سُلّم للعميل» = لحظة ضغط المندوب من موبايله، و«اتقفل» = لحظة قفل الكاشير بعد الفلوس. الأوردر اللي اتقفل من الكاشير مباشرة (من غير المندوب) مفيهوش وقت ولا موقع.</p>`;
+  <p class="sub">${N(list.length)} أوردر اتقفل النهارده (من 9 الصبح)${ST.todayDrv ? ' للطيار ' + esc(nm(ST.todayDrv)) : ''} · ${N(withLoc)} منهم بموقع تسليم. «سُلّم للعميل» = لحظة ضغط المندوب من موبايله، و«اتقفل» = لحظة قفل الكاشير بعد الفلوس. الأوردر اللي اتقفل من الكاشير مباشرة (من غير المندوب) مفيهوش وقت ولا موقع.</p>`;
 }
 const rideTxt = ms => `🛵 خرج من ${Math.max(0, Math.floor(ms / MIN))} د`;   // (12/11، طلبه) بيفضل ظاهر حتى بعد ما المندوب يسلّم للعميل
 const wtTxt = ms => `⏳ مستني الفلوس من ${Math.max(0, Math.floor(ms / MIN))} د`;
