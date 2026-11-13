@@ -72,10 +72,35 @@ export function mountDriver(root, { db, driverName, uid }) {
 
   /* ===== (13/11، طلبه) تنبيه الأوردر الجديد: سارينة عالية + اهتزاز + شاشة حمرا لحد ما يدوس «تمام» + إشعار نظام لو الصفحة في الخلفية ===== */
   let AC = null, ALERT_T = null, ALERT_EL = null, WL = null;
-  const audioOk = () => !!AC && AC.state === 'running';
-  function unlockAudio() { try { AC = AC || new (window.AudioContext || window.webkitAudioContext)(); if (AC.state !== 'running') AC.resume().then(draw); } catch (e) { } }
+  /* (13/11) الصوت: عنصر <audio> بسارينة متولّدة (WAV) — بيشتغل حتى لو زرار الصامت في الآيفون شغال (Web Audio بيتكتم معاه) — وWeb Audio احتياطي */
+  const makeSirenUrl = () => {
+    const sr = 22050, secs = 3, pulse = 0.25, N = sr * secs, buf = new ArrayBuffer(44 + N * 2), v = new DataView(buf);
+    const w = (o, t) => { for (let i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); };
+    w(0, 'RIFF'); v.setUint32(4, 36 + N * 2, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, N * 2, true);
+    for (let i = 0; i < N; i++) {
+      const t = i / sr, k = Math.floor(t / pulse), f = k % 2 ? 1050 : 1500, ph = (t * f) % 1, inP = (t % pulse) / pulse;
+      const env = inP < 0.04 ? inP / 0.04 : inP > 0.9 ? Math.max(0, (1 - inP) / 0.1) : 1;
+      v.setInt16(44 + i * 2, (ph < 0.5 ? 1 : -1) * 30000 * env, true);
+    }
+    return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+  };
+  let SIREN_AUD = null, AUD_OK = false;
+  try { SIREN_AUD = new Audio(makeSirenUrl()); SIREN_AUD.preload = 'auto'; SIREN_AUD.volume = 1; } catch (e) { }
+  const audioOk = () => AUD_OK || (!!AC && AC.state === 'running');
+  function unlockAudio() {
+    try { AC = AC || new (window.AudioContext || window.webkitAudioContext)(); if (AC.state !== 'running') AC.resume().then(draw); } catch (e) { }
+    try {
+      if (SIREN_AUD && !AUD_OK) { SIREN_AUD.muted = true; SIREN_AUD.play().then(() => { SIREN_AUD.pause(); SIREN_AUD.currentTime = 0; SIREN_AUD.muted = false; AUD_OK = true; draw(); }).catch(() => { SIREN_AUD.muted = false; }); }
+    } catch (e) { }
+  }
   document.addEventListener('pointerdown', unlockAudio, true);   // أي لمسة بتفتح الصوت (شرط المتصفح)
   function siren(secs = 3) {
+    try { navigator.vibrate && navigator.vibrate([400, 150, 400, 150, 400, 150, 400]); } catch (e) { }
+    if (SIREN_AUD) { try { SIREN_AUD.muted = false; SIREN_AUD.currentTime = 0; const pr = SIREN_AUD.play(); if (pr && pr.then) { pr.then(() => { AUD_OK = true; }).catch(() => webSiren(secs)); } return; } catch (e) { } }
+    webSiren(secs);
+  }
+  function webSiren(secs) {
     try {
       unlockAudio(); if (!AC) return;
       const t0 = AC.currentTime, pulse = 0.25, n = Math.floor(secs / pulse);
@@ -89,7 +114,6 @@ export function mountDriver(root, { db, driverName, uid }) {
         o.start(t); o.stop(t + pulse);
       }
     } catch (e) { }
-    try { navigator.vibrate && navigator.vibrate([400, 150, 400, 150, 400, 150, 400]); } catch (e) { }
   }
   function dismissAlert() { clearInterval(ALERT_T); ALERT_T = null; if (ALERT_EL) { ALERT_EL.remove(); ALERT_EL = null; } }
   async function sysNotify(list) {
@@ -146,7 +170,7 @@ export function mountDriver(root, { db, driverName, uid }) {
   }
   function ctlBar() {
     const notif = ('Notification' in window) && Notification.permission === 'default';
-    const sound = !audioOk() ? `<button type="button" class="dlb" data-sound>🔔 اضغط لتفعيل صوت تنبيه الأوردر</button>` : '<div class="dsub">🔔 صوت التنبيه شغال</div>';
+    const sound = !audioOk() ? `<button type="button" class="dlb" data-sound>🔔 اضغط لتفعيل صوت تنبيه الأوردر</button>` : '<div class="dsub">🔔 صوت التنبيه شغال <button type="button" class="dlb" data-sound style="min-height:36px;font-size:12px;padding:0 10px">جرّب الصوت</button></div>';
     const trk = !LIVEOK ? '<div class="dsub">⛔ التتبع المباشر متوقف من الإدارة</div>'
       : `<div class="dtrk"><button type="button" class="dgo ${TON ? 'stop' : ''}" style="min-height:48px;font-size:17px" data-trk>${TON ? '⏹ إيقاف التتبع' : '▶ تشغيل التتبع'}</button>
          <div class="dsub">${TON ? (LAST ? `🟢 شغال — دقة ±${Math.round(LAST.acc)} م · اتبعت ${SENT} مرة` : '🟡 بدوّر على الموقع…') : '⚪ التتبع مقفول'}${TON ? '<br>سيب الشاشة مفتوحة على التطبيق — لو اتقفلت الإشارة بتقف' : ''}</div></div>`;
@@ -215,7 +239,7 @@ export function mountDriver(root, { db, driverName, uid }) {
       ${!READY ? '<div class="dempty">⏳ جاري التحميل…</div>' : list.length ? list.map(o => card(o, now)).join('') : '<div class="dempty">مفيش أوردرات عليك دلوقتي ✔</div>'}`;
     root.querySelectorAll('[data-fin]').forEach(b => b.onclick = () => deliver(b.dataset.fin));
     root.querySelectorAll('[data-loctest]').forEach(b => b.onclick = testLocation);
-    root.querySelectorAll('[data-sound]').forEach(b => b.onclick = () => { unlockAudio(); siren(1); });
+    root.querySelectorAll('[data-sound]').forEach(b => b.onclick = () => { unlockAudio(); siren(3); });
     root.querySelectorAll('[data-notif]').forEach(b => b.onclick = async () => { try { await Notification.requestPermission(); } catch (e) { } draw(); });
     root.querySelectorAll('[data-trk]').forEach(b => b.onclick = () => (TON ? stopTrack() : startTrack()));
   }
