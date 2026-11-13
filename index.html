@@ -2669,7 +2669,7 @@ async function drvAccts(){
   b.innerHTML = `<div class="card" style="margin-bottom:12px"><b>🛵 حسابات المناديب (${accts.filter(a => a.active !== false).length})</b>
     <p class="sub">كل مندوب يدخل من موبايله بيوزر خاص، يشوف أوردراته بس، ويسجّل «سلّمت للعميل» بمكانه. الكاشير بيقفل الأوردر بعد ما يستلم الفلوس.</p>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#f0fdfa;border:1px solid #99f6e4;border-radius:12px;padding:8px 10px;margin-bottom:8px"><span style="font-size:13px">📲 لينك تطبيق المندوب (يفتحه ويدوس «إضافة للشاشة الرئيسية»):</span><button class="ghost sm" onclick="drvLinkCopy()">🔗 انسخ اللينك</button></div>
-    ${accts.map(a => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:1px solid #e2e8f0"><span><b>${esc(a.driverName)}</b> <small dir="ltr" style="color:#64748b">${esc(a.username)}</small>${a.active === false ? ' <span class="pill red">موقوف</span>' : ''}</span><button class="ghost sm" onclick="drvAcctToggle('${a.id}',${a.active === false})">${a.active === false ? '▶ تفعيل' : '⏸ إيقاف'}</button></div>`).join('') || '<p class="sub">لسه مفيش حسابات.</p>'}
+    ${accts.map(a => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:1px solid #e2e8f0"><span><b>${esc(a.driverName)}</b> <small dir="ltr" style="color:#64748b">${esc(a.username)}</small>${a.active === false ? ' <span class="pill red">موقوف</span>' : ''}</span><span style="display:flex;gap:6px"><button class="ghost sm" onclick="drvAcctToggle('${a.id}',${a.active === false})">${a.active === false ? '▶ تفعيل' : '⏸ إيقاف'}</button><button class="ghost sm" style="color:#b91c1c" onclick="drvAcctDel('${a.id}','${esc(a.driverName).replace(/'/g, '')}')">🗑 حذف</button></span></div>`).join('') || '<p class="sub">لسه مفيش حسابات.</p>'}
     <details style="margin-top:10px"><summary><b>➕ إضافة حساب مندوب</b></summary>
       <label for="daName">المندوب (من قايمة المناديب)</label><select id="daName">${free.length ? free.map(n => `<option>${esc(n)}</option>`).join('') : '<option value="">كل المناديب ليهم حسابات (أو ضيف مندوب من شاشة التوصيل)</option>'}</select>
       <label for="daUser">اسم الدخول (إنجليزي صغير وأرقام)</label><input id="daUser" dir="ltr" autocapitalize="none" autocomplete="off" placeholder="drv1" value="drv${accts.length + 1}">
@@ -2677,6 +2677,13 @@ async function drvAccts(){
       <button class="sm" style="margin-top:10px" onclick="drvAcctMake()">إنشاء الحساب</button><div class="err" id="daMsg"></div></details></div>`;
 }
 window.drvLinkCopy = () => { const u = new URL('driver.html', location.href).href; (navigator.clipboard ? navigator.clipboard.writeText(u) : Promise.reject()).then(() => alert('اللينك اتنسخ: ' + u), () => prompt('انسخ اللينك:', u)); };
+window.drvAcctDel = async (id, name) => {
+  if (!confirm(`تحذف حساب المندوب «${name}» نهائي؟\nهيتقفل دخوله فوراً، وأوردراته القديمة بتفضل في السجل. (لو عايز بس توقفه مؤقتاً استخدم «إيقاف»)`)) return;
+  try { await deleteDoc(doc(db, 'driveraccts', id)); try { await deleteDoc(doc(db, 'deliv_loc', id)); } catch (e) { }
+    alert('اتحذف من الموقع.\nملحوظة: اسم الدخول لسه محجوز في Firebase. لو عايز تعمل حساب بنفس الاسم تاني، امسحه من Firebase Console ← Authentication.'); }
+  catch (e) { alert('مقدرتش أحذف: ' + (e.code || e.message)); }
+  drvAccts();
+};
 window.drvAcctToggle = async (id, on) => {
   try { await updateDoc(doc(db, 'driveraccts', id), { active: on }); } catch (e) { alert('مقدرتش: ' + (e.code || e.message)); }
   drvAccts();
