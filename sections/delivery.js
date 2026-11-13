@@ -100,6 +100,7 @@ function css() {
 @media(max-width:480px){:is(#adm,#delivery,#emp) .delwrap .ocgrid{grid-template-columns:1fr}}
 :is(#adm,#delivery,#emp) .delwrap h3.sec.need{color:#b45309;background:#fffbeb;border:1px solid #fcd34d;border-radius:12px;padding:8px 12px}
 .delwrap .oc.dlv{background:#f0fdf4;border:2px solid #4ade80}.delwrap .dlvb{color:#166534;font-weight:800}.delwrap .mapl{font-size:12px;font-weight:700;color:#0f766e;text-decoration:none;background:#ccfbf1;border-radius:8px;padding:3px 8px}
+.delwrap .loc{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;justify-content:space-between;font-size:13px;font-weight:700;padding:6px 12px;margin:-4px 0 8px;border-radius:10px;background:#f8fafc;color:#475569}.delwrap .loc a{color:#0f766e;text-decoration:none;min-height:32px;display:inline-flex;align-items:center}.delwrap .loc.live{background:#dcfce7;color:#166534}.delwrap .loc.old{background:#fef3c7;color:#92400e}.delwrap .loc.lost{background:#fee2e2;color:#991b1b}.delwrap .loc.off{font-weight:500}
 .dgrp{margin-bottom:14px}.dgh{display:flex;align-items:center;gap:8px;width:100%;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:12px;padding:8px 12px;min-height:44px;margin-bottom:8px;box-shadow:none;color:#1e293b;font-size:15px}.dgh .dgt{margin-inline-start:auto;font-size:12px;color:#475569}
 .mback{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:70;display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:18px 12px}
 .mdl{position:relative;width:min(560px,100%);margin:auto}
@@ -406,7 +407,7 @@ function checkNew() {
   if (SEEN) { let n = 0; ids.forEach(id => { if (!SEEN.has(id)) { const o = OPEN.get(id); if (o && !o.driverName && o.source === 'pos') n++; } }); if (n) siren(); }
   SEEN = ids;
 }
-let TRK = { enabled: true }, DLV = null;   // (11/11) TRK = زرار الأدمن (deliv_cfg/track) اللي بيوقف تسجيل موقع التسليم · DLV = أوردرات اتسلّمت للعميل (علشان التنبيه)
+let TRK = { enabled: true }, LIVE = { enabled: true }, LOC = new Map(), DLV = null;   // LIVE = زرار الأدمن للتتبع المباشر (deliv_cfg/live) · LOC = مواقع المناديب المباشرة (deliv_loc)
 
 /* ---------- اقتراح المنطقة من عنوان العميل (تجربة 2/11 — الكاشير يغيّره عادي، ودقته بتظهر في الإحصائيات) ---------- */
 const nrm = t => String(t || '').toLowerCase().replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').replace(/[\u064B-\u0652]/g, '');
@@ -499,6 +500,7 @@ function render() {
   ROOT.querySelectorAll('[data-hid]').forEach(b => b.onclick = () => { const d = b.dataset.hid; HID.has(d) ? HID.delete(d) : HID.add(d); try { localStorage.setItem('delHid', JSON.stringify([...HID])); } catch (e) { } render(); });
   ROOT.querySelectorAll('[data-mutend]').forEach(b => b.onclick = () => { NEED_MUTE = !NEED_MUTE; try { localStorage.setItem('delNeedMute', NEED_MUTE ? '1' : '0'); } catch (e) { } if (!NEED_MUTE) NEED_LAST = 0; render(); });
   ROOT.querySelectorAll('[data-mute]').forEach(b => b.onclick = () => { if (!ST.mute && !audioOn()) { armAudio(); beep(880, 2); setTimeout(render, 300); return; } ST.mute = !ST.mute; render(); });
+  ROOT.querySelectorAll('[data-live]').forEach(b => b.onclick = async () => { try { await setDoc(doc(DB, 'deliv_cfg', 'live'), { enabled: !LIVE.enabled }); toast(LIVE.enabled ? 'اتوقف التتبع المباشر' : 'اتشغّل التتبع المباشر'); } catch (e) { toast('مقدرتش: ' + (e.code || e.message)); } });
   ROOT.querySelectorAll('[data-trk]').forEach(b => b.onclick = async () => { try { await setDoc(doc(DB, 'deliv_cfg', 'track'), { enabled: !TRK.enabled }); toast(TRK.enabled ? 'اتوقف تسجيل موقع التسليم' : 'اتشغّل تسجيل موقع التسليم'); } catch (e) { toast('مقدرتش: ' + (e.code || e.message)); } });
   bind();
 }
@@ -580,7 +582,7 @@ function liveHtml(act) {
   act.forEach((o, n) => (o.driverName ? outCards : needCards).push(cardArr[n]));
   return `<div class="topbar">${canWrite() ? `<button type="button" class="newbar" data-new><span>➕ تسجيل أوردر جديد</span><small>للأوردر اللي ملوش فاتورة</small></button>` : ''}<button type="button" class="newbar comm" data-comm><span>💰 عمولة الدليفري</span><small>اضغط لعرض عمولة كل مندوب</small></button></div>
     <div class="lhead"><div><h2 style="display:inline">الأوردرات النشطة حالياً</h2><span class="pill">${act.length - needN} جاري توصيلها</span>${needN ? `<span class="pill am" data-goneed style="cursor:pointer">🧾 ${needN} محتاج مندوب ↓</span>` : ''}${lateN ? `<span class="pill red">⚠ ${lateN} عدّى 30 دقيقة من الفاتورة</span>` : ''}</div>
-      <span>${ROLE === 'cashier' ? `<button class="sndb ${NEED_MUTE ? 'off' : ''}" data-mutend>${needMuteLbl()}</button> ` : ''}<button class="sndb ${ST.mute ? 'off' : ''}" data-mute>${muteLbl()}</button>${isAdm() ? ` <button class="sndb ${TRK.enabled ? '' : 'off'}" data-trk title="لما يتوقف: المندوب بيسلّم من غير ما يتسجل مكانه">${TRK.enabled ? '📍 موقع التسليم شغال — إيقاف' : '📍 موقع التسليم متوقف — تشغيل'}</button>` : ''}</span></div>
+      <span>${ROLE === 'cashier' ? `<button class="sndb ${NEED_MUTE ? 'off' : ''}" data-mutend>${needMuteLbl()}</button> ` : ''}<button class="sndb ${ST.mute ? 'off' : ''}" data-mute>${muteLbl()}</button>${isAdm() ? ` <button class="sndb ${TRK.enabled ? '' : 'off'}" data-trk title="لما يتوقف: المندوب بيسلّم من غير ما يتسجل مكانه">${TRK.enabled ? '📍 موقع التسليم شغال — إيقاف' : '📍 موقع التسليم متوقف — تشغيل'}</button> <button class="sndb ${LIVE.enabled ? '' : 'off'}" data-live title="تشغيل/إيقاف التتبع المباشر لكل المناديب">${LIVE.enabled ? '🛰 التتبع المباشر شغال — إيقاف' : '🛰 التتبع المباشر متوقف — تشغيل'}</button>` : ''}</span></div>
     <div class="split">
       <div class="pane need" id="needSec"><h3><span>🧾 مستنية تأكيد المندوب (${needN})</span></h3>
         ${needN ? `<div class="stack">${needCards.join('')}</div>` : '<div class="empty">مفيش أوردرات مستنية</div>'}</div>
@@ -607,6 +609,18 @@ function todayHtml() {
 const rideTxt = ms => `🛵 خرج من ${Math.max(0, Math.floor(ms / MIN))} د`;   // (12/11، طلبه) بيفضل ظاهر حتى بعد ما المندوب يسلّم للعميل
 const wtTxt = ms => `⏳ مستني الفلوس من ${Math.max(0, Math.floor(ms / MIN))} د`;
 
+/* (13/11، طلبه) التتبع المباشر: موبايل المندوب بيبعت موقعه (تطبيق المندوب ← زرار «تشغيل التتبع») · هنا بنعرض الحالة + لينك الخريطة تحت اسم كل مندوب */
+const atMs = x => x && x.toMillis ? x.toMillis() : (+x || 0);
+function locRow(d) {
+  if (!LIVE.enabled) return '<div class="loc off">⛔ التتبع المباشر متوقف من الإدارة</div>';
+  const l = LOC.get(nm(d).toLowerCase());
+  if (!l || !l.on || l.lat == null) return '<div class="loc off">⚪ التتبع مش شغال عنده (المندوب يشغّله من التطبيق)</div>';
+  const age = Math.max(0, Date.now() - atMs(l.at)), sec = Math.round(age / 1000), mn = Math.round(age / MIN);
+  const cls = age <= 150e3 ? 'live' : age <= 10 * MIN ? 'old' : 'lost';
+  const txt = cls === 'live' ? `🟢 مباشر · آخر تحديث من ${sec} ث` : cls === 'old' ? `🟡 آخر موقع من ${mn} د` : `🔴 فقدنا الإشارة من ${mn >= 60 ? Math.floor(mn / 60) + ' س ' + (mn % 60) + ' د' : mn + ' د'} (الموبايل اتقفل أو النت واقع)`;
+  return `<div class="loc ${cls}"><span>${txt}</span><a href="https://www.google.com/maps?q=${l.lat},${l.lng}" target="_blank" rel="noopener">🗺 مكانه دلوقتي</a></div>`;
+}
+
 /* (7/11، طلبه) الجاري توصيلها متقسمة بكل مندوب + زرار إخفاء/إظهار لكل مندوب (بيتحفظ على الجهاز) */
 const HID = (() => { try { return new Set(JSON.parse(localStorage.getItem('delHid') || '[]')); } catch (e) { return new Set(); } })();
 function outGroups(act, cardArr) {
@@ -614,7 +628,7 @@ function outGroups(act, cardArr) {
   act.forEach((o, n) => { if (o.driverName) { if (!g.has(o.driverName)) g.set(o.driverName, []); g.get(o.driverName).push(cardArr[n]); } });
   return [...g.entries()].sort((x, y) => String(x[0]).localeCompare(String(y[0]), 'ar')).map(([d, cs]) => {
     const h = HID.has(d);
-    return `<div class="dgrp"><button type="button" class="dgh" data-hid="${esc(d)}"><b>🛵 ${esc(nm(d))}</b> <span class="pill">${cs.length}</span><span class="dgt">${h ? '👁 إظهار' : '🙈 إخفاء'}</span></button>${h ? '' : `<div class="tiles">${cs.join('')}</div>`}</div>`;
+    return `<div class="dgrp"><button type="button" class="dgh" data-hid="${esc(d)}"><b>🛵 ${esc(nm(d))}</b> <span class="pill">${cs.length}</span><span class="dgt">${h ? '👁 إظهار' : '🙈 إخفاء'}</span></button>${locRow(d)}${h ? '' : `<div class="tiles">${cs.join('')}</div>`}</div>`;
   }).join('');
 }
 
@@ -626,7 +640,7 @@ function asgCard(o, now) {
     <div class="asgm">${o.district ? `<span>🏠 ${esc(o.district)}</span>` : ''}${o.employeeName ? `<span>👤 الموظف: ${esc(nm(o.employeeName))}</span>` : ''}${o.posEndTime ? `<span class="okc">✅ اتقفل في السيستم ${timeStr(o.posEndTime)}</span>` : ''}</div>
     <div class="asgm asgt2">${dly}<span data-bd>🕒 منذ ${min} د</span><span>📅 ${dateStr(o.startTime)} · ${timeStr(o.startTime)}</span></div>
     <div class="asgval"><small>قيمة الطلب</small><b>${M(o.orderValue)}</b></div>
-    ${canWrite() ? `<div class="asgbox">${canDrv() ? '<div><button type="button" class="lnk" data-adddrv>+ إضافة مندوب جديد</button></div>' : ''}<select data-asd="${o.id}"><option value="">-- اختر المندوب (إجباري) --</option>${drs.map(x => `<option ${a.drv === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
+    ${canWrite() ? `<div class="asgbox">${canDrv() ? `<div style="display:flex;gap:14px;flex-wrap:wrap"><button type="button" class="lnk" data-adddrv>+ إضافة مندوب جديد</button>${isAdm() ? `<button type="button" class="lnk" style="color:#b91c1c" data-deldrv2="${o.id}">🗑 حذف مندوب</button>` : ''}</div>` : ''}<select data-asd="${o.id}"><option value="">-- اختر المندوب (إجباري) --</option>${drs.map(x => `<option ${a.drv === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
       <button type="button" class="brnbtn" data-brn="${o.id}">🏷 خصم عميل (من الفرع)</button>
       <div class="zones" data-asz="${o.id}">
         <button type="button" data-az="${ZONES[0]}" class="in ${zsel === ZONES[0] ? 'on' : ''}"><span class="ic">📍</span><span><b>داخل المعمورة الشاطئ</b><small>من غير عمولة</small></span></button>
@@ -778,6 +792,7 @@ function bind() {
   ROOT.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => remove(b.dataset.rm));
   ROOT.querySelectorAll('[data-brn]').forEach(b => b.onclick = () => branchOrder(b.dataset.brn));
   ROOT.querySelectorAll('[data-adddrv]').forEach(b => b.onclick = addDrv);
+  ROOT.querySelectorAll('[data-deldrv2]').forEach(b => b.onclick = () => { const sel = ROOT.querySelector(`[data-asd="${b.dataset.deldrv2}"]`); delDrvName(sel ? sel.value : ''); });
   const f = $('#dForm', ROOT); if (!f) return;
   f.querySelectorAll('[data-z]').forEach(b => b.onclick = () => { f.querySelectorAll('[data-z]').forEach(x => x.classList.remove('on')); b.classList.add('on'); $('#dZone', f).classList.remove('miss'); draft(); });
   f.addEventListener('input', draft); f.addEventListener('change', draft);
@@ -862,8 +877,10 @@ async function addDrv() {
   if (drvList().includes(n)) { toast('الطيار ده موجود'); return; }
   try { const r = await addDoc(collection(DB, 'deliv_drivers'), { name: n }); DRIVERS.push({ id: r.id, name: n }); toast('اتضاف ✔'); render(); } catch (e) { toast('مقدرتش أضيف المندوب: ' + (e.code || e.message)); }
 }
-async function delDrv() {
-  const n = $('#dDrv', ROOT).value, d = DRIVERS.find(x => x.name === n);
+async function delDrv() { return delDrvName($('#dDrv', ROOT).value); }
+async function delDrvName(n) {   // (13/11، طلبه) الحذف كمان من كارت «محتاج مندوب»: بيشيل الاسم اللي مختاره في القايمة
+  if (!n) { toast('اختار المندوب من القايمة الأول'); return; }
+  const d = DRIVERS.find(x => x.name === n);
   if (!d) { toast('الطيار ده مش في القايمة (متسجل على أوردرات قديمة بس)'); return; }
   if (!confirm(`تشيل الطيار «${n}» من القايمة؟ أوردراته القديمة هتفضل في السجل.`)) return;
   try { await deleteDoc(doc(DB, 'deliv_drivers', d.id)); DRIVERS = DRIVERS.filter(x => x.id !== d.id); toast('اتشال'); render(); } catch (e) { toast('مقدرتش: ' + (e.code || e.message)); }
@@ -956,6 +973,8 @@ export async function mountDelivery(root, role) {
     DRIVERS = s.docs.map(d => ({ id: d.id, ...d.data() }));
     safeRender();
   }, e => toast('قايمة المناديب: ' + (e.code || e.message))));
+  UNSUB.push(onSnapshot(collection(DB, 'deliv_loc'), s => { LOC = new Map(s.docs.map(d => [nm(d.data().name || d.id).toLowerCase(), d.data()])); safeRender(); }, () => { LOC = new Map(); }));
+  UNSUB.push(onSnapshot(doc(DB, 'deliv_cfg', 'live'), s => { LIVE = { enabled: !s.exists() || s.data().enabled !== false }; safeRender(); }, () => { }));
   UNSUB.push(onSnapshot(doc(DB, 'deliv_cfg', 'track'), s => { TRK = { enabled: !s.exists() || s.data().enabled !== false }; safeRender(); }, () => { }));
   TICK = setInterval(() => { if (ROOT.isConnected) tick(); }, 1000);
   REFRESH = setInterval(() => { if (!ROOT.isConnected) return; if (ST.liveDay !== opDay(Date.now())) subDone(); if (ST.view === 'live') safeRender(); }, 30000);

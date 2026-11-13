@@ -383,6 +383,19 @@ service cloud.firestore {
       allow read:  if isAdmin() || (request.auth != null && request.auth.uid == uid);
       allow write: if isAdmin();
     }
+    // (13/11) التتبع المباشر: موبايل المندوب بيكتب موقعه في deliv_loc/{uid بتاعه} — احداثيات + وقت السيرفر فقط. الكاشير والأدمن بيقروا. deliv_cfg/live {enabled:false} = زرار الأدمن اللي بيوقفه.
+    match /deliv_loc/{id} {
+      allow read:   if isAdmin() || isViewer() || isCashier();
+      allow create, update: if isDrvAcct() && id == request.auth.uid
+                    && request.resource.data.keys().hasOnly(['name', 'on', 'lat', 'lng', 'acc', 'spd', 'at'])
+                    && request.resource.data.name == myDrvName() && request.resource.data.on is bool
+                    && request.resource.data.at == request.time
+                    && (request.resource.data.on == false
+                        || (request.resource.data.lat is number && request.resource.data.lng is number
+                            && request.resource.data.lat >= -90 && request.resource.data.lat <= 90
+                            && request.resource.data.lng >= -180 && request.resource.data.lng <= 180));
+      allow delete: if isAdmin();
+    }
     match /deliv_cfg/{id} {
       allow read:  if isAdmin() || isViewer() || isCashier() || isDelDev() || isDrvAcct();
       allow write: if isAdmin();

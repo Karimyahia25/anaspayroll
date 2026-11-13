@@ -917,7 +917,7 @@ onAuthStateChanged(auth, async user => {
 async function renderDriverApp(acct){
   const b = $('driverapp'); b.classList.remove('hide');
   b.innerHTML = `<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div><h2 style="margin:0">🛵 توصيل الصيدلية</h2><p class="sub" style="margin:2px 0 0">صيدلية د. أنس نحيلة</p></div><button class="ghost sm" onclick="doOut()">خروج</button></div><div id="drvRoot"></div>`;
-  try { const m = await import('./sections/driver.js?v=1'); m.mountDriver($('drvRoot'), { db, driverName: acct.driverName }); }
+  try { const m = await import('./sections/driver.js?v=2'); m.mountDriver($('drvRoot'), { db, driverName: acct.driverName, uid: ME.uid }); }
   catch (e) { $('drvRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل شاشة المندوب: ${esc(e.code || e.message)}</div>`; }
 }
 
@@ -2737,7 +2737,7 @@ let DEL_ON = false;
 async function openDelivery(root, role){
   if (DEL_ON) return; DEL_ON = true;
   if (!root && ROLE === 'admin') drvAccts();
-  try { const m = await import('./sections/delivery.js?v=33'); await m.mountDelivery(root || $('delRoot'), role || ROLE); }
+  try { const m = await import('./sections/delivery.js?v=34'); await m.mountDelivery(root || $('delRoot'), role || ROLE); }
   catch (e) { DEL_ON = false; (root || $('delRoot')).innerHTML = `<div class="banner bad">مقدرتش أحمّل قسم الدليفري: ${esc(e.code || e.message)}</div>`; }
 }
 

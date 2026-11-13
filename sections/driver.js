@@ -1,7 +1,7 @@
 // شاشة المندوب (11/11، طلبه) — منقولة من نسخة Pro: أوردراته الشغّالة بس + زرار «سلّمت للعميل» بيسجّل مكانه لحظة التسليم (مش تتبع طول اليوم).
 // المندوب مبيقفلش الأوردر: بيسجّل deliveredAt + deliveredLoc بس، والكاشير بيشوف «سُلّم للعميل» ويقفل الأوردر بعد ما المندوب يرجّع الفلوس.
 // القراية: query واحد (driverName == اسمه && status == PENDING) — القواعد بتشترط الفلتر ده. زرار الأدمن deliv_cfg/track.enabled=false بيوقف تسجيل الموقع.
-import { collection, query, where, onSnapshot, doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { collection, query, where, onSnapshot, doc, updateDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const esc = t => String(t == null ? '' : t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const M = n => (+n || 0).toLocaleString('en-US') + ' ج';
@@ -58,15 +58,100 @@ function css() {
 .drvwrap .dgo{width:100%;min-height:56px;border:0;border-radius:14px;background:#0f766e;color:#fff;font-size:19px;font-weight:800;cursor:pointer}
 .drvwrap .dgo:disabled{opacity:.6}
 .drvwrap .dwait{text-align:center;font-weight:800;color:#166534;font-size:15px;padding:10px;background:#dcfce7;border-radius:12px;line-height:1.7}
+.drvwrap .dctl{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}.drvwrap .dsub{font-size:13px;color:#475569;line-height:1.7}.drvwrap .dgo.stop{background:#dc2626}.drvwrap .dtrk{background:#fff;border-radius:14px;padding:10px;display:flex;flex-direction:column;gap:6px}
 .drvwrap .dempty{text-align:center;color:#64748b;padding:30px 10px;font-size:16px}
 .dtoast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#0f172a;color:#fff;padding:10px 16px;border-radius:12px;z-index:99;font-size:14px}
 `;
   document.head.appendChild(s);
 }
 
-export function mountDriver(root, { db, driverName }) {
+export function mountDriver(root, { db, driverName, uid }) {
   css(); root.classList.add('drvwrap');
   let ORDERS = [], READY = false, BUSY = '', SEEN = null, TRK = true;
+  const sget = k => { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }, sset = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { } };
+
+  /* ===== (13/11، طلبه) تنبيه الأوردر الجديد: سارينة عالية + اهتزاز + شاشة حمرا لحد ما يدوس «تمام» + إشعار نظام لو الصفحة في الخلفية ===== */
+  let AC = null, ALERT_T = null, ALERT_EL = null, WL = null;
+  const audioOk = () => !!AC && AC.state === 'running';
+  function unlockAudio() { try { AC = AC || new (window.AudioContext || window.webkitAudioContext)(); if (AC.state !== 'running') AC.resume().then(draw); } catch (e) { } }
+  document.addEventListener('pointerdown', unlockAudio, true);   // أي لمسة بتفتح الصوت (شرط المتصفح)
+  function siren(secs = 3) {
+    try {
+      unlockAudio(); if (!AC) return;
+      const t0 = AC.currentTime, pulse = 0.25, n = Math.floor(secs / pulse);
+      const comp = AC.createDynamicsCompressor(); comp.threshold.value = -12; comp.ratio.value = 6;
+      const master = AC.createGain(); master.gain.value = 1; comp.connect(master); master.connect(AC.destination);
+      for (let i = 0; i < n; i++) {
+        const t = t0 + i * pulse, o = AC.createOscillator(), g = AC.createGain();
+        o.type = 'square'; o.frequency.value = i % 2 ? 1050 : 1500; o.connect(g); g.connect(comp);
+        g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.9, t + 0.01);
+        g.gain.setValueAtTime(0.9, t + pulse * 0.85); g.gain.exponentialRampToValueAtTime(0.0001, t + pulse * 0.98);
+        o.start(t); o.stop(t + pulse);
+      }
+    } catch (e) { }
+    try { navigator.vibrate && navigator.vibrate([400, 150, 400, 150, 400, 150, 400]); } catch (e) { }
+  }
+  function dismissAlert() { clearInterval(ALERT_T); ALERT_T = null; if (ALERT_EL) { ALERT_EL.remove(); ALERT_EL = null; } }
+  async function sysNotify(list) {
+    try {
+      if (!('Notification' in window) || Notification.permission !== 'granted') return;
+      const reg = await navigator.serviceWorker.ready, o = list[0];
+      reg.showNotification('🆕 أوردر جديد ليك', { body: `${o.customerName || 'عميل'} · ${M(o.orderValue)}${list.length > 1 ? ' (+' + (list.length - 1) + ')' : ''}`, tag: 'new-order', renotify: true, requireInteraction: true, vibrate: [400, 150, 400, 150, 400], icon: 'icons/drv-192.png' });
+    } catch (e) { }
+  }
+  function newOrderAlert(list) {
+    dismissAlert(); siren(3); sysNotify(list);
+    ALERT_EL = document.createElement('div');
+    ALERT_EL.style.cssText = 'position:fixed;inset:0;z-index:200;background:#b91c1c;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center';
+    ALERT_EL.innerHTML = `<div style="font-size:64px">🚨</div><div style="font-size:30px;font-weight:900">أوردر جديد!</div>
+      ${list.slice(0, 3).map(o => `<div style="font-size:20px;font-weight:700">👤 ${esc(o.customerName || 'عميل')} — ${M(o.orderValue)}</div>`).join('')}
+      <button type="button" style="margin-top:14px;min-height:60px;width:100%;max-width:320px;border:0;border-radius:16px;background:#fff;color:#b91c1c;font:inherit;font-size:22px;font-weight:900">تمام، استلمت ✔</button>`;
+    ALERT_EL.querySelector('button').onclick = dismissAlert;
+    document.body.appendChild(ALERT_EL);
+    let n = 0; ALERT_T = setInterval(() => { if (++n > 20) return dismissAlert(); siren(3); }, 6000);   // بتكرر كل 6 ثواني لحد ما يدوس (أقصى دقيقتين)
+  }
+  async function wantWake() { try { if ('wakeLock' in navigator && !WL && !document.hidden && (TON || ORDERS.length)) { WL = await navigator.wakeLock.request('screen'); WL.addEventListener('release', () => { WL = null; }); } } catch (e) { } }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) wantWake(); });
+
+  /* ===== (13/11، طلبه) التتبع المباشر: المندوب بيشغّله بزرار، وبيبعت موقعه لـ deliv_loc/{uid}؛ الكاشير بيشوفه. المتصفح بيوقفه لو الشاشة اتقفلت ===== */
+  let LIVEOK = true, TON = sget('drv_trk') === '1', WATCH = null, HB = null, LAST = null, LASTSENT = 0, SENT = 0, TERR = '';
+  const SEND_EVERY = 30e3, HEARTBEAT = 60e3, MIN_MOVE = 30;
+  const dist = (a, b) => { const R = 6371000, r = x => x * Math.PI / 180, dl = r(b.lat - a.lat), dg = r(b.lng - a.lng); const h = Math.sin(dl / 2) ** 2 + Math.cos(r(a.lat)) * Math.cos(r(b.lat)) * Math.sin(dg / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); };
+  async function pushLoc(on) {
+    const data = on && LAST ? { name: driverName, on: true, lat: LAST.lat, lng: LAST.lng, acc: Math.round(LAST.acc || 0), spd: LAST.spd == null ? null : Math.round(LAST.spd * 3.6), at: serverTimestamp() } : { name: driverName, on: false, at: serverTimestamp() };
+    await setDoc(doc(db, 'deliv_loc', uid), data);
+    if (on) { SENT++; LASTSENT = Date.now(); }
+  }
+  const tryPush = async () => { try { await pushLoc(true); TERR = ''; } catch (e) { TERR = 'مقدرتش أبعت الموقع: ' + (e.code || e.message); } draw(); };
+  function onPos(p) {
+    const c = p.coords, prev = LAST; LAST = { lat: c.latitude, lng: c.longitude, acc: c.accuracy, spd: c.speed };
+    const dt = Date.now() - LASTSENT;
+    if (!prev || (dt >= SEND_EVERY && dist(prev, LAST) >= MIN_MOVE) || dt >= HEARTBEAT) tryPush(); else draw();
+  }
+  function onPosErr(e) { TERR = { 1: 'إذن الموقع مرفوض — فعّله من إعدادات المتصفح.', 2: 'مش قادر أحدد الموقع — شغّل GPS.', 3: 'تحديد الموقع اتأخر — اتأكد إن GPS شغال.' }[e.code] || e.message; if (e.code === 1) stopTrack(true); else draw(); }
+  function startTrack() {
+    if (!LIVEOK || WATCH != null) return;
+    if (!navigator.geolocation) { TERR = 'المتصفح ده مش بيدعم تحديد الموقع'; draw(); return; }
+    TERR = ''; TON = true; sset('drv_trk', '1'); LAST = null; SENT = 0; LASTSENT = 0;
+    WATCH = navigator.geolocation.watchPosition(onPos, onPosErr, { enableHighAccuracy: true, maximumAge: 5000, timeout: 30000 });
+    HB = setInterval(() => { if (TON && LAST && Date.now() - LASTSENT >= HEARTBEAT) tryPush(); }, 10000);   // نبضة لو واقف
+    wantWake(); draw();
+  }
+  async function stopTrack(silent) {
+    TON = false; sset('drv_trk', ''); LAST = null;
+    if (WATCH != null) navigator.geolocation.clearWatch(WATCH); WATCH = null; clearInterval(HB); HB = null;
+    try { if (WL) await WL.release(); } catch (e) { } WL = null;
+    try { await pushLoc(false); } catch (e) { if (!silent) TERR = 'الإيقاف اتسجّل على موبايلك بس: ' + (e.code || e.message); }
+    draw();
+  }
+  function ctlBar() {
+    const notif = ('Notification' in window) && Notification.permission === 'default';
+    const sound = !audioOk() ? `<button type="button" class="dlb" data-sound>🔔 اضغط لتفعيل صوت تنبيه الأوردر</button>` : '<div class="dsub">🔔 صوت التنبيه شغال</div>';
+    const trk = !LIVEOK ? '<div class="dsub">⛔ التتبع المباشر متوقف من الإدارة</div>'
+      : `<div class="dtrk"><button type="button" class="dgo ${TON ? 'stop' : ''}" style="min-height:48px;font-size:17px" data-trk>${TON ? '⏹ إيقاف التتبع' : '▶ تشغيل التتبع'}</button>
+         <div class="dsub">${TON ? (LAST ? `🟢 شغال — دقة ±${Math.round(LAST.acc)} م · اتبعت ${SENT} مرة` : '🟡 بدوّر على الموقع…') : '⚪ التتبع مقفول'}${TON ? '<br>سيب الشاشة مفتوحة على التطبيق — لو اتقفلت الإشارة بتقف' : ''}</div></div>`;
+    return `<div class="dctl">${sound}${notif ? '<button type="button" class="dlb" data-notif>📲 فعّل إشعارات النظام</button>' : ''}${trk}${TERR ? `<div class="dsub" style="color:#b91c1c">${esc(TERR)}</div>` : ''}</div>`;
+  }
   let PERM = (window.isSecureContext && navigator.geolocation) ? 'unknown' : 'unsupported', TEST = null, TESTING = false;
   const toast = t => { const d = document.createElement('div'); d.className = 'dtoast'; d.textContent = t; document.body.appendChild(d); setTimeout(() => d.remove(), 2600); };
 
@@ -126,17 +211,24 @@ export function mountDriver(root, { db, driverName }) {
     root.innerHTML = `<div class="dhead"><h2>🛵 أهلاً ${esc(driverName)}</h2><span class="dcount">${pend} للتسليم</span></div>
       <div class="dnote">📍 بنسجّل موقعك لحظة ضغطك على «سلّمت للعميل» بس — مش بنتتبعك طول اليوم. الكاشير هو اللي بيقفل الأوردر بعد ما تسلّمه الفلوس.</div>
       ${locBar()}
+      ${ctlBar()}
       ${!READY ? '<div class="dempty">⏳ جاري التحميل…</div>' : list.length ? list.map(o => card(o, now)).join('') : '<div class="dempty">مفيش أوردرات عليك دلوقتي ✔</div>'}`;
     root.querySelectorAll('[data-fin]').forEach(b => b.onclick = () => deliver(b.dataset.fin));
     root.querySelectorAll('[data-loctest]').forEach(b => b.onclick = testLocation);
+    root.querySelectorAll('[data-sound]').forEach(b => b.onclick = () => { unlockAudio(); siren(1); });
+    root.querySelectorAll('[data-notif]').forEach(b => b.onclick = async () => { try { await Notification.requestPermission(); } catch (e) { } draw(); });
+    root.querySelectorAll('[data-trk]').forEach(b => b.onclick = () => (TON ? stopTrack() : startTrack()));
   }
 
   onSnapshot(query(collection(db, 'deliv_orders'), where('driverName', '==', driverName), where('status', '==', 'PENDING')), snap => {
     ORDERS = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     const ids = new Set(ORDERS.map(o => o.id));
-    if (SEEN && [...ids].some(i => !SEEN.has(i))) { try { navigator.vibrate && navigator.vibrate([250, 120, 250]); } catch (e) { } toast('🆕 أوردر جديد'); }
+    if (SEEN) { const fresh = ORDERS.filter(o => !SEEN.has(o.id)); if (fresh.length) newOrderAlert(fresh); }
+    wantWake();
     SEEN = ids; READY = true; draw();
   }, e => { root.innerHTML = `<div class="dempty" style="color:#b91c1c">مقدرتش أقرا أوردراتك: ${esc(e.code || e.message)}${e.code === 'permission-denied' ? ' — كلّم المدير (حسابك مش مربوط باسمك)' : ''}</div>`; });
+  onSnapshot(doc(db, 'deliv_cfg', 'live'), s => { LIVEOK = !s.exists() || s.data().enabled !== false; if (!LIVEOK && TON) stopTrack(true); else draw(); }, () => { });
+  if (TON) setTimeout(() => { const t = TON; TON = false; if (t) startTrack(); }, 1500);   // رجوع بعد ريفريش: كمّل التتبع لو كان شغال
   onSnapshot(doc(db, 'deliv_cfg', 'track'), s => { TRK = !s.exists() || s.data().enabled !== false; draw(); }, () => { });
   if (PERM === 'unknown' && navigator.permissions && navigator.permissions.query) {
     navigator.permissions.query({ name: 'geolocation' }).then(st => { PERM = st.state; st.onchange = () => { PERM = st.state; if (PERM !== 'granted') TEST = null; draw(); }; draw(); }).catch(() => { });

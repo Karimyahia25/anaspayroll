@@ -83,7 +83,7 @@ onAuthStateChanged(auth, async user => {
   if (!acct) { await signOut(auth); show('login'); $('le').textContent = 'الحساب ده مش حساب مندوب (أو موقوف). كلّم المدير.'; return; }
   if (MOUNTED) return; MOUNTED = true;
   show('app');
-  try { const m = await import('./sections/driver.js?v=1'); m.mountDriver($('drvRoot'), { db, driverName: acct.driverName }); }
+  try { const m = await import('./sections/driver.js?v=2'); m.mountDriver($('drvRoot'), { db, driverName: acct.driverName, uid: user.uid }); }
   catch (e) { $('drvRoot').innerHTML = `<div class="card" style="color:#b91c1c">مقدرتش أحمّل الشاشة: ${esc(e.code || e.message)}</div>`; }
 });
 
