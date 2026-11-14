@@ -330,25 +330,25 @@ function trashSound() {   // صوت «تفريغ سلة المحذوفات» —
 /* ---------- صوت الفاتورة الجديدة ---------- */
 const audioOn = () => !!(AC && AC.state === 'running');
 function armAudio() { try { AC = AC || new (window.AudioContext || window.webkitAudioContext)(); if (AC.state !== 'running') AC.resume(); } catch (e) { } }
-function siren(secs = 3) {   // (10/11، طلبه) نغمة عالية وقوية 3 ثواني: نبضات متبادلة 1500/1050 هرتز موجة مربعة بأعلى جين
+function siren(secs = 2.5) {   // (15/11، طلبه) أهدى وثانيتين ونص: نبضات متبادلة 1200/900 هرتز موجة مثلثة (أنعم من المربعة) بجين متوسط
   if (ST.mute) return;
   try {
     armAudio();
-    const t0 = AC.currentTime, pulse = 0.25, n = Math.floor(secs / pulse);
+    const t0 = AC.currentTime, pulse = 0.3, n = Math.floor(secs / pulse);
     const comp = AC.createDynamicsCompressor(); comp.threshold.value = -12; comp.ratio.value = 6;
     const master = AC.createGain(); master.gain.value = 1; comp.connect(master); master.connect(AC.destination);
     for (let i = 0; i < n; i++) {
-      const t = t0 + i * pulse, f = i % 2 ? 1050 : 1500;
+      const t = t0 + i * pulse, f = i % 2 ? 900 : 1200;
       const o = AC.createOscillator(), g = AC.createGain();
-      o.type = 'square'; o.frequency.value = f; o.connect(g); g.connect(comp);
+      o.type = 'triangle'; o.frequency.value = f; o.connect(g); g.connect(comp);
       g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(0.9, t + 0.01);
-      g.gain.setValueAtTime(0.9, t + pulse * 0.85);
+      g.gain.exponentialRampToValueAtTime(0.5, t + 0.03);
+      g.gain.setValueAtTime(0.5, t + pulse * 0.8);
       g.gain.exponentialRampToValueAtTime(0.0001, t + pulse * 0.98);
       o.start(t); o.stop(t + pulse);
     }
   } catch (e) { }
-  try { navigator.vibrate && navigator.vibrate([400, 150, 400, 150, 400]); } catch (e) { }
+  try { navigator.vibrate && navigator.vibrate([300, 150, 300]); } catch (e) { }
 }
 /* ---------- (11/11، طلبه) تنبيه الأوردرات اللي مستنية مندوب — للكاشير بس، كل 5 دقايق، وليه زرار كتم مستقل ---------- */
 const NEED_MS = 5 * 60000, NEED_FIRST = 5 * 60000;   // أول تنبيه بعد 5 دقايق، وبعدها كل 5 دقايق
