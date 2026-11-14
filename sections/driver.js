@@ -1,13 +1,21 @@
 // شاشة المندوب (11/11، طلبه) — منقولة من نسخة Pro: أوردراته الشغّالة بس + زرار «سلّمت للعميل» بيسجّل مكانه لحظة التسليم (مش تتبع طول اليوم).
 // المندوب مبيقفلش الأوردر: بيسجّل deliveredAt + deliveredLoc بس، والكاشير بيشوف «سُلّم للعميل» ويقفل الأوردر بعد ما المندوب يرجّع الفلوس.
 // القراية: query واحد (driverName == اسمه && status == PENDING) — القواعد بتشترط الفلتر ده. زرار الأدمن deliv_cfg/track.enabled=false بيوقف تسجيل الموقع.
-import { collection, query, where, onSnapshot, doc, updateDoc, setDoc, getDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { collection, query, where, onSnapshot, getDocs, doc, updateDoc, setDoc, getDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const esc = t => String(t == null ? '' : t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const M = n => (+n || 0).toLocaleString('en-US') + ' ج';
 const timeStr = ts => new Date(ts).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
 const PROMISE = 30 * 60000;
 const isOut = o => o.zone === 'خارج المعمورة';
+/* (15/11، طلبه) تقرير المندوب: أوردراته المقفولة وعمولة خارج المعمورة — اليوم التشغيلي 9ص → 9ص (زي شاشة الكاشير) */
+const COMM_OUT = 5, commOf = o => o.comm != null ? o.comm : (isOut(o) ? COMM_OUT : 0);
+const dayKey = ts => new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo' }).format(new Date(ts));
+const opDay = ts => dayKey(ts - 9 * 3600e3);
+const addDay = (k, n) => { const [y, m, d] = k.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10); };
+const cairoHour = ts => +new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Cairo', hour: '2-digit', hour12: false }).format(new Date(ts));
+function cairoStart(k) { const [y, m, d] = k.split('-').map(Number); for (const h of [6, 7]) { const t = Date.UTC(y, m - 1, d, h); if (cairoHour(t) === 9) return t; } return Date.UTC(y, m - 1, d, 7); }
+const dayLbl = k => `${+k.slice(8)}/${+k.slice(5, 7)}`;
 
 function getLocation() {
   return new Promise(res => {
@@ -60,6 +68,11 @@ function css() {
 .drvwrap .dwait{text-align:center;font-weight:800;color:#166534;font-size:15px;padding:10px;background:#dcfce7;border-radius:12px;line-height:1.7}
 .drvwrap .dctl{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}.drvwrap .dsub{font-size:13px;color:#475569;line-height:1.7}.drvwrap .dgo.stop{background:#dc2626}.drvwrap .dtrk{background:#fff;border-radius:14px;padding:10px;display:flex;flex-direction:column;gap:6px}
 .drvwrap .dplace{background:#ecfeff;border:1px solid #a5f3fc;border-radius:12px;padding:10px;margin-bottom:10px;font-size:13px;display:flex;flex-direction:column;gap:8px}.drvwrap .dnav{display:flex;align-items:center;justify-content:center;min-height:46px;background:#0891b2;color:#fff;border-radius:12px;font-weight:800;font-size:16px;text-decoration:none}
+.drvwrap .dtabs{display:flex;gap:8px;margin-bottom:12px}.drvwrap .dtab{flex:1;min-height:46px;border:2px solid #cbd5e1;background:#fff;border-radius:12px;font:inherit;font-weight:800;font-size:15px;color:#334155;cursor:pointer}.drvwrap .dtab.on{background:#0f766e;border-color:#0f766e;color:#fff}
+.drvwrap .drng{display:flex;gap:6px;margin-bottom:10px}.drvwrap .drb{flex:1;min-height:42px;border:1px solid #cbd5e1;background:#fff;border-radius:10px;font:inherit;font-weight:700;font-size:13.5px;cursor:pointer}.drvwrap .drb.on{background:#dbeafe;border-color:#3b82f6;color:#1e3a8a}
+.drvwrap .dsum{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}.drvwrap .dsum div{background:#fff;border-radius:12px;padding:10px;text-align:center;box-shadow:0 1px 6px rgba(15,23,42,.07)}.drvwrap .dsum b{display:block;font-size:22px;color:#0f766e}.drvwrap .dsum small{color:#64748b;font-size:12px}.drvwrap .dsum .cm b{color:#4338ca}
+.drvwrap .dday{font-weight:800;font-size:13px;color:#475569;margin:12px 2px 6px;display:flex;justify-content:space-between}
+.drvwrap .drow{background:#fff;border-radius:12px;padding:10px 12px;margin-bottom:6px;display:flex;justify-content:space-between;gap:8px;align-items:center;box-shadow:0 1px 5px rgba(15,23,42,.06)}.drvwrap .drow.out{border-right:4px solid #6366f1}.drvwrap .drow small{color:#64748b}.drvwrap .dcm{font-weight:900;color:#4338ca;white-space:nowrap}
 .drvwrap .dempty{text-align:center;color:#64748b;padding:30px 10px;font-size:16px}
 .dtoast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#0f172a;color:#fff;padding:10px 16px;border-radius:12px;z-index:99;font-size:14px}
 `;
@@ -253,15 +266,54 @@ export function mountDriver(root, { db, driverName, uid }) {
     BUSY = ''; draw();
   }
 
+  /* ===== (15/11، طلبه) تقرير المندوب: أوردراته المقفولة + عمولة خارج المعمورة ===== */
+  let TAB = 'orders', RANGE = 'today', REP = null;
+  async function loadReport() {
+    REP = { loading: true }; draw();
+    const today = opDay(Date.now()), first = RANGE === '7' ? addDay(today, -6) : RANGE === 'yday' ? addDay(today, -1) : today;
+    const st = cairoStart(first), en = RANGE === 'yday' ? cairoStart(today) : Infinity;
+    try {
+      const s = await getDocs(query(collection(db, 'deliv_orders'), where('driverName', '==', driverName), where('endTime', '>=', st)));
+      REP = { rows: s.docs.map(d => ({ id: d.id, ...d.data() })).filter(o => o.status === 'COMPLETED' && o.endTime && o.endTime < en).sort((a, b) => b.endTime - a.endTime) };
+    } catch (e) { REP = { err: e }; }
+    draw();
+  }
+  function reportHtml() {
+    const rng = `<div class="drng">${[['today', 'النهارده'], ['yday', 'إمبارح'], ['7', 'آخر 7 أيام']].map(([k, t]) => `<button type="button" class="drb ${RANGE === k ? 'on' : ''}" data-rng="${k}">${t}</button>`).join('')}</div>`;
+    if (!REP || REP.loading) return rng + '<div class="dempty">⏳ جاري تحميل التقرير…</div>';
+    if (REP.err) {
+      const e = REP.err, link = (String(e.message || '').match(/https:\/\/console\.firebase\.google\.com\S+/) || [])[0];
+      return rng + `<div class="dempty" style="color:#b91c1c">مقدرتش أحمّل التقرير: ${esc(e.code || e.message)}${e.code === 'failed-precondition' ? '<br>محتاج إعداد لمرة واحدة من المدير (فهرس في Firebase).' + (link ? `<br><a href="${esc(link)}" target="_blank" rel="noopener" style="word-break:break-all">افتح اللينك ده (للمدير)</a>` : '') : ''}</div>`;
+    }
+    const rows = REP.rows, out = rows.filter(isOut), comm = rows.reduce((s, o) => s + commOf(o), 0);
+    let body = '', lastDay = '';
+    rows.forEach(o => {
+      const dk = opDay(o.endTime);
+      if (RANGE === '7' && dk !== lastDay) {
+        lastDay = dk; const dr = rows.filter(x => opDay(x.endTime) === dk);
+        body += `<div class="dday"><span>📅 ${dayLbl(dk)}</span><span>${dr.length} أوردر${dr.some(isOut) ? ` · عمولة ${M(dr.reduce((s, x) => s + commOf(x), 0))}` : ''}</span></div>`;
+      }
+      body += `<div class="drow ${isOut(o) ? 'out' : ''}"><div><b>${esc(o.customerName || 'عميل')}</b><br><small>${timeStr(o.endTime)} · ${isOut(o) ? 'خارج المعمورة' : 'داخل المعمورة'}</small></div><div style="text-align:left"><b>${M(o.orderValue)}</b>${isOut(o) ? `<div class="dcm">+ ${M(commOf(o))}</div>` : ''}</div></div>`;
+    });
+    return rng + `<div class="dsum"><div><b>${rows.length}</b><small>أوردر اتسلّم واتقفل</small></div><div class="cm"><b>${M(comm)}</b><small>عمولة (${out.length} خارج المعمورة)</small></div></div>
+      ${rows.length ? body : '<div class="dempty">مفيش أوردرات مقفولة في الفترة دي</div>'}
+      <div class="dnote">الأوردر بيدخل التقرير بعد ما الكاشير يقفله (بعد ما تسلّم الفلوس). عمولة خارج المعمورة ${M(COMM_OUT)} للأوردر.</div>
+      <button type="button" class="dlb" style="width:100%" data-repref>🔄 تحديث</button>`;
+  }
+
   function draw() {
     const now = Date.now();
     const list = [...ORDERS].sort((a, b) => (a.assignedAt || a.startTime) - (b.assignedAt || b.startTime));
     const pend = list.filter(o => !o.deliveredAt).length;
     root.innerHTML = `<div class="dhead"><h2>🛵 أهلاً ${esc(driverName)}</h2><span class="dcount">${pend} للتسليم</span></div>
-      <div class="dnote">📍 بنسجّل موقعك لحظة ضغطك على «سلّمت للعميل» بس — مش بنتتبعك طول اليوم. الكاشير هو اللي بيقفل الأوردر بعد ما تسلّمه الفلوس.</div>
+      <div class="dtabs"><button type="button" class="dtab ${TAB === 'orders' ? 'on' : ''}" data-tab="orders">🛵 أوردراتي</button><button type="button" class="dtab ${TAB === 'report' ? 'on' : ''}" data-tab="report">📊 تقريري</button></div>
+      ${TAB === 'report' ? reportHtml() : `<div class="dnote">📍 بنسجّل موقعك لحظة ضغطك على «سلّمت للعميل». ولو تطبيق التتبع (Traccar) شغّال على موبايلك، الكاشير بيشوف مكانك طول الشغل. الكاشير هو اللي بيقفل الأوردر بعد ما تسلّمه الفلوس.</div>
       ${locBar()}
       ${ctlBar()}
-      ${!READY ? '<div class="dempty">⏳ جاري التحميل…</div>' : list.length ? list.map(o => card(o, now)).join('') : '<div class="dempty">مفيش أوردرات عليك دلوقتي ✔</div>'}`;
+      ${!READY ? '<div class="dempty">⏳ جاري التحميل…</div>' : list.length ? list.map(o => card(o, now)).join('') : '<div class="dempty">مفيش أوردرات عليك دلوقتي ✔</div>'}`}`;
+    root.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { TAB = b.dataset.tab; if (TAB === 'report' && !REP) loadReport(); else draw(); });
+    root.querySelectorAll('[data-rng]').forEach(b => b.onclick = () => { RANGE = b.dataset.rng; loadReport(); });
+    root.querySelectorAll('[data-repref]').forEach(b => b.onclick = loadReport);
     root.querySelectorAll('[data-fin]').forEach(b => b.onclick = () => deliver(b.dataset.fin));
     root.querySelectorAll('[data-loctest]').forEach(b => b.onclick = testLocation);
     root.querySelectorAll('[data-sound]').forEach(b => b.onclick = () => { unlockAudio(); siren(3); });
