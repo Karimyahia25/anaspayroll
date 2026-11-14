@@ -188,7 +188,7 @@ export function mountDriver(root, { db, driverName, uid }) {
     const sound = !audioOk() ? `<button type="button" class="dlb" data-sound>🔔 اضغط لتفعيل صوت تنبيه الأوردر</button>` : '<div class="dsub">🔔 صوت التنبيه شغال <button type="button" class="dlb" data-sound style="min-height:36px;font-size:12px;padding:0 10px">جرّب الصوت</button></div>';
     const trk = !LIVEOK ? '<div class="dsub">⛔ التتبع المباشر متوقف من الإدارة</div>'
       : `<div class="dtrk"><button type="button" class="dgo ${TON ? 'stop' : ''}" style="min-height:48px;font-size:17px" data-trk>${TON ? '⏹ إيقاف التتبع' : '▶ تشغيل التتبع'}</button>
-         <div class="dsub">${TON ? (LAST ? `🟢 شغال — دقة ±${Math.round(LAST.acc)} م · اتبعت ${SENT} مرة` : '🟡 بدوّر على الموقع…') : '⚪ التتبع مقفول'}${TON ? '<br>سيب الشاشة مفتوحة على التطبيق — لو اتقفلت الإشارة بتقف' : ''}</div></div>`;
+         <div class="dsub">${TON ? (LAST ? `🟢 شغال — دقة ±${Math.round(LAST.acc)} م · اتبعت ${SENT} مرة` : '🟡 بدوّر على الموقع…') : '⚪ التتبع مقفول'}${TON ? '<br>سيب الشاشة مفتوحة على التطبيق — لو اتقفلت الإشارة بتقف' : ''}<br><span style="color:#0e7490">عايز التتبع يفضل شغال والموبايل مقفول؟ استخدم تطبيق <b>Traccar Client</b> (اطلب الإعدادات من المدير).</span></div></div>`;
     return `<div class="dctl">${sound}${notif ? '<button type="button" class="dlb" data-notif>📲 فعّل إشعارات النظام</button>' : ''}${trk}${TERR ? `<div class="dsub" style="color:#b91c1c">${esc(TERR)}</div>` : ''}</div>`;
   }
   let PERM = (window.isSecureContext && navigator.geolocation) ? 'unknown' : 'unsupported', TEST = null, TESTING = false;
