@@ -338,7 +338,7 @@ service cloud.firestore {
                                 && request.resource.data.endTime == request.resource.data.get('posEndTime', -1))))
                     || ((isCashier() || isDelDev()) && resource.data.status == 'PENDING'
                         && request.resource.data.diff(resource.data).affectedKeys()
-                             .hasOnly(['driverName','customerName','employeeName','zone','orderValue','changeGiven','isVisa','isVodafoneCash','notes','endTime','status','assignedAt','endSource','comm','zoneSug'])
+                             .hasOnly(['driverName','customerName','employeeName','zone','orderValue','changeGiven','isVisa','isVodafoneCash','notes','endTime','status','assignedAt','endSource','comm','zoneSug','confirmedBy'])
                         && (resource.data.driverName == ''
                             || (request.resource.data.zone == resource.data.zone && request.resource.data.orderValue == resource.data.orderValue))
                         && (request.resource.data.get('assignedAt', 0) == resource.data.get('assignedAt', 0)
