@@ -654,6 +654,7 @@ function asgCard(o, now) {
     <div class="asgm asgt2">${dly}<span data-bd>🕒 منذ ${min} د</span><span>📅 ${dateStr(o.startTime)} · ${timeStr(o.startTime)}</span></div>
     <div class="asgval"><small>قيمة الطلب</small><b>${M(o.orderValue)}</b></div>
     ${canWrite() ? `<div class="asgbox">${canDrv() ? `<div style="display:flex;gap:14px;flex-wrap:wrap"><button type="button" class="lnk" data-adddrv>+ إضافة مندوب جديد</button>${isAdm() ? `<button type="button" class="lnk" style="color:#b91c1c" data-deldrv2="${o.id}">🗑 حذف مندوب</button>` : ''}</div>` : ''}<select data-asd="${o.id}"><option value="">-- اختر المندوب (إجباري) --</option>${drs.map(x => `<option ${a.drv === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
+      <input type="url" dir="ltr" data-asl="${o.id}" value="${esc(a.loc || '')}" placeholder="🔗 لينك موقع العميل (لو بعته واتساب) — اختياري" style="width:100%;margin:6px 0;min-height:42px">
       <button type="button" class="brnbtn" data-brn="${o.id}">🏷 خصم عميل (من الفرع)</button>
       <div class="zones" data-asz="${o.id}">
         <button type="button" data-az="${ZONES[0]}" class="in ${zsel === ZONES[0] ? 'on' : ''}"><span class="ic">📍</span><span><b>داخل المعمورة الشاطئ</b><small>من غير عمولة</small></span></button>
@@ -666,9 +667,12 @@ async function assign(id) {
   const a = ASG[id] || {}, sug = suggestZone(o.district), zone = a.zone !== undefined ? a.zone : sug;
   if (!a.drv) { toast('اختار المندوب الأول'); return; }
   if (!zone) { toast('لازم تختار المنطقة: داخل أو خارج المعمورة'); const z = ROOT.querySelector(`[data-asz="${id}"]`); if (z) z.classList.add('miss'); return; }
+  const loc = String(a.loc || '').trim();   // (15/11، طلبه) لينك موقع العميل اللي بعته واتساب — بيظهر للمندوب «وصّلني للعميل»
+  if (loc && (!/^https:\/\/\S+$/i.test(loc) || loc.length > 500)) { toast('لينك الموقع لازم يبدأ بـ https:// (انسخه من واتساب زي ما هو)'); return; }
   let who = 'المدير';
   if (!isAdm()) { who = await askWho(`مين اللي بيأكّد الأوردر ده على المندوب ${nm(a.drv)}؟`); if (!who) return; }   // (14/11، طلبه) اسم اللي أكّد الأوردر على المندوب بيتسجّل على الأوردر
-  const data = { driverName: a.drv, zone, assignedAt: Date.now(), zoneSug: sug, confirmedBy: who };   // assignedAt = لحظة خروج المندوب · zoneSug = اللي اقترحه البرنامج (لقياس دقته)
+  const data = { driverName: a.drv, zone, assignedAt: Date.now(), zoneSug: sug, confirmedBy: who };
+  if (loc) data.custLoc = loc;   // assignedAt = لحظة خروج المندوب · zoneSug = اللي اقترحه البرنامج (لقياس دقته)
   if (o.posEndTime) Object.assign(data, { status: 'COMPLETED', endTime: o.posEndTime, endSource: 'pos', comm: commFor(zone) });   // الكاشير قفل التوصيل في السيستم قبل ما نحدد المندوب
   try {
     await updateDoc(doc(DB, 'deliv_orders', id), data); delete ASG[id]; beep(660, 1); if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); render();
@@ -775,6 +779,7 @@ function bind() {
   ROOT.querySelectorAll('[data-p]').forEach(b => b.onclick = () => { ST.period = b.dataset.p; ST.shown = 60; render(); });
   [['fFrom', 'from'], ['fTo', 'to'], ['fDrv', 'driver'], ['fZone', 'zone']].forEach(([id, k]) => { const e = $('#' + id, ROOT); if (e) e.onchange = () => { ST[k] = e.value; ST.shown = 60; render(); }; });
   ROOT.querySelectorAll('[data-asd]').forEach(sel => sel.onchange = () => { (ASG[sel.dataset.asd] = ASG[sel.dataset.asd] || {}).drv = sel.value; });
+  ROOT.querySelectorAll('[data-asl]').forEach(inp => inp.oninput = () => { (ASG[inp.dataset.asl] = ASG[inp.dataset.asl] || {}).loc = inp.value; });
   ROOT.querySelectorAll('[data-az]').forEach(b => b.onclick = () => {
     const box = b.closest('[data-asz]'), id = box.dataset.asz;
     (ASG[id] = ASG[id] || {}).zone = b.dataset.az; box.classList.remove('miss');

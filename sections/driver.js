@@ -83,6 +83,8 @@ export function mountDriver(root, { db, driverName, uid }) {
     return `<div class="dplace"><div>📍 <b>موقع العميل محفوظ</b>${when ? ' — من توصيلة ' + when : ''}${p.by ? ' (سلّمها ' + esc(p.by) + ')' : ''}${p.n > 1 ? ' · ' + p.n + ' مرات' : ''}</div>
       <a class="dnav" href="https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}" target="_blank" rel="noopener">🧭 وصّلني للعميل</a></div>`;
   };
+  /* (15/11، طلبه) لينك موقع العميل اللي الكاشير لزقه وقت التأكيد (custLoc) — المندوب يدوس ويسوق عليه */
+  const custBox = o => /^https:\/\/\S+$/i.test(o.custLoc || '') ? `<div class="dplace"><div>📌 <b>العميل بعت موقعه</b></div><a class="dnav" href="${esc(o.custLoc)}" target="_blank" rel="noopener">🧭 افتح موقع العميل</a></div>` : '';
   const sget = k => { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }, sset = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { } };
 
   /* ===== (13/11، طلبه) تنبيه الأوردر الجديد: سارينة عالية + اهتزاز + شاشة حمرا لحد ما يدوس «تمام» + إشعار نظام لو الصفحة في الخلفية ===== */
@@ -220,7 +222,7 @@ export function mountDriver(root, { db, driverName, uid }) {
         <span class="dchip">🕒 خرجت من ${min} د</span>${late ? '<span class="dchip late">⚠ عدّى 30 دقيقة</span>' : ''}
         ${o.isVisa ? '<span class="dchip pay">💳 فيزا</span>' : ''}${o.isVodafoneCash ? '<span class="dchip pay">📱 فودافون كاش</span>' : ''}</div>
       ${o.notes ? `<div class="dnotes">📝 ${esc(o.notes)}</div>` : ''}
-      ${sent ? '' : placeBox(o)}
+      ${sent ? '' : custBox(o)}${sent ? '' : placeBox(o)}
       ${sent ? `<div class="dwait">✅ سلّمته للعميل ${timeStr(o.deliveredAt)}<br>ارجع الصيدلية وسلّم الفلوس للكاشير</div>`
              : `<button type="button" class="dgo" data-fin="${esc(o.id)}" ${BUSY ? 'disabled' : ''}>${BUSY === o.id ? '⏳ بحدد موقعك…' : '✔ سلّمت للعميل'}</button>`}</div>`;
   }
