@@ -330,7 +330,7 @@ service cloud.firestore {
                                 && request.resource.data.deliveredLoc.lng >= -180 && request.resource.data.deliveredLoc.lng <= 180)))
                     || (isFeeder() && resource.data.get('source', '') == 'pos' && resource.data.status == 'PENDING'
                         && request.resource.data.diff(resource.data).affectedKeys()
-                             .hasOnly(['customerName','district','orderValue','posEndTime','endTime','status','comm','endSource'])
+                             .hasOnly(['customerName','district','custId','orderValue','posEndTime','endTime','status','comm','endSource'])
                         && (request.resource.data.status == 'PENDING'
                             || (request.resource.data.status == 'COMPLETED' && request.resource.data.endTime is number
                                 && resource.data.driverName != ''
@@ -394,6 +394,24 @@ service cloud.firestore {
                         || (request.resource.data.lat is number && request.resource.data.lng is number
                             && request.resource.data.lat >= -90 && request.resource.data.lat <= 90
                             && request.resource.data.lng >= -180 && request.resource.data.lng <= 180));
+      allow delete: if isAdmin();
+    }
+    // (14/11) موقع العميل المحفوظ: deliv_places/{رقم العميل في فارما فلاي} = آخر مكان سلّم فيه مندوب لنفس العميل (بيتكتب بعد التسليم بالموقع).
+    // أي مندوب يقدر يقرا عميل واحد بالـ id (get) — مفيش قايمة العملاء كلها (list للأدمن وصاحب الصيدلية بس). المندوب بيكتب لأوردر هو مندوبه ونفس العميل.
+    match /deliv_places/{id} {
+      allow get:    if isAdmin() || isViewer() || isCashier() || isDrvAcct();
+      allow list:   if isAdmin() || isViewer();
+      allow create, update: if isDrvAcct()
+                    && request.resource.data.keys().hasOnly(['custId', 'name', 'lat', 'lng', 'acc', 'by', 'orderId', 'n', 'at'])
+                    && request.resource.data.custId == id
+                    && request.resource.data.by == myDrvName()
+                    && request.resource.data.orderId is string
+                    && get(/databases/$(database)/documents/deliv_orders/$(request.resource.data.orderId)).data.get('custId', '') == id
+                    && get(/databases/$(database)/documents/deliv_orders/$(request.resource.data.orderId)).data.driverName == myDrvName()
+                    && request.resource.data.lat is number && request.resource.data.lng is number
+                    && request.resource.data.lat >= -90 && request.resource.data.lat <= 90
+                    && request.resource.data.lng >= -180 && request.resource.data.lng <= 180
+                    && request.resource.data.at == request.time;
       allow delete: if isAdmin();
     }
     match /deliv_cfg/{id} {

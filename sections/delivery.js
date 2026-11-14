@@ -7,7 +7,7 @@
 // العمولة: بتتخزن على الأوردر وقت التسليم (comm) فتغيير السعر بعدين مبيغيّرش القديم.
 import { getApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, setDoc, updateDoc, deleteDoc, addDoc, collection, onSnapshot, query, orderBy, limit, where, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, doc, setDoc, getDoc, updateDoc, deleteDoc, addDoc, collection, onSnapshot, query, orderBy, limit, where, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = t => String(t == null ? '' : t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -500,6 +500,7 @@ function render() {
   ROOT.querySelectorAll('[data-hid]').forEach(b => b.onclick = () => { const d = b.dataset.hid; HID.has(d) ? HID.delete(d) : HID.add(d); try { localStorage.setItem('delHid', JSON.stringify([...HID])); } catch (e) { } render(); });
   ROOT.querySelectorAll('[data-mutend]').forEach(b => b.onclick = () => { NEED_MUTE = !NEED_MUTE; try { localStorage.setItem('delNeedMute', NEED_MUTE ? '1' : '0'); } catch (e) { } if (!NEED_MUTE) NEED_LAST = 0; render(); });
   ROOT.querySelectorAll('[data-mute]').forEach(b => b.onclick = () => { if (!ST.mute && !audioOn()) { armAudio(); beep(880, 2); setTimeout(render, 300); return; } ST.mute = !ST.mute; render(); });
+  ROOT.querySelectorAll('[data-delplace]').forEach(b => b.onclick = async () => { if (!confirm('تمسح الموقع المحفوظ للعميل ده؟ (هيتحفظ من جديد مع أول توصيلة بالموقع)')) return; try { await deleteDoc(doc(DB, 'deliv_places', b.dataset.delplace)); PLACES.set(b.dataset.delplace, null); toast('اتمسح'); render(); } catch (e) { toast('مقدرتش: ' + (e.code || e.message)); } });
   ROOT.querySelectorAll('[data-live]').forEach(b => b.onclick = async () => { try { await setDoc(doc(DB, 'deliv_cfg', 'live'), { enabled: !LIVE.enabled }); toast(LIVE.enabled ? 'اتوقف التتبع المباشر' : 'اتشغّل التتبع المباشر'); } catch (e) { toast('مقدرتش: ' + (e.code || e.message)); } });
   ROOT.querySelectorAll('[data-trk]').forEach(b => b.onclick = async () => { try { await setDoc(doc(DB, 'deliv_cfg', 'track'), { enabled: !TRK.enabled }); toast(TRK.enabled ? 'اتوقف تسجيل موقع التسليم' : 'اتشغّل تسجيل موقع التسليم'); } catch (e) { toast('مقدرتش: ' + (e.code || e.message)); } });
   bind();
@@ -566,7 +567,7 @@ function liveHtml(act) {
       <div class="rd"><span data-ride="${t0(o)}">${rideTxt(now - t0(o))}</span><br><span data-wt="${dl}">${wtTxt(now - dl)}</span></div>
       <div class="tc" title="${esc(o.customerName || '')}">${o.customerName ? '👤 ' + esc(o.customerName) : '&nbsp;'}</div>
       <div class="tm2"><b>${M(tot)}</b>${o.changeGiven ? `<small>قيمة ${N(o.orderValue)} + فكة ${N(o.changeGiven)}</small>` : '<small>&nbsp;</small>'}</div>
-      <div class="tb"><span class="bg ${out ? 'zout' : 'zin'}">${out ? `🧭 خارج · 💰${COMM_OUT}` : '📍 داخل'}</span>${o.isVisa ? '<span class="pb v" title="فيزا">💳</span>' : ''}${o.isVodafoneCash ? '<span class="pb f" title="فودافون كاش">📱</span>' : ''}${mp ? `<a class="mapl" href="${mp}" target="_blank" rel="noopener" title="مكان التسليم${o.deliveredLoc.acc ? ' (دقة ±' + o.deliveredLoc.acc + ' م)' : ''}">🗺 مكان التسليم</a>` : `<span class="nt" title="اتسلّم من غير موقع">📍✖</span>`}${o.notes ? `<span class="nt" title="${esc(o.notes)}">📝</span>` : ''}</div>
+      <div class="tb"><span class="bg ${out ? 'zout' : 'zin'}">${out ? `🧭 خارج · 💰${COMM_OUT}` : '📍 داخل'}</span>${o.isVisa ? '<span class="pb v" title="فيزا">💳</span>' : ''}${o.isVodafoneCash ? '<span class="pb f" title="فودافون كاش">📱</span>' : ''}${mp ? `<a class="mapl" href="${mp}" target="_blank" rel="noopener" title="مكان التسليم${o.deliveredLoc.acc ? ' (دقة ±' + o.deliveredLoc.acc + ' م)' : ''}">🗺 مكان التسليم</a>` : `<span class="nt" title="اتسلّم من غير موقع">📍✖</span>`}${placeChip(o)}${o.notes ? `<span class="nt" title="${esc(o.notes)}">📝</span>` : ''}</div>
       ${canWrite() ? `<div class="tbtn"><button class="fin" data-fin="${o.id}">💰 استلمت الفلوس — قفل</button><div class="ib"><button class="prn" data-rc="${o.id}" title="طباعة ريسيت">🖨</button><button class="edt" data-ed="${o.id}" title="تعديل">✏️</button><button class="del" data-rm="${o.id}" title="حذف">🗑</button></div></div>` : ''}</div>`;
     }
     return `<div class="oc tile ${cls}" data-id="${o.id}" data-start="${o.startTime}" data-bs="${o.startTime}" data-th="${PROMISE}" data-as="${t0(o)}" data-out="${out ? 1 : 0}" data-batch="${b.batch ? 1 : 0}">
@@ -575,7 +576,7 @@ function liveHtml(act) {
       <div class="rd" data-rd>خرج من ${ride} د</div>
       <div class="tc" title="${esc(o.customerName || '')}">${o.customerName ? '👤 ' + esc(o.customerName) : '&nbsp;'}</div>
       <div class="tm2"><b>${M(tot)}</b>${o.changeGiven ? `<small>قيمة ${N(o.orderValue)} + فكة ${N(o.changeGiven)}</small>` : '<small>&nbsp;</small>'}</div>
-      <div class="tb"><span class="bg ${out ? 'zout' : 'zin'}">${out ? `🧭 خارج · 💰${COMM_OUT}` : '📍 داخل'}</span>${o.isVisa ? '<span class="pb v" title="فيزا">💳</span>' : ''}${o.isVodafoneCash ? '<span class="pb f" title="فودافون كاش">📱</span>' : ''}${o.notes ? `<span class="nt" title="${esc(o.notes)}">📝</span>` : ''}${o.posEndTime ? '<span class="nt" title="اتقفل في السيستم">✅</span>' : ''}</div>
+      <div class="tb"><span class="bg ${out ? 'zout' : 'zin'}">${out ? `🧭 خارج · 💰${COMM_OUT}` : '📍 داخل'}</span>${o.isVisa ? '<span class="pb v" title="فيزا">💳</span>' : ''}${o.isVodafoneCash ? '<span class="pb f" title="فودافون كاش">📱</span>' : ''}${o.notes ? `<span class="nt" title="${esc(o.notes)}">📝</span>` : ''}${o.posEndTime ? '<span class="nt" title="اتقفل في السيستم">✅</span>' : ''}${placeChip(o)}</div>
       ${canWrite() ? `<div class="tbtn"><button class="fin" data-fin="${o.id}">✔ تسليم</button><div class="ib"><button class="prn" data-rc="${o.id}" title="طباعة ريسيت">🖨</button><button class="edt" data-ed="${o.id}" title="تعديل">✏️</button><button class="del" data-rm="${o.id}" title="حذف">🗑</button></div></div>` : ''}</div>`;
   });
   const outCards = [], needCards = [];
@@ -595,6 +596,16 @@ function liveHtml(act) {
 
 const sellerOf = o => o.employeeName ? nm(o.employeeName) + (o.source === 'pos' ? '' : ' (يدوي)') : '—';   // البائع على فارما فلاي (للأوردر اليدوي: اللي سجّله)
 const confOf = o => o.confirmedBy ? nm(o.confirmedBy) : '—';                                               // اللي أكّد الأوردر على المندوب
+/* (14/11، طلبه) موقع العميل المحفوظ (deliv_places/{رقم العميل في فارما فلاي}): بيظهر على كارت الأوردر لو العميل اتسلّمله قبل كده بالموقع */
+const PLACES = new Map(), PLQ = new Set();
+function needPlace(o) {
+  const k = o.custId; if (!k || PLACES.has(k) || PLQ.has(k)) return; PLQ.add(k);
+  getDoc(doc(DB, 'deliv_places', k)).then(s => { PLACES.set(k, s.exists() ? s.data() : null); safeRender(); }).catch(() => { PLQ.delete(k); });
+}
+const placeChip = o => {
+  needPlace(o); const p = o.custId && PLACES.get(o.custId); if (!p) return '';
+  return `<a class="mapl" href="https://www.google.com/maps?q=${p.lat},${p.lng}" target="_blank" rel="noopener" title="موقع محفوظ من توصيلة قبل كده${p.by ? ' — ' + esc(p.by) : ''}">📍 موقعه محفوظ</a>${isAdm() ? `<button type="button" class="ib" data-delplace="${esc(o.custId)}" title="امسح الموقع المحفوظ (لو غلط)" style="border:0;background:none;cursor:pointer">🗑</button>` : ''}`;
+};
 const mapUrl = o => o.deliveredLoc ? `https://www.google.com/maps?q=${o.deliveredLoc.lat},${o.deliveredLoc.lng}` : '';
 const locCell = o => o.deliveredLoc ? `<a class="mapl" href="${mapUrl(o)}" target="_blank" rel="noopener" title="دقة ±${o.deliveredLoc.acc || '?'} م">📍 الموقع</a>` : o.deliveredAt ? '<span class="sub">من غير موقع</span>' : '—';
 /* (12/11، طلبه) «اتسلّمت النهارده»: الأوردرات اللي اتقفلت من 9 الصبح مع وقت تسليم المندوب للعميل وموقعه — بتظهر للكاشير والأدمن (من غير قراية زيادة، بنفس اشتراك «اللي اتسلّم النهارده») */
@@ -639,7 +650,7 @@ function asgCard(o, now) {
   const dly = o.importedAt ? `<span>⏱ نزل بعد ${Math.max(0, Math.round((o.importedAt - o.startTime) / 1000))} ث</span>` : '';
   return `<div class="oc asg" data-id="${o.id}" data-start="${o.startTime}" data-bs="${o.startTime}" data-th="${LATE_SINGLE}" data-out="0" data-batch="0">
     <div class="asgh"><h4>${esc(nm(o.customerName) || 'عميل بدون اسم')}</h4><span class="bg bat">من السيستم #${o.posId || ''}</span></div>
-    <div class="asgm">${o.district ? `<span>🏠 ${esc(o.district)}</span>` : ''}${o.employeeName ? `<span>👤 الموظف: ${esc(nm(o.employeeName))}</span>` : ''}${o.posEndTime ? `<span class="okc">✅ اتقفل في السيستم ${timeStr(o.posEndTime)}</span>` : ''}</div>
+    <div class="asgm">${o.district ? `<span>🏠 ${esc(o.district)}</span>` : ''}${o.employeeName ? `<span>👤 الموظف: ${esc(nm(o.employeeName))}</span>` : ''}${o.posEndTime ? `<span class="okc">✅ اتقفل في السيستم ${timeStr(o.posEndTime)}</span>` : ''}${placeChip(o)}</div>
     <div class="asgm asgt2">${dly}<span data-bd>🕒 منذ ${min} د</span><span>📅 ${dateStr(o.startTime)} · ${timeStr(o.startTime)}</span></div>
     <div class="asgval"><small>قيمة الطلب</small><b>${M(o.orderValue)}</b></div>
     ${canWrite() ? `<div class="asgbox">${canDrv() ? `<div style="display:flex;gap:14px;flex-wrap:wrap"><button type="button" class="lnk" data-adddrv>+ إضافة مندوب جديد</button>${isAdm() ? `<button type="button" class="lnk" style="color:#b91c1c" data-deldrv2="${o.id}">🗑 حذف مندوب</button>` : ''}</div>` : ''}<select data-asd="${o.id}"><option value="">-- اختر المندوب (إجباري) --</option>${drs.map(x => `<option ${a.drv === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>

@@ -1,7 +1,7 @@
 // شاشة المندوب (11/11، طلبه) — منقولة من نسخة Pro: أوردراته الشغّالة بس + زرار «سلّمت للعميل» بيسجّل مكانه لحظة التسليم (مش تتبع طول اليوم).
 // المندوب مبيقفلش الأوردر: بيسجّل deliveredAt + deliveredLoc بس، والكاشير بيشوف «سُلّم للعميل» ويقفل الأوردر بعد ما المندوب يرجّع الفلوس.
 // القراية: query واحد (driverName == اسمه && status == PENDING) — القواعد بتشترط الفلتر ده. زرار الأدمن deliv_cfg/track.enabled=false بيوقف تسجيل الموقع.
-import { collection, query, where, onSnapshot, doc, updateDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { collection, query, where, onSnapshot, doc, updateDoc, setDoc, getDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const esc = t => String(t == null ? '' : t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const M = n => (+n || 0).toLocaleString('en-US') + ' ج';
@@ -59,6 +59,7 @@ function css() {
 .drvwrap .dgo:disabled{opacity:.6}
 .drvwrap .dwait{text-align:center;font-weight:800;color:#166534;font-size:15px;padding:10px;background:#dcfce7;border-radius:12px;line-height:1.7}
 .drvwrap .dctl{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}.drvwrap .dsub{font-size:13px;color:#475569;line-height:1.7}.drvwrap .dgo.stop{background:#dc2626}.drvwrap .dtrk{background:#fff;border-radius:14px;padding:10px;display:flex;flex-direction:column;gap:6px}
+.drvwrap .dplace{background:#ecfeff;border:1px solid #a5f3fc;border-radius:12px;padding:10px;margin-bottom:10px;font-size:13px;display:flex;flex-direction:column;gap:8px}.drvwrap .dnav{display:flex;align-items:center;justify-content:center;min-height:46px;background:#0891b2;color:#fff;border-radius:12px;font-weight:800;font-size:16px;text-decoration:none}
 .drvwrap .dempty{text-align:center;color:#64748b;padding:30px 10px;font-size:16px}
 .dtoast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#0f172a;color:#fff;padding:10px 16px;border-radius:12px;z-index:99;font-size:14px}
 `;
@@ -68,6 +69,20 @@ function css() {
 export function mountDriver(root, { db, driverName, uid }) {
   css(); root.classList.add('drvwrap');
   let ORDERS = [], READY = false, BUSY = '', SEEN = null, TRK = true;
+  /* (14/11، طلبه) موقع العميل المحفوظ من توصيلة قبل كده (deliv_places/{رقم العميل}) — بيظهر لأي مندوب لو العميل طلب تاني */
+  const PLACES = new Map(), PLQ = new Set();
+  function needPlaces() {
+    ORDERS.forEach(o => {
+      const k = o.custId; if (!k || PLACES.has(k) || PLQ.has(k)) return; PLQ.add(k);
+      getDoc(doc(db, 'deliv_places', k)).then(s => { PLACES.set(k, s.exists() ? s.data() : null); draw(); }).catch(() => { PLQ.delete(k); });
+    });
+  }
+  const placeBox = o => {
+    const p = o.custId && PLACES.get(o.custId); if (!p) return '';
+    const t = p.at && p.at.toMillis ? p.at.toMillis() : 0, dt = t ? new Date(t) : null, when = dt ? `${dt.getDate()}/${dt.getMonth() + 1}` : '';
+    return `<div class="dplace"><div>📍 <b>موقع العميل محفوظ</b>${when ? ' — من توصيلة ' + when : ''}${p.by ? ' (سلّمها ' + esc(p.by) + ')' : ''}${p.n > 1 ? ' · ' + p.n + ' مرات' : ''}</div>
+      <a class="dnav" href="https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}" target="_blank" rel="noopener">🧭 وصّلني للعميل</a></div>`;
+  };
   const sget = k => { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }, sset = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { } };
 
   /* ===== (13/11، طلبه) تنبيه الأوردر الجديد: سارينة عالية + اهتزاز + شاشة حمرا لحد ما يدوس «تمام» + إشعار نظام لو الصفحة في الخلفية ===== */
@@ -205,6 +220,7 @@ export function mountDriver(root, { db, driverName, uid }) {
         <span class="dchip">🕒 خرجت من ${min} د</span>${late ? '<span class="dchip late">⚠ عدّى 30 دقيقة</span>' : ''}
         ${o.isVisa ? '<span class="dchip pay">💳 فيزا</span>' : ''}${o.isVodafoneCash ? '<span class="dchip pay">📱 فودافون كاش</span>' : ''}</div>
       ${o.notes ? `<div class="dnotes">📝 ${esc(o.notes)}</div>` : ''}
+      ${sent ? '' : placeBox(o)}
       ${sent ? `<div class="dwait">✅ سلّمته للعميل ${timeStr(o.deliveredAt)}<br>ارجع الصيدلية وسلّم الفلوس للكاشير</div>`
              : `<button type="button" class="dgo" data-fin="${esc(o.id)}" ${BUSY ? 'disabled' : ''}>${BUSY === o.id ? '⏳ بحدد موقعك…' : '✔ سلّمت للعميل'}</button>`}</div>`;
   }
@@ -223,6 +239,13 @@ export function mountDriver(root, { db, driverName, uid }) {
     const data = { deliveredAt: Date.now(), locStatus: loc.ok ? 'ok' : (loc.status || 'off'), ...(loc.ok ? { deliveredLoc: { lat: loc.lat, lng: loc.lng, acc: loc.acc } } : {}) };
     try {
       await updateDoc(doc(db, 'deliv_orders', id), data);
+      if (loc.ok && loc.acc <= 150 && o.custId) {   // مكان العميل بيتحفظ لو الدقة كويسة (≤150م) والعميل مسجّل في فارما فلاي
+        try {
+          const prev = PLACES.get(o.custId);
+          await setDoc(doc(db, 'deliv_places', o.custId), { custId: o.custId, name: o.customerName || '', lat: loc.lat, lng: loc.lng, acc: loc.acc, by: driverName, orderId: id, n: ((prev && prev.n) || 0) + 1, at: serverTimestamp() });
+          PLACES.set(o.custId, { custId: o.custId, name: o.customerName || '', lat: loc.lat, lng: loc.lng, acc: loc.acc, by: driverName, n: ((prev && prev.n) || 0) + 1, at: { toMillis: () => Date.now() } });
+        } catch (e) { }
+      }
       toast(loc.ok && loc.acc > 100 ? `✔ اتسجّل (دقة الموقع ضعيفة ±${loc.acc} متر)` : '✔ اتسجّل — ارجع للصيدلية بالفلوس');
     } catch (e) { toast('مقدرتش أسجّل: ' + (e.code === 'permission-denied' ? 'الأوردر اتغيّر أو اتقفل — حدّث الصفحة' : (e.code || e.message))); }
     BUSY = ''; draw();
@@ -249,7 +272,7 @@ export function mountDriver(root, { db, driverName, uid }) {
     const ids = new Set(ORDERS.map(o => o.id));
     if (SEEN) { const fresh = ORDERS.filter(o => !SEEN.has(o.id)); if (fresh.length) newOrderAlert(fresh); }
     wantWake();
-    SEEN = ids; READY = true; draw();
+    SEEN = ids; READY = true; needPlaces(); draw();
   }, e => { root.innerHTML = `<div class="dempty" style="color:#b91c1c">مقدرتش أقرا أوردراتك: ${esc(e.code || e.message)}${e.code === 'permission-denied' ? ' — كلّم المدير (حسابك مش مربوط باسمك)' : ''}</div>`; });
   onSnapshot(doc(db, 'deliv_cfg', 'live'), s => { LIVEOK = !s.exists() || s.data().enabled !== false; if (!LIVEOK && TON) stopTrack(true); else draw(); }, () => { });
   if (TON) setTimeout(() => { const t = TON; TON = false; if (t) startTrack(); }, 1500);   // رجوع بعد ريفريش: كمّل التتبع لو كان شغال
