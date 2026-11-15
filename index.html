@@ -2788,7 +2788,7 @@ let DEL_ON = false;
 async function openDelivery(root, role){
   if (DEL_ON) return; DEL_ON = true;
   if (!root && ROLE === 'admin') drvAccts();
-  try { const m = await import('./sections/delivery.js?v=38'); await m.mountDelivery(root || $('delRoot'), role || ROLE); }
+  try { const m = await import('./sections/delivery.js?v=39'); await m.mountDelivery(root || $('delRoot'), role || ROLE); }
   catch (e) { DEL_ON = false; (root || $('delRoot')).innerHTML = `<div class="banner bad">مقدرتش أحمّل قسم الدليفري: ${esc(e.code || e.message)}</div>`; }
 }
 
@@ -3434,20 +3434,7 @@ window.walletInit = () => {
 };
 new MutationObserver(() => { const w = document.getElementById('wallet'); if (w && !w.dataset.on){ w.dataset.on = 1; walletInit(); } })
   .observe(document.body, {childList:true, subtree:true});
-let sx = 0, sy = 0, skip = false;
-document.addEventListener('touchstart', e => {
-  const t = e.touches[0]; sx = t.clientX; sy = t.clientY;
-  skip = !!e.target.closest('.scroll,table,input,select,textarea,.tabs,.wallet');
-}, {passive:true});
-document.addEventListener('touchend', e => {
-  if (skip) return;
-  const t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy;
-  if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 2) return;
-  const root = [...document.querySelectorAll('#emp,#adm')].find(r => !r.classList.contains('hide')); if (!root) return;
-  const tabs = [...root.querySelectorAll('.tabs button')];
-  const i = tabs.findIndex(x => x.classList.contains('on')), j = i + (dx < 0 ? 1 : -1);
-  if (tabs[j]) tabs[j].click();
-}, {passive:true});
+// (اتشال: السحب بالعرض بين التبويبات — كان بينقل من صفحة لصفحة بالغلط)
 </script>
 </body>
 </html>

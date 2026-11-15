@@ -275,7 +275,8 @@ function css() {
 :is(#adm,#delivery,#emp) .delwrap .cmm .hint{font-size:12px;color:#64748b;margin:8px 0 0}
 :is(#adm,#delivery,#emp) .delwrap .tw{overflow-x:auto;background:#fff;border:1px solid #e2e8f0;border-radius:16px;margin-bottom:12px}
 :is(#adm,#delivery,#emp) .delwrap table{width:100%;border-collapse:collapse;font-size:13.5px}
-:is(#adm,#delivery,#emp) .delwrap th,:is(#adm,#delivery,#emp) .delwrap td{padding:9px 10px;border-bottom:1px solid #f1f5f9;text-align:center;white-space:nowrap}
+:is(#adm,#delivery,#emp) .delwrap th,:is(#adm,#delivery,#emp) .delwrap td{padding:7px 5px;border-bottom:1px solid #f1f5f9;text-align:center;white-space:normal;overflow-wrap:anywhere;line-height:1.35}
+@media(max-width:900px){:is(#adm,#delivery,#emp) .delwrap table{font-size:10.5px}:is(#adm,#delivery,#emp) .delwrap th{font-size:9.5px}:is(#adm,#delivery,#emp) .delwrap th,:is(#adm,#delivery,#emp) .delwrap td{padding:5px 2px}}
 :is(#adm,#delivery,#emp) .delwrap th{background:#f8fafc;font-size:12.5px;color:#475569}
 :is(#adm,#delivery,#emp) .delwrap td.l,:is(#adm,#delivery,#emp) .delwrap th.l{text-align:start}
 :is(#adm,#delivery,#emp) .delwrap tr.late td{background:#fef2f2}
