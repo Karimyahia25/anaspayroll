@@ -2693,7 +2693,12 @@ window.drvTrk = async id => {
   m.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.6);z-index:300;display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:18px 12px';
   const row = (lbl, val) => `<div style="margin:8px 0"><div style="font-size:12px;color:#64748b">${lbl}</div><div style="display:flex;gap:6px"><input readonly value="${esc(val)}" dir="ltr" style="flex:1;font-size:13px" onclick="this.select()"><button class="ghost sm" onclick="navigator.clipboard.writeText('${esc(val)}').then(() => this.textContent = '✔')">نسخ</button></div></div>`;
   m.innerHTML = `<div class="card" style="max-width:520px;width:100%"><h3 style="margin-top:0">📡 تتبع «${esc(a.driverName)}» بتطبيق Traccar Client</h3>
-    <p class="sub">المندوب يسطّب <b>Traccar Client</b> (Play Store أو App Store — مجاني) ويكتب الإعدادات دي:</p>
+    <p class="sub">المندوب يسطّب <b>Traccar Client</b> (Play Store أو App Store — مجاني).</p>
+    <div style="text-align:center;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:12px;margin:8px 0">
+      <div style="font-weight:800;margin-bottom:6px">📷 أسهل طريقة: يمسح الكود ده</div>
+      <div id="trkQr" style="display:inline-block;background:#fff;padding:8px;border-radius:8px;min-width:120px;min-height:120px">⏳</div>
+      <div style="font-size:12.5px;color:#475569;margin-top:6px;line-height:1.7">في Traccar: <b>Settings</b> ← أيقونة <b>QR</b> فوق على اليمين ← وجّه الكاميرا. الكود فيه التوكن والعنوان والإعدادات (مسافة 75م، نبضة 120ث، دقة عالية). <b>متصوّرش الكود ده ومتبعتوش</b> — ده مفتاح المندوب.</div></div>
+    <p class="sub">أو يكتب الإعدادات دي بإيده:</p>
     ${row('Device identifier (معرّف الجهاز — سري)', token)}${row('Server URL (عنوان السيرفر)', TRK_URL)}
     <ul style="font-size:13px;line-height:1.9;padding-inline-start:18px">
       <li><b>Frequency (التكرار):</b> 60 ثانية</li><li><b>Location accuracy:</b> High</li><li><b>Offline buffering:</b> شغّله</li>
@@ -2704,6 +2709,12 @@ window.drvTrk = async id => {
     <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="sm" onclick="document.getElementById('trkModal').remove()">تمام</button>
       <button class="ghost sm" style="color:#b91c1c" onclick="drvTrkRevoke('${esc(id)}','${esc(token)}')">إلغاء التوكن</button></div></div>`;
   document.body.appendChild(m);
+  // (15/11) QR الإعداد: عنوان السيرفر + ?id=التوكن + إعدادات التطبيق (مكتبة qrcode-generator من cdnjs)
+  const qrBox = document.getElementById('trkQr'), qrUrl = `${TRK_URL}?id=${token}&accuracy=high&distance=75&heartbeat=120&buffer=true`;
+  try {
+    if (!window.qrcode) await new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js'; sc.onload = ok; sc.onerror = () => no(new Error('qr lib')); document.head.appendChild(sc); });
+    const qr = window.qrcode(0, 'M'); qr.addData(qrUrl); qr.make(); qrBox.innerHTML = qr.createSvgTag(5, 0);
+  } catch (e) { qrBox.textContent = 'مقدرتش أعمل الكود (محتاج نت) — اكتب الإعدادات بإيدك'; }
 };
 window.drvTrkRevoke = async (id, token) => {
   if (!confirm('تلغي توكن التتبع؟ تطبيق Traccar على موبايل المندوب هيقف عن الإرسال لحد ما تطلّع توكن جديد وتكتبه فيه.')) return;
