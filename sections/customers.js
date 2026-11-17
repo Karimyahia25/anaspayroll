@@ -24,7 +24,7 @@ const LISTS = [['قرّب', '⏰ ميعاده قرّب', 'ابعتله قبل م
                ['اتأخر', '⚠️ اتأخر', 'عدّى ميعاده ومجاش — يمكن جاب من برا أو نسي'],
                ['بعد', '💔 بعد عننا', 'مجاش خالص من أكتر من شهرين — رسالة الاسترجاع']];
 const GRP = { lapsed: ['كان بيشتري وبطّل', '#8E5A2B'], med: ['دوا', '#0B8577'], diaper: ['حفاضات', '#2A6FB0'], milk: ['لبن أطفال', '#6B5BA8'], adult: ['كبار السن', '#7F8C8D'], cosmo: ['تجميل', '#C2417A'], soc: ['سوشيال', '#C2417A'] };
-const RES = [['تم', '✅ اتكلمنا', 'ok'], ['مردش', '📵 مردش', 'nr'], ['مش مهتم', '🙅 مش مهتم', 'no'], ['رقم غلط', '☎️ رقم غلط', 'bad']];
+const RES = [['تم', '✅ اتكلمنا', 'ok'], ['بعتنا واتس', '💬 بعتنا واتس', 'wa'], ['مردش', '📵 مردش', 'nr'], ['مش مهتم', '🙅 مش مهتم', 'no']];   // (17/11، طلبه) «رقم غلط» اتشال، و«بعتنا واتس» اتضاف
 const WINDOW = 14;            // اشترى خلال 14 يوم من التواصل = نجاح
 const RETRY_NR = 2;           // مردش: يرجع يظهر بعد يومين
 
@@ -76,7 +76,7 @@ function css() {
 #crmRoot .ph a{display:inline-flex;align-items:center;min-height:44px;padding:6px 14px;border-radius:10px;background:var(--green-soft);color:var(--green-deep);font-weight:700;text-decoration:none;direction:ltr}
 #crmRoot .act{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
 #crmRoot .act button{min-height:44px;font-size:13.5px;padding:8px 12px}
-#crmRoot .act button.r-ok{background:#1B7F3B}#crmRoot .act button.r-nr{background:#B0761F}#crmRoot .act button.r-no{background:#7F8C8D}#crmRoot .act button.r-bad{background:#A32E1E}
+#crmRoot .act button.r-wa{background:#128C7E}#crmRoot .act button.r-ok{background:#1B7F3B}#crmRoot .act button.r-nr{background:#B0761F}#crmRoot .act button.r-no{background:#7F8C8D}#crmRoot .act button.r-bad{background:#A32E1E}
 #crmRoot .last{font-size:12.5px;margin-top:8px;padding:7px 10px;border-radius:10px;background:var(--paper)}
 #crmRoot .last.win{background:color-mix(in srgb,#1B7F3B 14%,var(--card));color:var(--ink);font-weight:600}
 #crmRoot details.msg{margin-top:6px}#crmRoot details.msg summary{cursor:pointer;color:var(--green);font-size:13px;font-weight:700}
@@ -311,7 +311,7 @@ async function record(id, result, btn) {
 function results(days, src = LOG) {
   const from = addDays(today(), -days), recs = src.filter(x => x.day >= from);
   const won = [], seen = new Set();
-  for (const r of recs.filter(x => x.result === 'تم').sort((a, b) => a.day.localeCompare(b.day))) {
+  for (const r of recs.filter(x => x.result === 'تم' || x.result === 'بعتنا واتس').sort((a, b) => a.day.localeCompare(b.day))) {
     if (seen.has(r.cust)) continue; const w = boughtAfter(r); if (w) { won.push({ ...r, w }); seen.add(r.cust); }
   }
   return { recs, won, rev: won.reduce((a, x) => a + x.w.amt, 0) };
@@ -320,8 +320,8 @@ function resView() {
   const blocks = [7, 30].map(d => {
     const R = results(d), by = k => R.recs.filter(x => x.result === k).length;
     return `<div class="card" style="margin-bottom:12px"><h3 style="margin:0 0 8px">آخر ${d} يوم</h3>
-      <div class="ck"><div><div class="l">تواصل</div><div class="v">${N(R.recs.length)}</div><div class="l">اتكلمنا ${by('تم')} · مردش ${by('مردش')} · مش مهتم ${by('مش مهتم')} · رقم غلط ${by('رقم غلط')}</div></div>
-        <div style="border-color:#1B7F3B"><div class="l">اشتروا بعد التواصل</div><div class="v">${N(R.won.length)}</div><div class="l">من ${by('تم')} اتكلمنا معاهم</div></div>
+      <div class="ck"><div><div class="l">تواصل</div><div class="v">${N(R.recs.length)}</div><div class="l">اتكلمنا ${by('تم')} · واتس ${by('بعتنا واتس')} · مردش ${by('مردش')} · مش مهتم ${by('مش مهتم')}</div></div>
+        <div style="border-color:#1B7F3B"><div class="l">اشتروا بعد التواصل</div><div class="v">${N(R.won.length)}</div><div class="l">من ${by('تم') + by('بعتنا واتس')} اتكلمنا/بعتنا لهم</div></div>
         <div style="border-color:#1B7F3B"><div class="l">مبيعاتهم بعد التواصل</div><div class="v">${M(R.rev)}</div><div class="l">خلال ${WINDOW} يوم من المكالمة</div></div></div>
       ${R.won.length ? `<div class="tw"><table><tr><th>العميل</th><th>اتكلمنا</th><th>اشترى</th><th>بكام</th><th>القايمة</th></tr>
         ${R.won.map(x => `<tr><td>${esc(x.name)}</td><td>${D(x.day)}</td><td>${D(x.w.day)}</td><td>${M(x.w.amt)}</td><td>${esc(x.list)}</td></tr>`).join('')}</table></div>` : ''}</div>`;
