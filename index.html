@@ -409,7 +409,7 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="delivery" class="hide"></div>
 <div id="driverapp" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-11-17-B</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-11-17-C</b></div>
 </div>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
@@ -508,11 +508,11 @@ function parseBook(wb){
     if (norm(c).includes(norm('تاريخ بداية الدورة'))) ps = r[j+1];
     if (norm(c).includes(norm('تاريخ نهاية الدورة'))) pe = r[j+1];
   }));
-  const W = { h:0.35, i:0.25, p:0.20, c:0.20 };
+  const W = { h:0.35, t:0.25, p:0.20, c:0.20 };   // (17/11، قراره) وسيط الفاتورة اتشال، ومكانه تواصل العملاء 25٪
   /* XICLAV: 10٪ لحد 24/10 و20٪ من 25/10/2026 (قرار د. يحيى 30/10) — بيتقري من دليل_وافتراضات لو موجود */
   const RATES = { gen:0.10, xic:0.10, neb:0.10, xic2:0.20, xicFrom:new Date(2026, 9, 25) };
   let xicFromRaw = null;
-  const pick = [['وزن المبيعات لكل ساعة عمل', v => W.h = v], ['وزن وسيط قيمة الفاتورة', v => W.i = v],
+  const pick = [['وزن المبيعات لكل ساعة عمل', v => W.h = v], ['وزن تواصل العملاء', v => W.t = v],
     ['وزن نسبة قيمة البوشينج', v => W.p = v], ['وزن نسبة تسجيل اسم العميل', v => W.c = v],
     ['عمولة البوشينج العامة', v => RATES.gen = v], ['عمولة XICLAVE', v => RATES.xic = v],
     ['عمولة NEBULA', v => RATES.neb = v], ['عمولة XICLAVE (٢)', v => RATES.xic2 = v]];
@@ -767,10 +767,14 @@ function parseItems(wb, salesRows, rates){
 }
 
 /* ================= حساب المؤشرات ================= */
-function buildKPI(people, sales, items, W0){
-  let W = Object.assign({}, W0);
-  if (!items){ const rest = W.h + W.i + W.c;
-    if (rest > 0) { W = { h: W.h/rest, i: W.i/rest, p: 0, c: W.c/rest }; } }
+/* crmFn(p) = {n, ok} عدد العملاء اللي كلّمهم الموظف في الفترة (من crm_log)، أو null لو مش محمّل — ساعتها وزنه بيتوزع على الباقي */
+function buildKPI(people, sales, items, W0, crmFn){
+  let W = { h: W0.h, t: W0.t, p: W0.p, c: W0.c };
+  const haveT = typeof crmFn === 'function';
+  if (!items) W.p = 0;
+  if (!haveT) W.t = 0;
+  const renorm = () => { const sum = W.h + W.t + W.p + W.c; if (sum > 0) W = { h: W.h/sum, t: W.t/sum, p: W.p/sum, c: W.c/sum }; };
+  renorm();
   const bySeller = {};
   sales.forEach(r => {
     const s = r.seller; if (!s) return;
@@ -796,7 +800,7 @@ function buildKPI(people, sales, items, W0){
       include: String(p.include || '').includes('نعم'), commOK,
       invoices: b.invoices, net: Math.round(b.net*100)/100, gross: b.gross,
       rets: b.rets, retVal: b.retVal,
-      medInv: Math.round(median(b.vals)*100)/100,
+      contacts: haveT ? ((crmFn(p) || {}).n || 0) : 0,
       custPct: b.invoices ? b.cust / b.invoices : 0,
       delivPct: b.invoices ? b.deliv / b.invoices : 0,
       perHour: (+p.hours) ? b.net / p.hours : 0,
@@ -808,20 +812,21 @@ function buildKPI(people, sales, items, W0){
 
   const inc = rows.filter(r => r.include);
   const mx = k => Math.max(0, ...inc.map(r => r[k] || 0));
-  const M = { perHour: mx('perHour'), medInv: mx('medInv'), pushPct: mx('pushPct'), custPct: mx('custPct') };
+  const M = { perHour: mx('perHour'), contacts: mx('contacts'), pushPct: mx('pushPct'), custPct: mx('custPct') };
+  if (haveT && M.contacts === 0 && W.t > 0){ W.t = 0; renorm(); }   // محدش كلّم حد في الفترة: مفيش مقارنة
   rows.forEach(r => {
     if (!r.include) { r.score = null; return; }
     const n = (v, m) => m > 0 ? (v / m) * 100 : 0;
-    r.sHour = n(r.perHour, M.perHour); r.sInv = n(r.medInv, M.medInv);
+    r.sHour = n(r.perHour, M.perHour); r.sCon = n(r.contacts, M.contacts);
     r.sPush = n(r.pushPct, M.pushPct); r.sCust = n(r.custPct, M.custPct);
-    r.score = Math.round((W.h*r.sHour + W.i*r.sInv + W.p*r.sPush + W.c*r.sCust) * 10) / 10;
+    r.score = Math.round((W.h*r.sHour + W.t*r.sCon + W.p*r.sPush + W.c*r.sCust) * 10) / 10;
   });
   rows.sort((a,b) => (b.score ?? -1) - (a.score ?? -1) || b.net - a.net);
   rows.W = W;
   const tot = { invoices: rows.reduce((a,r)=>a+r.invoices,0), net: rows.reduce((a,r)=>a+r.net,0),
     push: rows.reduce((a,r)=>a+r.pushValue,0), comm: rows.reduce((a,r)=>a+r.pushComm,0),
     scoreSum: inc.reduce((a,r)=>a+(r.score||0),0) };
-  return { rows, tot, unmapped, bySeller, W };
+  return { rows, tot, unmapped, bySeller, W, haveT: haveT && W.t > 0 };
 }
 
 /* ================= قفل الجلسة بعد سكون ================= */
@@ -1091,7 +1096,6 @@ async function renderEmp(){
       ${R('عدد الفواتير', d.sales.invoices)}
       ${R('صافي المبيعات', F(d.sales.net) + ' ج')}
       ${R('نسبتك من مبيعات الفرع', (d.sales.sharePct*100).toFixed(1) + '٪')}
-      ${R('وسيط قيمة الفاتورة', F(d.sales.medInv) + ' ج')}
       ${R('مبيعات لكل ساعة عمل', F(d.sales.perHour) + ' ج')}
       ${R('نسبة تسجيل اسم العميل', (d.sales.custPct*100).toFixed(1) + '٪')}
       ${R('نسبة التوصيل للمنازل', (d.sales.delivPct*100).toFixed(1) + '٪')}
@@ -1103,7 +1107,7 @@ async function renderEmp(){
       ${d.sales.include && d.sales.score != null ? R('درجة التقييم', F(d.sales.score) + ' / 100', 'total') : ''}
     </div>
     <div class="note">${d.sales.include
-      ? 'الدرجة محسوبة من: المبيعات لكل ساعة، وسيط قيمة الفاتورة، نسبة البوشينج، ونسبة تسجيل اسم العميل.'
+      ? (d.sales.contacts != null ? 'الدرجة محسوبة من: المبيعات لكل ساعة، عدد العملاء اللي كلّمتهم (متابعة العملاء)، نسبة البوشينج، ونسبة تسجيل اسم العميل.' : 'الدرجة محسوبة من: المبيعات لكل ساعة، نسبة البوشينج، ونسبة تسجيل اسم العميل (وسيط الفاتورة اتشال، وتواصل العملاء مش محسوب في الفترة دي).')
       : 'وظيفتك مش داخلة في تقييم المبيعات، فمفيش درجة — الأرقام دي للعلم بس.'}</div></div>` : ''}
 ${reqPanel()}
   <div id="ep7" class="card hide"><div id="cashBox"></div></div>
@@ -2929,11 +2933,10 @@ function salesPanel(rows, P){
   const pc = v => (v*100).toFixed(1) + '٪';
   const tr = bySales.map(r => `<tr${r.sales.include ? '' : ' style="opacity:.6"'}>
     <td>${esc(r.name)}</td><td class="num">${r.sales.invoices}</td><td class="num">${F(r.sales.net)}</td>
-    <td class="num">${net ? pc(r.sales.net/net) : '—'}</td><td class="num">${F(r.sales.medInv)}</td>
+    <td class="num">${net ? pc(r.sales.net/net) : '—'}</td><td class="num">${r.crmN != null ? r.crmN : '—'}</td>
     <td class="num">${HN(r.sales.perHour)}</td><td class="num">${pc(r.sales.custPct)}</td>
     <td class="num">${F(r.sales.pushValue)}</td>
     <td class="num">${r.sales.commOK === false ? 'غير مستحق' : F(r.sales.pushComm)}</td>
-    <td class="num">${r.crmN != null ? r.crmN : '—'}</td>
     <td class="num"><b>${r.sales.include && r.sales.score != null ? F(r.sales.score) : '—'}</b></td></tr>`).join('');
   return `
     ${statTiles([
@@ -2954,9 +2957,9 @@ function salesPanel(rows, P){
       <div>${donut(inv ? cust/inv : 0, 'فواتير مسجل لها اسم عميل', 'من ' + inv)}</div></div>
     <h2 style="margin-top:22px">المؤشرات بالتفصيل</h2>
     <div class="scroll"><table>
-      <tr><th>الاسم</th><th>فواتير</th><th>المبيعات</th><th>من الفرع</th><th>وسيط الفاتورة</th>
-      <th>مبيعات/ساعة</th><th>تسجيل عميل</th><th>بوشينج</th><th>عمولة</th><th>عملاء كلّمهم</th><th>الدرجة</th></tr>${tr}</table></div>
-    <div class="note">«عملاء كلّمهم» = عملاء مختلفين سجّل معاهم تواصل في متابعة العملاء خلال الفترة — للعلم، مش داخل في الدرجة لسه. الشفافية في الصف = مستبعد من التقييم. الدرجة من ١٠٠، محسوبة بالأوزان المسجلة في شيت الافتراضات.</div>`;
+      <tr><th>الاسم</th><th>فواتير</th><th>المبيعات</th><th>من الفرع</th><th>عملاء كلّمهم</th>
+      <th>مبيعات/ساعة</th><th>تسجيل عميل</th><th>بوشينج</th><th>عمولة</th><th>الدرجة</th></tr>${tr}</table></div>
+    <div class="note">«عملاء كلّمهم» = عملاء مختلفين سجّل معاهم تواصل في متابعة العملاء خلال الفترة (داخل في الدرجة بوزن 25٪ من الدورات الجديدة). الشفافية في الصف = مستبعد من التقييم. الدرجة من ١٠٠، محسوبة بالأوزان المسجلة في شيت الافتراضات.</div>`;
 }
 
 window.drill = uid => {
@@ -3004,7 +3007,7 @@ window.drill = uid => {
   const salesHtml = r.sales ? `<div class="rows">
       ${R('عدد الفواتير', r.sales.invoices)}${R('صافي المبيعات', F(r.sales.net) + ' ج')}
       ${R('نسبته من مبيعات الفرع', ((r.sales.sharePct||0)*100).toFixed(1) + '٪')}
-      ${R('وسيط قيمة الفاتورة', F(r.sales.medInv) + ' ج')}${R('مبيعات لكل ساعة', F(r.sales.perHour) + ' ج')}
+      ${R('عملاء كلّمهم', r.crmN != null ? r.crmN : '—')}${R('مبيعات لكل ساعة', F(r.sales.perHour) + ' ج')}
       ${R('تسجيل اسم العميل', ((r.sales.custPct||0)*100).toFixed(1) + '٪')}
       ${R('قيمة البوشينج', F(r.sales.pushValue) + ' ج')}
       ${R('عمولة البوشينج', r.sales.commOK === false ? 'غير مستحق' : F(r.sales.pushComm) + ' ج')}
@@ -3042,12 +3045,12 @@ window.exportDash = async () => {
   const head = ['الكود','الاسم','الوظيفة','سعر الساعة الشهري','معدل الساعة','الساعات الفعلية','ساعات مرحّلة',
     'أجر الساعات','عدد التأخيرات','المعفاة','ربع يوم','نص يوم','خصم التأخير','أيام غياب','جزاء الغياب','جزاءات إدارية','إجمالي الخصومات','إجمالي الحوافز',
     'مسحوبات آجلة','عمولة البوشينج (تلقائي)','حافز أوردر السوشيال','صافي المستحق','أيام محتاجة مراجعة',
-    'عدد الفواتير','صافي المبيعات','نسبته من مبيعات الفرع','وسيط قيمة الفاتورة','مبيعات لكل ساعة',
+    'عدد الفواتير','صافي المبيعات','نسبته من مبيعات الفرع','عملاء كلّمهم','مبيعات لكل ساعة',
     'نسبة تسجيل العميل','قيمة البوشينج','عمولة البوشينج','درجة التقييم','خصم الخزنة'];
   const body = DASH.rows.map(r => [r.code, r.name, r.job||'', r.rate||0, r.hourly||0, r.hours||0, r.carried||0,
     r.wage||0, r.lates||0, r.exempt||0, r.q||0, r.half||0, r.lateDed||0, 
     r.absDays||0, r.absPen||0, r.adminPen||0, r.totalDed||0, r.bonus||0, r.adv||0, r.pushAuto||0, r.socialAuto||0, r.net||0, r.flags||0,
-    r.sales?.invoices||0, r.sales?.net||0, r.sales?.sharePct||0, r.sales?.medInv||0, r.sales?.perHour||0,
+    r.sales?.invoices||0, r.sales?.net||0, r.sales?.sharePct||0, r.crmN||0, r.sales?.perHour||0,
     r.sales?.custPct||0, r.sales?.pushValue||0, r.sales?.pushComm||0, r.sales?.score||'', r.cashPen||0]);
   const ws = XLSX.utils.aoa_to_sheet([[`كشف المرتبات — ${P.label || DASH.period}`], [], head, ...body]);
   const wb = XLSX.utils.book_new();
@@ -3092,7 +3095,7 @@ const rdItm = wb => { if (!SALES) throw new Error('ارفع تقرير الفو�
   ITEMS = parseItems(wb, SALES.rows, PARSED.RATES); recompute(); };
 
 function recompute(){
-  KPI = (PARSED && SALES) ? buildKPI(PARSED.people, SALES.rows, ITEMS, PARSED.W) : null;
+  rebuildKPI();
   $('upState').innerHTML = [
     PARSED ? `✔ المرتبات: ${PARSED.people.length} موظف — ${esc(PARSED.label)}` : '',
     SALES ? `✔ المبيعات: ${SALES.rows.length} فاتورة${SALES.itemLevel ? ` (من ${SALES.lines} سطر صنف)` : ''} داخل الفترة — قرا ${SALES.sheets} شيت${SALES.outside ? ` — ${SALES.outside} سطر بره الفترة اتشالوا` : ''}${SALES.noId ? ' — ⚠ الملف مفيهوش عمود (كود البيع)، فعدد الفواتير تقريبي' : ''}` : '',
@@ -3102,6 +3105,25 @@ function recompute(){
   showPreview();
 }
 
+/* (17/11، قراره) تواصل العملاء داخل الدرجة بوزن 25٪: عدد العملاء المختلفين اللي الموظف سجّل معاهم تواصل (أي نتيجة) في الفترة.
+   بيتقري من crm_log (الأدمن بيقرا الكل). التطابق: uid الموظف (من staff) أو الاسم على الجهاز المشترك. */
+let CRMC = null;
+async function loadCrmC(P){
+  const c = { key: cashKey(P), rows: [], uids: {}, err: null };
+  try {
+    c.rows = (await getDocs(query(collection(db, 'crm_log'), where('day', '>=', isoLocal(P.ps)), where('day', '<=', isoLocal(P.pe))))).docs.map(d => d.data());
+    (await getDocs(collection(db, 'staff'))).forEach(d => { const v = d.data(); if (v.code != null) c.uids[d.id] = String(v.code).trim(); });
+  } catch (e) { c.err = e.code || e.message; }
+  CRMC = c;
+}
+function crmStat(p){
+  if (!CRMC || CRMC.err || !PARSED || CRMC.key !== cashKey(PARSED)) return null;
+  const code = String(p.code).trim(), mc = CRMC.rows.filter(x => CRMC.uids[x.by] === code || x.byName === p.name);
+  return { n: new Set(mc.map(x => x.cust)).size, ok: new Set(mc.filter(x => x.result === 'تم').map(x => x.cust)).size };
+}
+function rebuildKPI(){
+  KPI = (PARSED && SALES) ? buildKPI(PARSED.people, SALES.rows, ITEMS, PARSED.W, (CRMC && !CRMC.err && PARSED && CRMC.key === cashKey(PARSED)) ? crmStat : null) : null;
+}
 const autoComm = code => {
   if (!KPI || !ITEMS) return 0;
   const k = KPI.rows.find(x => String(x.code) === String(code));
@@ -3120,6 +3142,7 @@ function showPreview(){
   const P = PARSED;
   if (!CASHP || CASHP.key !== cashKey(P)) loadCashPen(P).then(() => { if (PARSED === P) showPreview(); });
   if (!ADVP || ADVP.key !== cashKey(P)) loadAdvPen(P).then(() => { if (PARSED === P) showPreview(); });
+  if (!CRMC || CRMC.key !== cashKey(P)) loadCrmC(P).then(() => { if (PARSED === P){ rebuildKPI(); showPreview(); } });
   const bad = P.people.filter(p => !p.rate), flag = P.people.filter(p => p.flags > 0);
   const left = P.people.filter(p => String(p.status || '').includes('ترك'));
   let w = '';
@@ -3183,7 +3206,7 @@ function kpiBlock(){
   const tr = K.rows.map((r,i) => `<tr${r.include ? '' : ' style="opacity:.55"'}>
     <td>${r.include ? i+1 : '—'}</td><td>${esc(r.name)}</td>
     <td class="num">${r.invoices}</td><td class="num">${F(r.net)}</td>
-    <td class="num">${F(r.medInv)}</td><td class="num">${F(r.perHour)}</td>
+    <td class="num">${K.haveT ? r.contacts : '—'}</td><td class="num">${F(r.perHour)}</td>
     <td class="num">${pc(r.custPct)}</td><td class="num">${ITEMS ? F(r.pushValue) : '—'}</td>
     <td class="num">${ITEMS ? (r.commOK ? F(r.pushComm) : 'غير مستحق') : '—'}</td>
     <td class="num"><b>${r.include ? F(r.score) : 'مستبعد'}</b></td></tr>`).join('');
@@ -3191,10 +3214,11 @@ function kpiBlock(){
     <h2 style="margin-top:22px">مؤشرات المبيعات</h2>
     <p class="sub">إجمالي الفرع في الفترة: <b>${F(K.tot.net)} ج</b> على <b>${K.tot.invoices}</b> فاتورة
       ${ITEMS ? ` — بوشينج <b>${F(K.tot.push)} ج</b> وعمولته <b>${F(K.tot.comm)} ج</b>` : ''}</p>
-    <p class="sub">الأوزان: مبيعات/ساعة ${pc(W.h)} · وسيط الفاتورة ${pc(W.i)} · نسبة البوشينج ${pc(W.p)} · تسجيل العميل ${pc(W.c)}</p>
+    <p class="sub">الأوزان: مبيعات/ساعة ${pc(W.h)} · عملاء كلّمهم ${pc(W.t)} · نسبة البوشينج ${pc(W.p)} · تسجيل العميل ${pc(W.c)}</p>
+    ${!K.haveT ? '<div class="banner">تواصل العملاء لسه بيتحمّل أو مش متاح، فوزنه (25٪) اتوزع على الباقي — هيتحسب وقت النشر.</div>' : ''}
     ${!ITEMS ? '<div class="banner">تقرير الأصناف مش مرفوع، فالبوشينج مش محسوب — الأوزان التلاتة الباقية اتعدلت تلقائياً عشان مجموعها يفضل ١٠٠٪.</div>' : ''}
     <div class="scroll"><table>
-      <tr><th>#</th><th>الاسم</th><th>فواتير</th><th>صافي المبيعات</th><th>وسيط الفاتورة</th>
+      <tr><th>#</th><th>الاسم</th><th>فواتير</th><th>صافي المبيعات</th><th>عملاء كلّمهم</th>
       <th>مبيعات/ساعة</th><th>تسجيل عميل</th><th>قيمة بوشينج</th><th>عمولة</th><th>الدرجة</th></tr>
       ${tr}</table></div>
     <h2 style="margin-top:18px">حافز التارجت — التوزيع المقترح</h2>
@@ -3224,10 +3248,7 @@ window.publish = async () => {
   const through = P.pe ? `${fmtDate(P.pe)}/${P.pe.getFullYear()}` : '';
   await loadCashPen(P);
   await loadAdvPen(P);
-  /* (12/11، طلبه) تواصل العملاء في الفترة (من crm_log) — بيتسجل على كشف كل موظف: كلّم كام عميل. للعلم بس، مش داخل في الدرجة لسه. */
-  let CRMC = { rows: [], err: null };
-  try { CRMC.rows = (await getDocs(query(collection(db, 'crm_log'), where('day', '>=', isoLocal(P.ps)), where('day', '<=', isoLocal(P.pe))))).docs.map(d => d.data()); }
-  catch (e) { CRMC.err = e.code || e.message; }
+  await loadCrmC(P); rebuildKPI();     // تواصل العملاء (جزء من الدرجة) — نقرا أحدث سجل قبل النشر
   if (ADVP.err && !confirm(`مقدرتش أقرا مسحوبات الموقع (${ADVP.err}) — مش هتتخصم من الكشوف. تكمل النشر؟`)) { btn.disabled = false; return; }
   if (CASHP.err && !confirm(`مقدرتش أقرا تقفيلات الخزنة (${CASHP.err}) — خصومات الخزنة مش هتتضاف للكشوف. تكمل النشر؟`)) {
     btn.disabled = false; return; }
@@ -3296,7 +3317,7 @@ window.publish = async () => {
     if (KPI){
       const k = KPI.rows.find(x => String(x.code) === code);
       if (k){ const rank = KPI.rows.filter(x => x.include).findIndex(x => String(x.code) === code);
-        rec.sales = { invoices:k.invoices, net:k.net, medInv:k.medInv, perHour:Math.round(k.perHour*100)/100,
+        rec.sales = { invoices:k.invoices, net:k.net, contacts:KPI.haveT ? k.contacts : null, perHour:Math.round(k.perHour*100)/100,
           custPct:Math.round(k.custPct*1000)/1000, delivPct:Math.round(k.delivPct*1000)/1000,
           rets:k.rets, retVal:Math.round(k.retVal*100)/100, pushValue:k.pushValue, pushComm:k.pushComm,
           pushPct:Math.round(k.pushPct*1000)/1000, include:k.include, commOK:k.commOK,
@@ -3304,11 +3325,8 @@ window.publish = async () => {
           branchNet:Math.round(KPI.tot.net*100)/100, branchInv:KPI.tot.invoices,
           sharePct: KPI.tot.net ? Math.round((k.net/KPI.tot.net)*1000)/1000 : 0 }; }
     }
-    if (!CRMC.err){
-      const mc = CRMC.rows.filter(x => x.by === uid || x.byName === p.name);
-      rec.crmN = new Set(mc.map(x => x.cust)).size;
-      rec.crmOk = new Set(mc.filter(x => x.result === 'تم').map(x => x.cust)).size;
-    }
+    const cs = crmStat(p);
+    if (cs){ rec.crmN = cs.n; rec.crmOk = cs.ok; }
     rec.hidden = !!p.noPublish;
     try {
       if (p.noPublish){
