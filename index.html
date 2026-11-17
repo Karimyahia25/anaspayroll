@@ -409,7 +409,7 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="delivery" class="hide"></div>
 <div id="driverapp" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-11-09-A</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-11-17-A</b></div>
 </div>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
@@ -951,7 +951,7 @@ async function crmDevStart(name){
   try { sessionStorage.setItem('crmWho', name); } catch(e){}
   $('cdPick').classList.add('hide'); $('myCustRoot').classList.remove('hide');
   $('cdWho').innerHTML = `شغال باسم <b>${esc(name)}</b> · <a href="#" onclick="crmDevSwitch();return false">مش انت؟ غيّر الاسم</a>`;
-  try { const m = await import('./sections/customers.js?v=19'); await m.mountEmployee($('myCustRoot'), ME.uid, name, true); }
+  try { const m = await import('./sections/customers.js?v=20'); await m.mountEmployee($('myCustRoot'), ME.uid, name, true); }
   catch (e) { $('myCustRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل العملاء: ${esc(e.code || e.message)}</div>`; }
 }
 window.crmDevSwitch = () => { try { sessionStorage.removeItem('crmWho'); } catch(e){} renderCrmDev(); };
@@ -1099,6 +1099,7 @@ async function renderEmp(){
       ${d.sales.pushValue ? R('قيمة أصناف البوشينج', F(d.sales.pushValue) + ' ج') : ''}
       ${d.sales.pushValue ? R('نسبة البوشينج من مبيعاتك', (d.sales.pushPct*100).toFixed(1) + '٪') : ''}
       ${d.sales.pushComm ? R('عمولة البوشينج المستحقة', F(d.sales.pushComm) + ' ج', 'plus') : ''}
+      ${d.crmN != null ? R('عملاء كلّمتهم (متابعة العملاء)', d.crmN + ' عميل — ردّ منهم ' + (d.crmOk || 0)) : ''}
       ${d.sales.include && d.sales.score != null ? R('درجة التقييم', F(d.sales.score) + ' / 100', 'total') : ''}
     </div>
     <div class="note">${d.sales.include
@@ -1165,7 +1166,7 @@ async function openMyCustomers(){
   if (MYCUST_ON) return; MYCUST_ON = true;
   let nm_ = '';
   try { const x = await getDoc(doc(db, 'staff', ME.uid)); if (x.exists()) nm_ = x.data().name || ''; } catch(e){}
-  try { const m = await import('./sections/customers.js?v=19'); await m.mountEmployee($('myCustRoot'), ME.uid, nm_); }
+  try { const m = await import('./sections/customers.js?v=20'); await m.mountEmployee($('myCustRoot'), ME.uid, nm_); }
   catch (e) { MYCUST_ON = false; $('myCustRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل عملائك: ${esc(e.code || e.message)}</div>`; }
 }
 window.etab = n => { if (n === 6) otMine(); if (n === 7) cashEmp(); if (n === 8) openMyCustomers(); [1,2,3,4,5,6,7,8].forEach(i => {
@@ -2652,7 +2653,7 @@ window.crmAcctMake = async () => {
 let CRM_ON = false;
 async function openCustomers(){
   if (CRM_ON) return; CRM_ON = true;
-  try { const m = await import('./sections/customers.js?v=19'); await m.mountCustomers($('crmRoot'), ROLE); }
+  try { const m = await import('./sections/customers.js?v=20'); await m.mountCustomers($('crmRoot'), ROLE); }
   catch (e) { CRM_ON = false; $('crmRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل قسم العملاء: ${esc(e.code || e.message)}</div>`; }
 }
 
@@ -2932,6 +2933,7 @@ function salesPanel(rows, P){
     <td class="num">${HN(r.sales.perHour)}</td><td class="num">${pc(r.sales.custPct)}</td>
     <td class="num">${F(r.sales.pushValue)}</td>
     <td class="num">${r.sales.commOK === false ? 'غير مستحق' : F(r.sales.pushComm)}</td>
+    <td class="num">${r.crmN != null ? r.crmN : '—'}</td>
     <td class="num"><b>${r.sales.include && r.sales.score != null ? F(r.sales.score) : '—'}</b></td></tr>`).join('');
   return `
     ${statTiles([
@@ -2953,8 +2955,8 @@ function salesPanel(rows, P){
     <h2 style="margin-top:22px">المؤشرات بالتفصيل</h2>
     <div class="scroll"><table>
       <tr><th>الاسم</th><th>فواتير</th><th>المبيعات</th><th>من الفرع</th><th>وسيط الفاتورة</th>
-      <th>مبيعات/ساعة</th><th>تسجيل عميل</th><th>بوشينج</th><th>عمولة</th><th>الدرجة</th></tr>${tr}</table></div>
-    <div class="note">الشفافية في الصف = مستبعد من التقييم. الدرجة من ١٠٠، محسوبة بالأوزان المسجلة في شيت الافتراضات.</div>`;
+      <th>مبيعات/ساعة</th><th>تسجيل عميل</th><th>بوشينج</th><th>عمولة</th><th>عملاء كلّمهم</th><th>الدرجة</th></tr>${tr}</table></div>
+    <div class="note">«عملاء كلّمهم» = عملاء مختلفين سجّل معاهم تواصل في متابعة العملاء خلال الفترة — للعلم، مش داخل في الدرجة لسه. الشفافية في الصف = مستبعد من التقييم. الدرجة من ١٠٠، محسوبة بالأوزان المسجلة في شيت الافتراضات.</div>`;
 }
 
 window.drill = uid => {
@@ -3222,6 +3224,10 @@ window.publish = async () => {
   const through = P.pe ? `${fmtDate(P.pe)}/${P.pe.getFullYear()}` : '';
   await loadCashPen(P);
   await loadAdvPen(P);
+  /* (12/11، طلبه) تواصل العملاء في الفترة (من crm_log) — بيتسجل على كشف كل موظف: كلّم كام عميل. للعلم بس، مش داخل في الدرجة لسه. */
+  let CRMC = { rows: [], err: null };
+  try { CRMC.rows = (await getDocs(query(collection(db, 'crm_log'), where('day', '>=', isoLocal(P.ps)), where('day', '<=', isoLocal(P.pe))))).docs.map(d => d.data()); }
+  catch (e) { CRMC.err = e.code || e.message; }
   if (ADVP.err && !confirm(`مقدرتش أقرا مسحوبات الموقع (${ADVP.err}) — مش هتتخصم من الكشوف. تكمل النشر؟`)) { btn.disabled = false; return; }
   if (CASHP.err && !confirm(`مقدرتش أقرا تقفيلات الخزنة (${CASHP.err}) — خصومات الخزنة مش هتتضاف للكشوف. تكمل النشر؟`)) {
     btn.disabled = false; return; }
@@ -3297,6 +3303,11 @@ window.publish = async () => {
           score:k.score, rank: rank >= 0 ? rank+1 : null,
           branchNet:Math.round(KPI.tot.net*100)/100, branchInv:KPI.tot.invoices,
           sharePct: KPI.tot.net ? Math.round((k.net/KPI.tot.net)*1000)/1000 : 0 }; }
+    }
+    if (!CRMC.err){
+      const mc = CRMC.rows.filter(x => x.by === uid || x.byName === p.name);
+      rec.crmN = new Set(mc.map(x => x.cust)).size;
+      rec.crmOk = new Set(mc.filter(x => x.result === 'تم').map(x => x.cust)).size;
     }
     rec.hidden = !!p.noPublish;
     try {

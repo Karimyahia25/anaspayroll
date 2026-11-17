@@ -7,6 +7,8 @@ import { getApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.
 import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, doc, getDoc, getDocs, setDoc, collection, addDoc, deleteDoc, query, where, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
+import { pickTip } from "./tips.js?v=1";
+
 const $ = (s, r = document) => r.querySelector(s);
 const esc = t => String(t == null ? '' : t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const N = n => (n == null || isNaN(n)) ? '—' : Math.round(n).toLocaleString('en-US');
@@ -21,7 +23,7 @@ const addDays = (s, n) => { const t = new Date(s + 'T12:00:00Z'); t.setUTCDate(t
 const LISTS = [['قرّب', '⏰ ميعاده قرّب', 'ابعتله قبل ما يخلص — ومعاه التوصيل في 30 دقيقة'],
                ['اتأخر', '⚠️ اتأخر', 'عدّى ميعاده ومجاش — يمكن جاب من برا أو نسي'],
                ['بعد', '💔 بعد عننا', 'مجاش خالص من أكتر من شهرين — رسالة الاسترجاع']];
-const GRP = { lapsed: ['كان بيشتري وبطّل', '#8E5A2B'], med: ['دوا', '#0B8577'], diaper: ['حفاضات', '#2A6FB0'], milk: ['لبن أطفال', '#6B5BA8'], adult: ['كبار السن', '#7F8C8D'], cosmo: ['تجميل', '#C2417A'] };
+const GRP = { lapsed: ['كان بيشتري وبطّل', '#8E5A2B'], med: ['دوا', '#0B8577'], diaper: ['حفاضات', '#2A6FB0'], milk: ['لبن أطفال', '#6B5BA8'], adult: ['كبار السن', '#7F8C8D'], cosmo: ['تجميل', '#C2417A'], soc: ['سوشيال', '#C2417A'] };
 const RES = [['تم', '✅ اتكلمنا', 'ok'], ['مردش', '📵 مردش', 'nr'], ['مش مهتم', '🙅 مش مهتم', 'no'], ['رقم غلط', '☎️ رقم غلط', 'bad']];
 const WINDOW = 14;            // اشترى خلال 14 يوم من التواصل = نجاح
 const RETRY_NR = 2;           // مردش: يرجع يظهر بعد يومين
@@ -79,6 +81,7 @@ function css() {
 #crmRoot .last.win{background:color-mix(in srgb,#1B7F3B 14%,var(--card));color:var(--ink);font-weight:600}
 #crmRoot details.msg{margin-top:6px}#crmRoot details.msg summary{cursor:pointer;color:var(--green);font-size:13px;font-weight:700}
 #crmRoot details.msg pre{white-space:pre-wrap;font-family:inherit;font-size:13px;background:var(--paper);padding:10px;border-radius:10px;margin:6px 0 0;line-height:1.8}
+#crmRoot .tip{margin-top:8px;padding:9px 11px;border-radius:10px;background:var(--green-soft);color:var(--green-deep);font-size:13px;line-height:1.8}
 #crmRoot .more{display:block;margin:12px auto;min-width:200px}
 #crmRoot .why{font-size:13px;color:var(--muted);margin:0 0 10px;line-height:1.7}
 #crmRoot table{width:100%;border-collapse:collapse;font-size:13px}#crmRoot th,#crmRoot td{padding:8px;border-top:1px solid var(--line);text-align:right}
@@ -96,7 +99,7 @@ function css() {
 
 /* ---------- بيانات ---------- */
 async function load() {
-  if (LOCAL) { ({ meta: META, cards: CARDS, visits: VIS, log: LOG } = LOCAL); return true; }
+  if (LOCAL) { ({ meta: META, cards: CARDS, visits: VIS, log: LOG } = LOCAL); dropSocial(); return true; }
   const m = await getDoc(doc(DB, 'crm', 'meta'));
   if (!m.exists()) return false;
   META = JSON.parse(m.data().d); const n = m.data().chunks; CARDS = [];
@@ -107,8 +110,12 @@ async function load() {
     /* (9/11) آخر LOG_DAYS بس — الحسابات كلها محتاجة 30 يوم بالكتير، والقراية الكاملة كانت بتكبر كل يوم (حد Firebase المجاني) */
     : (await getDocs(query(collection(DB, 'crm_log'), where('day', '>=', addDays(today(), -LOG_DAYS))))).docs.map(d => ({ _id: d.id, ...d.data() }));
   CLAIM = {}; (await getDocs(query(collection(DB, 'crm_claim'), where('at', '>=', addDays(today(), -CLAIM_DAYS))))).docs.forEach(d => { CLAIM[d.id] = d.data(); });
+  dropSocial();
   return true;
 }
+// (12/11، قراره) عملاء السوشيال في تبويبهم بس — بيتشالوا من كل القوايم التانية (قرّب/اتأخر/بعد عننا). الأرقام اللي فوق بتتحسب من اللي فاضل.
+let SOCREM = [];
+function dropSocial() { SOCREM = CARDS.filter(c => SOC_RX.test(c.name || '')); CARDS = CARDS.filter(c => !SOC_RX.test(c.name || '')); }
 // مين حاطط اسمه على العميل ده (آخر 14 يوم)
 function owner(id) {
   const c = CLAIM[id];
@@ -117,9 +124,9 @@ function owner(id) {
 // الجهاز المشترك (crm): uid واحد للكل فالملكية بالاسم؛ حساب الموظف الفردي بالـ uid
 const isMe = o => !!o && (MY.dev ? o.name === MY.name : o.uid === MY.uid);
 const mine = id => isMe(owner(id));
-const SNAP = ['id', 'name', 'phones', 'status', 'grp', 'items', 'due', 'late', 'visit', 'leak', 'monthly', 'deliv', 'area', 'msg'];
+const SNAP = ['id', 'name', 'phones', 'status', 'grp', 'items', 'due', 'late', 'visit', 'leak', 'monthly', 'deliv', 'area', 'msg', 'camp', 'last', 'v90', 'tk'];
 async function claim(id) {
-  const c = CARDS.find(x => x.id === id), snap = {}; SNAP.forEach(k => snap[k] = c[k]);
+  const c = cardFor(id), snap = {}; SNAP.forEach(k => { if (c[k] !== undefined) snap[k] = c[k]; });
   const rec = { uid: MY.uid, name: MY.name, at: today(), d: JSON.stringify(snap) };
   if (!LOCAL) await setDoc(doc(DB, 'crm_claim', String(id)), { ...rec, ts: serverTimestamp() });
   CLAIM[id] = rec;
@@ -164,15 +171,21 @@ function shell() {
   <div id="cbody"></div>`;
 }
 function kpis() {
-  if (ROLE === 'emp') {                                   // عدّاد الموظف: تسجيلاته هو بس (آخر 7 أيام)
-    const R = results(7, LOG.filter(x => x.byName === MY.name)), ok = R.recs.filter(x => x.result === 'تم').length;
+  if (ROLE === 'emp') {                                   // عدّاد الموظف: تسجيلاته هو بس — كلّم كام عميل (النهارده / 7 / 30 يوم)
+    const mineLog = LOG.filter(x => x.byName === MY.name), cnt = d => new Set(results(d, mineLog).recs.map(x => x.cust)).size;
+    const R7 = results(7, mineLog), ok7 = R7.recs.filter(x => x.result === 'تم').length;
     $('#ckpi', ROOT).innerHTML = `
-      <div><div class="l">تواصلك — آخر 7 أيام</div><div class="v">${N(R.recs.length)}</div><div class="l">اتكلمت مع ${N(ok)}</div></div>
-      <div style="border-color:#1B7F3B"><div class="l">اشتروا بعد ما كلّمتهم</div><div class="v">${N(R.won.length)}</div><div class="l">${M(R.rev)}</div></div>`;
+      <div><div class="l">كلّمت النهارده</div><div class="v">${N(cnt(0))}</div><div class="l">عميل</div></div>
+      <div><div class="l">آخر 7 أيام</div><div class="v">${N(cnt(7))}</div><div class="l">عميل · اتكلمت مع ${N(ok7)}</div></div>
+      <div><div class="l">آخر 30 يوم</div><div class="v">${N(cnt(30))}</div><div class="l">عميل</div></div>
+      <div style="border-color:#1B7F3B"><div class="l">اشتروا بعد ما كلّمتهم (7 أيام)</div><div class="v">${N(R7.won.length)}</div><div class="l">${M(R7.rev)}</div></div>`;
     $('#cmeta', ROOT).textContent = `حط اسمك على العميل اللي هتكلمه — بيختفي من قوايم زمايلك ${CLAIM_DAYS} يوم.`; return; }
-  const n = META.n || {}, v = META.value || {}, wk = results(7);
+  // الأرقام من القوايم اللي فاضلة بعد فصل السوشيال (مش من ملخص السيرفر)
+  const n = {}, v = {}, wk = results(7);
+  for (const c of CARDS) { n[c.status] = (n[c.status] || 0) + 1; v[c.status] = (v[c.status] || 0) + (c.monthly || 0); }
+  const tracked = (META.tracked || 0) - SOCREM.filter(c => c.status !== 'بعد').length;
   $('#ckpi', ROOT).innerHTML = `
-    <div><div class="l">عملاء متابعين</div><div class="v">${N(META.tracked)}</div></div>
+    <div><div class="l">عملاء متابعين</div><div class="v">${N(tracked)}</div></div>
     <div style="border-color:#2A6FB0"><div class="l">ميعادهم قرّب</div><div class="v">${N(n['قرّب'])}</div><div class="l">${M(v['قرّب'])}/شهر</div></div>
     <div style="border-color:#B0761F"><div class="l">اتأخروا</div><div class="v">${N(n['اتأخر'])}</div><div class="l">${M(v['اتأخر'])}/شهر</div></div>
     <div style="border-color:#1B7F3B"><div class="l">اشتروا بعد التواصل (7 أيام)</div><div class="v">${N(wk.won.length)}</div><div class="l">${M(wk.rev)}</div></div>`;
@@ -204,10 +217,16 @@ function filtered() {
     && !(ST.hideDone && contactedRecently(c))
     && (!q || c.name.toLowerCase().includes(q) || c.phones.join(' ').includes(q) || c.items.some(i => String(i[0]).toLowerCase().includes(q))));
 }
+// (12/11، طلبه) «ا/» قبل اسم العميل في كل الرسايل. رسايل القوايم الأساسية جاية جاهزة من السيرفر فبنظبطها هنا؛
+// اللي اسمه دكتور/د. أو فيه «ا/» أصلاً أو «حضرتك» (من غير اسم) بيتساب زي ما هو.
+const msgOf = c => String(c.msg || '')
+  .replace(/^(أهلاً)\s+(?!ا\/|حضرتك|د[./\s]|دكتور|dr\b)/i, '$1 ا/ ')
+  .replace(/^(السلام عليكم ورحمة الله)\s+(?!ا\/|حضرتك|د[./\s]|دكتور|dr\b)/i, '$1 ا/ ');
+const greetA = n => { const g = greet(n); return g === 'حضرتك' ? g : (/^(ا\/|د[./\s]|دكتور|dr\b)/i.test(g) ? g : 'ا/ ' + g); };
 function card(c) {
   const g = GRP[c.grp[0]] || GRP.med, L = logsOf(c.id)[0], won = L && boughtAfter(L), edit = ROLE === 'admin' || ROLE === 'emp';
   const ow = owner(c.id), me = ROLE === 'emp' && isMe(ow);
-  const when = c.status === 'قرّب' ? (c.late === 0 ? '⏰ محتاج يشتري النهارده' : `⏰ محتاج يشتري بعد ${days(-c.late)}`)
+  const when = c.camp ? `🛒 آخر ${c.camp === 'soc' ? 'زيارة' : 'شراء'} من ${days(ago(c.last))}` : c.status === 'قرّب' ? (c.late === 0 ? '⏰ محتاج يشتري النهارده' : `⏰ محتاج يشتري بعد ${days(-c.late)}`)
              : c.status === 'اتأخر' ? `⚠️ كان المفروض يشتري من ${days(c.late)}` : `💔 مجاش الصيدلية من ${days(c.visit || c.late)}`;
   const seen = c.visit == null ? '' : c.visit === 0 ? '🛒 جه الصيدلية النهارده' : `🛒 آخر مرة جه الصيدلية: من ${days(c.visit)}`;
   const its = c.items.map(([lb, ev, src, dose, due, lk]) => ev == null ? `<li><span>${esc(lb)}</span><span class="s">${esc(src)} · آخر مرة ${String(due).slice(0, 10).split('-').reverse().map(Number).join('/')}</span></li>` : `<li><span>${esc(lb)}${lk ? ' <span class="bd lk">من برا؟</span>' : ''}</span>
@@ -219,11 +238,13 @@ function card(c) {
       <div class="meta">${c.grp.map(x => `<span class="bd" style="background:${(GRP[x] || GRP.med)[1]}">${(GRP[x] || GRP.med)[0]}</span>`).join('')}
         ${c.deliv ? '<span class="bd dl">عميل توصيل</span>' : ''}${hasDisc(c.name) ? '<span class="bd" style="background:#C2417A">عميل خصم</span>' : ''}${c.leak ? '<span class="bd lk">غالباً بيجيب جزء من برا</span>' : ''}
         <div class="when">${when}</div>${c.status !== 'بعد' && seen ? `<div>${seen}</div>` : ''}${c.area && c.area !== 'مش متسجل' ? `<div>📍 ${esc(c.area)}</div>` : ''}</div></div>
-      <div class="val">${M(c.monthly)}<div class="meta" style="text-align:left">${c.grp[0] === 'lapsed' ? 'كان بيدفع في الشهر' : 'في الشهر'}</div></div></div>
+      ${c.camp ? (c.v90 ? `<div class="val">${M(c.v90)}<div class="meta" style="text-align:left">آخر 90 يوم</div></div>` : '')
+        : `<div class="val">${M(c.monthly)}<div class="meta" style="text-align:left">${c.grp[0] === 'lapsed' ? 'كان بيدفع في الشهر' : 'في الشهر'}</div></div>`}</div>
     <ul class="its">${its}</ul>
     <div class="ph">${c.phones.length ? c.phones.map(phBtn).join('') : '<span class="meta">مفيش رقم متسجل</span>'}</div>
-    <details class="msg"><summary>الرسالة</summary><pre>${esc(c.msg)}</pre></details>
+    <details class="msg"><summary>الرسالة</summary><pre>${esc(msgOf(c))}</pre>${c.tk ? `<div class="tip">💡 ${esc(pickTip(c.id, c.tk))}</div>` : ''}</details>
     <div class="act"><button class="ghost" data-copy="${c.id}">📋 نسخ الرسالة</button>
+      ${c.tk ? `<button class="ghost" data-tip="${c.id}">💡 نسخ النصيحة</button>` : ''}
       ${ROLE === 'emp' && !ow ? `<button data-claim="${c.id}">✋ أنا هتابعه</button>` : ''}
       ${edit && (ROLE !== 'emp' || me) ? RES.map(([k, t, cl]) => `<button class="r-${cl}" data-res="${k}" data-id="${c.id}">${t}</button>`).join('') : ''}</div>
     ${ow ? `<div class="asg">👤 ${me ? 'معاك' : `مع <b>${esc(ow.name)}</b>`} من ${ow.at === today() ? 'النهارده' : D(ow.at)}
@@ -249,7 +270,8 @@ const phBtn = p => `<a href="tel:${p}">📞 ${p}</a><button type="button" class=
 const wireCpn = b => b.querySelectorAll('[data-cpn]').forEach(x => x.onclick = () => copy(x.dataset.cpn, 'الرقم اتنسخ ✓'));
 // أزرار الكارت (القوايم + عملائي)
 function hooks(b) {
-  b.querySelectorAll('[data-copy]').forEach(x => x.onclick = () => copy(cardFor(+x.dataset.copy).msg));
+  b.querySelectorAll('[data-copy]').forEach(x => x.onclick = () => copy(msgOf(cardFor(+x.dataset.copy))));
+  b.querySelectorAll('[data-tip]').forEach(x => x.onclick = () => { const c = cardFor(+x.dataset.tip); copy('💡 نصيحة من صيدلية أنس نحيلة:\n' + pickTip(c.id, c.tk), 'النصيحة اتنسخت ✓'); });
   // على الكمبيوتر مفيش تليفون يتصل: الدوسة على الرقم بتنسخه بدل ما تفتح برنامج اتصال
   if (!matchMedia('(pointer:coarse)').matches) b.querySelectorAll('.ph a').forEach(x => x.onclick = e => { e.preventDefault(); copy(x.href.replace('tel:', ''), 'الرقم اتنسخ ✓'); });
   wireCpn(b);
@@ -304,13 +326,19 @@ function resView() {
       ${R.won.length ? `<div class="tw"><table><tr><th>العميل</th><th>اتكلمنا</th><th>اشترى</th><th>بكام</th><th>القايمة</th></tr>
         ${R.won.map(x => `<tr><td>${esc(x.name)}</td><td>${D(x.day)}</td><td>${D(x.w.day)}</td><td>${M(x.w.amt)}</td><td>${esc(x.list)}</td></tr>`).join('')}</table></div>` : ''}</div>`;
   }).join('');
+  // (12/11، طلبه) تقرير كل موظف: كلّم كام عميل النهارده / 7 / 30 يوم (عملاء مختلفين) + اشتروا بعدها
   const R30 = results(30), people = {};
-  for (const r of R30.recs) { const p = people[r.byName || '—'] || (people[r.byName || '—'] = { n: 0, ok: 0, won: 0, rev: 0 }); p.n++; if (r.result === 'تم') p.ok++; }
+  const P = k => people[k] || (people[k] = { d0: new Set(), d7: new Set(), d30: new Set(), ok: 0, won: 0, rev: 0 });
+  const t0 = today(), t7 = addDays(t0, -7);
+  for (const r of R30.recs) {
+    const p = P(r.byName || '—'); p.d30.add(r.cust); if (r.day >= t7) p.d7.add(r.cust); if (r.day >= t0) p.d0.add(r.cust);
+    if (r.result === 'تم') p.ok++;
+  }
   for (const w of R30.won) { const p = people[w.byName || '—']; if (p) { p.won++; p.rev += w.w.amt; } }
-  const byEmp = Object.keys(people).length ? `<div class="card" style="margin-bottom:12px"><h3 style="margin:0 0 8px">حسب الموظف — آخر 30 يوم</h3><div class="tw"><table>
-      <tr><th>الموظف</th><th>تواصل</th><th>اتكلم معاهم</th><th>اشتروا بعدها</th><th>مبيعاتهم</th></tr>
-      ${Object.entries(people).sort((a, b) => b[1].rev - a[1].rev).map(([k, p]) => `<tr><td>${esc(k)}</td><td>${p.n}</td><td>${p.ok}</td><td>${p.won}</td><td>${M(p.rev)}</td></tr>`).join('')}
-      </table></div></div>` : '';
+  const byEmp = Object.keys(people).length ? `<div class="card" style="margin-bottom:12px"><h3 style="margin:0 0 8px">تقرير الموظفين — كلّم كام عميل</h3><div class="tw"><table>
+      <tr><th>الموظف</th><th>النهارده</th><th>آخر 7 أيام</th><th>آخر 30 يوم</th><th>اتكلم معاهم (30)</th><th>اشتروا بعدها</th><th>مبيعاتهم</th></tr>
+      ${Object.entries(people).sort((a, b) => b[1].d30.size - a[1].d30.size).map(([k, p]) => `<tr><td>${esc(k)}</td><td>${p.d0.size}</td><td>${p.d7.size}</td><td><b>${p.d30.size}</b></td><td>${p.ok}</td><td>${p.won}</td><td>${M(p.rev)}</td></tr>`).join('')}
+      </table></div><p class="why" style="margin:8px 0 0">الأرقام = عدد العملاء المختلفين اللي الموظف سجّل معاهم تواصل (أي نتيجة). «اتكلم معاهم» = اللي ردّوا.</p></div>` : '';
   $('#cbody', ROOT).innerHTML = `<p class="why">"اشترى بعد التواصل" بيتحسب لوحده: أي فاتورة للعميل من يوم المكالمة لحد ${WINDOW} يوم بعدها (من السيستم، مش بالزرار).
     الفلوس = كل اللي اشتراه في الفترة دي.</p>${byEmp}${blocks}`;
 }
@@ -438,7 +466,8 @@ function babyRows() {
     const hasD = keep.some(x => x[2] === 'd'), hasM = keep.some(x => x[2] === 'm');
     if (BB.kind === 'd' && !hasD || BB.kind === 'm' && !hasM || BB.kind === 'dm' && !(hasD && hasM)) continue;
     const info = H.cust[c] || ['', [], null, false], name = nm(info[0]);
-    if (!name) continue;
+    if (!name || SOC_RX.test(info[0] || '')) continue;            // السوشيال في تبويبهم بس
+    if (ROLE === 'emp' && owner(c)) continue;                      // عليه اسم موظف (بتاعه في «عملائي»)
     const q = BB.q.trim().toLowerCase();
     if (q && !name.toLowerCase().includes(q) && !(info[1] || []).join(' ').includes(q)) continue;
     keep.sort((a, b) => b[1].localeCompare(a[1]));
@@ -451,17 +480,14 @@ function lastBox(id) {
   return `<div class="last ${won ? 'win' : ''}">${won ? `✅ اشترى بعد التواصل: ${M(won.amt)} يوم ${D(won.day)} — ` : ''}
     آخر تواصل: ${esc(L.result)} يوم ${D(L.day)}${L.byName ? ' (' + esc(L.byName) + ')' : ''}${L.note ? ' — ' + esc(L.note) : ''}</div>`;
 }
-function campCard(r, color, badges, intro, msg, status) {
-  CUSTOM[r.c] = { id: r.c, name: r.name, status, monthly: 0, msg };
-  const edit = ROLE === 'admin' || ROLE === 'emp';
-  return `<div class="cc" style="--g:${color}" data-id="${r.c}">
-    <div class="top"><div><h4>${esc(r.name)}</h4>${r.area || r.street ? `<div class="addr">📍 ${esc([r.area, r.street].filter(Boolean).join(' — '))}</div>` : ''}<div class="meta">${badges}${r.deliv ? '<span class="bd dl">عميل توصيل</span>' : ''}${intro}</div></div></div>
-    <ul class="its">${r.keep.slice(0, 5).map(x => `<li><span>${esc(x[0])}</span><span class="s">${D(x[1])} · من ${days(ago(x[1]))}</span></li>`).join('')}</ul>
-    <div class="ph">${r.ph.length ? r.ph.map(phBtn).join('') : '<span class="meta">مفيش رقم متسجل</span>'}</div>
-    <details class="msg"><summary>الرسالة</summary><pre>${esc(msg)}</pre></details>
-    <div class="act"><button class="ghost" data-copy="${r.c}">📋 نسخ الرسالة</button>
-      ${edit ? RES.map(([k, t, cl]) => `<button class="r-${cl}" data-res="${k}" data-id="${r.c}">${t}</button>`).join('') : ''}</div>
-    ${lastBox(r.c)}</div>`;
+// (12/11) كروت الحملات بقت نفس الكارت الأساسي (card): زرار «أنا هتابعه»، «عملائي»، النصيحة، وتسجيل النتيجة بعد الحجز.
+// camp: 'baby' | 'soc' · grp: مفاتيح GRP · tk: أنواع النصايح ('d' حفاضات / 'm' لبن) · الكارت بيتحفظ كنسخة لما الموظف يحجزه.
+function campCard(r, camp, grp, msg, tk) {
+  CUSTOM[r.c] = { id: r.c, name: r.name, status: camp === 'soc' ? 'سوشيال' : 'حفاضات ولبن', monthly: 0, msg, camp, grp, tk: tk || undefined,
+    phones: r.ph || [], deliv: !!r.deliv, last: r.last, v90: r.v90 || 0, visit: null, late: 0,
+    area: [r.area, r.street].filter(Boolean).join(' — '),
+    items: r.keep.slice(0, 5).map(x => [x[0], null, 'آخر شراء', null, x[1], null]) };
+  return card(CUSTOM[r.c]);
 }
 function campShell(html, ctl) {
   $('#cbody', ROOT).innerHTML = html;
@@ -486,10 +512,10 @@ function babyView() {
       <label class="chip">من <input type="date" id="bfrom" value="${BB.from}" style="width:auto;min-height:0"></label></div>
     <div class="ctl chips">${kinds}</div>
     <div id="clist">${rows.slice(0, BB.shown).map(r => {
-      const bd = (r.hasD ? '<span class="bd" style="background:#2A6FB0">حفاضات</span>' : '') + (r.hasM ? '<span class="bd" style="background:#6B5BA8">لبن أطفال</span>' : '');
+      const grp = [r.hasD && 'diaper', r.hasM && 'milk'].filter(Boolean), tk = (r.hasD ? 'd' : '') + (r.hasM ? 'm' : '');
       const its = r.keep.slice(0, 3).map(x => '• ' + nm(x[0])).join('\n');
-      const msg = `أهلاً ${greet(r.name)} 🌿\nمعاك صيدلية أنس نحيلة، بنطمن على حضرتك وعلى البيبي.\n\nحسب آخر مرة، الظاهر إن دول قربوا يخلصوا:\n${its}\n\nمتوفرين عندنا بكل المقاسات، ولو تحب نوصلهملك البيت قولنا.\nوأي حاجة تانية تحتاجها، إحنا موجودين 💚`;
-      return campCard(r, r.hasD ? '#2A6FB0' : '#6B5BA8', bd, `<div class="when">🛒 آخر شراء من ${days(ago(r.last))}</div>`, msg, 'حفاضات ولبن');
+      const msg = `أهلاً ${greetA(r.name)} 🌿\nمعاك صيدلية أنس نحيلة، بنطمن على حضرتك وعلى البيبي.\n\nحسب آخر مرة، الظاهر إن دول قربوا يخلصوا:\n${its}\n\nمتوفرين عندنا بكل المقاسات، ولو تحب نوصلهملك البيت قولنا.\nوأي حاجة تانية تحتاجها، إحنا موجودين 💚`;
+      return campCard(r, 'baby', grp, msg, tk);
     }).join('') || '<div class="banner">مفيش عملاء بالفلاتر دي.</div>'}</div>
     ${rows.length > BB.shown ? `<button class="ghost more" id="bmore">عرض المزيد (${rows.length - BB.shown})</button>` : ''}`;
   campShell(html, b => {
@@ -503,6 +529,7 @@ function socRows() {
   histIndex(); const rows = [];
   for (const [c, info] of Object.entries(H.cust)) {
     if (!SOC_RX.test(info[0] || '')) continue;
+    if (ROLE === 'emp' && owner(c)) continue;                      // عليه اسم موظف (بتاعه في «عملائي»)
     const last = info[2]; if (!last || last < SO.from) continue;
     const q = SO.q.trim().toLowerCase(), name = nm(info[0]);
     if (q && !name.toLowerCase().includes(q) && !(info[1] || []).join(' ').includes(q)) continue;
@@ -520,9 +547,8 @@ function socView() {
       <label class="chip">من <input type="date" id="sfrom" value="${SO.from}" style="width:auto;min-height:0"></label>
       <button class="chip" id="sall">كل الوقت</button></div>
     <div id="clist">${rows.slice(0, SO.shown).map(r => {
-      const msg = `أهلاً ${greet(r.name)} 🌿\nمعاك صيدلية أنس نحيلة. بنطمن على حضرتك، وحابين نفكرك إننا موجودين 24 ساعة والتوصيل لحد البيت.\nلو محتاج حاجة قولنا، وعروضنا على anasnehila.com 💚`;
-      return campCard(r, '#C2417A', '<span class="bd" style="background:#C2417A">سوشيال</span>',
-        `<div class="when">🛒 آخر زيارة من ${days(ago(r.last))}</div>${r.v90 ? `<div>💰 آخر 90 يوم: ${M(r.v90)}</div>` : ''}`, msg, 'سوشيال');
+      const msg = `أهلاً ${greetA(r.name)} 🌿\nمعاك صيدلية أنس نحيلة. بنطمن على حضرتك، وحابين نفكرك إننا موجودين 24 ساعة والتوصيل لحد البيت.\nوعندنا خصومات على الأدوية ومستحضرات التجميل.\nلو محتاج حاجة قولنا، وعروضنا على anasnehila.com 💚`;
+      return campCard(r, 'soc', ['soc'], msg);
     }).join('') || '<div class="banner">مفيش عملاء بالفلاتر دي.</div>'}</div>
     ${rows.length > SO.shown ? `<button class="ghost more" id="smore">عرض المزيد (${rows.length - SO.shown})</button>` : ''}`;
   campShell(html, b => {
