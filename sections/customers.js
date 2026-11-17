@@ -343,7 +343,47 @@ function resView() {
       ${Object.entries(people).sort((a, b) => b[1].d30.size - a[1].d30.size).map(([k, p]) => `<tr><td>${esc(k)}</td><td>${p.d0.size}</td><td>${p.d7.size}</td><td><b>${p.d30.size}</b></td><td>${p.ok}</td><td>${p.won}</td><td>${M(p.rev)}</td></tr>`).join('')}
       </table></div><p class="why" style="margin:8px 0 0">الأرقام = عدد العملاء المختلفين اللي الموظف سجّل معاهم تواصل (أي نتيجة). «اتكلم معاهم» = اللي ردّوا.</p></div>` : '';
   $('#cbody', ROOT).innerHTML = `<p class="why">"اشترى بعد التواصل" بيتحسب لوحده: أي فاتورة للعميل من يوم المكالمة لحد ${WINDOW} يوم بعدها (من السيستم، مش بالزرار).
-    الفلوس = كل اللي اشتراه في الفترة دي.</p>${byEmp}${blocks}`;
+    الفلوس = كل اللي اشتراه في الفترة دي.</p>${byEmp}<div id="wonBox" class="card" style="margin-bottom:12px"><p class="sub">جاري تحميل تقرير «اتكلمنا واشتروا»…</p></div>${blocks}`;
+  loadWon();
+}
+/* ---------- «اتكلمنا واشتروا» (17/11، طلبه — للمدير وصاحب الصيدلية بس) ----------
+   السيرفر بيحسبه مع كل تحديث للقوايم ويرفعه على reports/crm_won (القواعد: الأدمن وصاحب الصيدلية بس). لكل عميل: مين كلّمه وإمتى،
+   اشترى إمتى وبكام، وأصنافه مقارنةً بعادته (120 يوم قبل): نفس الأصناف (زادت/قلّت كميتها) · أصناف جديدة · أصناف كان بيشتريها ومجاش بيها. */
+const WON = { rows: null, at: '', q: '', shown: 30 };
+async function loadWon() {
+  const box = $('#wonBox', ROOT); if (!box) return;
+  if (LOCAL) { if (LOCAL.won) { WON.rows = LOCAL.won; WON.at = 'تجربة'; wonView(); } else box.innerHTML = ''; return; }
+  if (!WON.rows) {
+    try {
+      const d = await getDoc(doc(DB, 'reports', 'crm_won'));
+      if (!d.exists()) { box.innerHTML = '<p class="sub">تقرير «اتكلمنا واشتروا» لسه مترفعش — هيظهر بعد أول تحديث للقوايم من السيرفر.</p>'; return; }
+      const j = JSON.parse(d.data().d); WON.rows = j.rows || []; WON.at = j.at || '';
+    } catch (e) { box.innerHTML = `<p class="sub">مقدرتش أحمّل التقرير: ${esc(e.code || e.message)}</p>`; return; }
+  }
+  wonView();
+}
+function wonView() {
+  const box = $('#wonBox', ROOT); if (!box) return;
+  const q = WON.q.trim().toLowerCase(), rows = WON.rows.filter(r => !q || String(r.name).toLowerCase().includes(q) || String(r.by).toLowerCase().includes(q) || (r.ph || []).join(' ').includes(q));
+  const tot = rows.reduce((a, r) => a + (r.amt || 0), 0);
+  const qtxt = x => x == null ? '' : (Math.round(x * 100) / 100).toString();
+  const sameLi = x => `${esc(x.n)} <span class="s">× ${qtxt(x.q)}${x.w === 'زاد' ? ` · ⬆️ زاد (عادته ${qtxt(x.b)})` : x.w === 'قلّ' ? ` · ⬇️ قلّ (عادته ${qtxt(x.b)})` : ' · نفس كميته'}</span>`;
+  box.innerHTML = `<h3 style="margin:0 0 6px">✅ اتكلمنا واشتروا — التفاصيل</h3>
+    <p class="why">كل عميل اتسجل إننا كلمناه (اتكلمنا / بعتنا واتس) واشترى خلال ${WINDOW} يوم بعدها — آخر ${'30'} يوم. المقارنة بعادة العميل في 120 يوم قبل التواصل.
+      آخر حساب: ${esc(WON.at)}. <b>${N(rows.length)}</b> عميل · ${M(tot)}.</p>
+    <div class="ctl"><input type="search" id="wq" placeholder="دوّر: اسم العميل أو التليفون أو الموظف" value="${esc(WON.q)}"></div>
+    <div>${rows.slice(0, WON.shown).map(r => `<div class="hr">
+      <div class="hn">${esc(nm(r.name))} ${(r.ph || []).map(p => `<a class="bd dl" href="tel:${p}" style="text-decoration:none">${p}</a>`).join(' ')}</div>
+      <div class="hs">👤 كلّمه <b>${esc(r.by)}</b> يوم ${D(r.cd)} (${esc(r.res === 'تم' ? 'اتكلمنا' : r.res)})${r.note ? ' — ' + esc(r.note) : ''}</div>
+      <div class="hs">🛒 اشترى يوم <b>${D(r.pd)}</b> (${r.after ? 'بعدها بـ ' + days(r.after) : 'نفس يوم التواصل'}) بـ <b>${M(r.amt)}</b>${r.more ? ` · + ${r.more} زيارة تانية في الفترة` : ''}</div>
+      ${r.first ? '<div class="hs">🆕 مفيش مشتريات قبلها في آخر 120 يوم — مفيش عادة نقارن بيها.</div>' : ''}
+      ${r.same && r.same.length ? `<div class="hs">✔ <b>نفس أصنافه:</b><ul class="its" style="margin:4px 0">${r.same.map(x => `<li>${sameLi(x)}</li>`).join('')}</ul></div>` : ''}
+      ${r.added && r.added.length ? `<div class="hs">➕ <b>أصناف جديدة عليه:</b> ${r.added.map(x => esc(x.n) + ' × ' + qtxt(x.q)).join(' · ')}</div>` : ''}
+      ${r.missing && r.missing.length ? `<div class="hs">⬇️ <b>كان بيشتريها ومجاش بيها المرة دي:</b> ${r.missing.map(x => esc(x.n)).join(' · ')}</div>` : ''}
+    </div>`).join('') || '<div class="banner">مفيش عملاء بالبحث ده.</div>'}</div>
+    ${rows.length > WON.shown ? `<button class="ghost more" id="wmore">عرض المزيد (${rows.length - WON.shown})</button>` : ''}`;
+  $('#wq', box).oninput = e => { WON.q = e.target.value; WON.shown = 30; const p = e.target.selectionStart; wonView(); const i = $('#wq', ROOT); i.focus(); i.setSelectionRange(p, p); };
+  if ($('#wmore', box)) $('#wmore', box).onclick = () => { WON.shown += 30; wonView(); };
 }
 function logView() {
   const rows = [...LOG].sort((a, b) => String(b.at).localeCompare(String(a.at)));
@@ -619,7 +659,7 @@ function updBadge() {
 const REFR = { busy: false };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function reloadAll() {
-  H = null; BYC = null; IK = null; Object.keys(CUSTOM).forEach(k => delete CUSTOM[k]);
+  H = null; BYC = null; IK = null; WON.rows = null; Object.keys(CUSTOM).forEach(k => delete CUSTOM[k]);
   await load(); ST.shown = 40; render();
 }
 async function requestRefresh() {
