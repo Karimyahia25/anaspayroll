@@ -87,6 +87,16 @@ service cloud.firestore {
       allow delete: if isAdmin() || isCrmDev() || (request.auth != null && resource.data.uid == request.auth.uid);
     }
 
+    // (17/11، طلبه) زرار «تحديث» في متابعة العملاء: الموظف/الأدمن بيكتب crm_sys/refresh_req {id, by} والسيرفر (feeder)
+    // بيشوفه (المراقب watch.py) ويرفع القوايم ويكتب crm_sys/refresh_status. الموظف ميكتبش غير الطلب، والسيرفر الحالة بس.
+    match /crm_sys/{doc} {
+      allow read:   if isAdmin() || isViewer() || isStaff() || isCrmDev() || isFeeder();
+      allow create, update: if doc == 'refresh_req' && (isAdmin() || isStaff() || isCrmDev())
+                    && request.resource.data.keys().hasOnly(['id', 'by'])
+                    && request.resource.data.id is string && request.resource.data.id.size() < 20;
+      allow write:  if isFeeder() && doc == 'refresh_status';
+    }
+
     // ===== طلبية النواقص اليومية من السيرفر (23/10) =====
     // orders/<التاريخ> + orders/latest: السيرفر بيكتبها · orders/<التاريخ>_done: علامات «تم الطلب» (الأدمن ومسؤول المشتريات)
     // السيرفر (feeder) بيقرا العلامات + «حفظ الطلبية» علشان يقارنها باللي وصل (orders/<التاريخ>_recv — 23/10)

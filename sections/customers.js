@@ -81,6 +81,7 @@ function css() {
 #crmRoot .last.win{background:color-mix(in srgb,#1B7F3B 14%,var(--card));color:var(--ink);font-weight:600}
 #crmRoot details.msg{margin-top:6px}#crmRoot details.msg summary{cursor:pointer;color:var(--green);font-size:13px;font-weight:700}
 #crmRoot details.msg pre{white-space:pre-wrap;font-family:inherit;font-size:13px;background:var(--paper);padding:10px;border-radius:10px;margin:6px 0 0;line-height:1.8}
+#crmRoot #crefresh{min-height:44px;padding:8px 14px;font-weight:700}#crmRoot #crefresh:disabled{opacity:.6}
 #crmRoot .tip{margin-top:8px;padding:9px 11px;border-radius:10px;background:var(--green-soft);color:var(--green-deep);font-size:13px;line-height:1.8}
 #crmRoot .more{display:block;margin:12px auto;min-width:200px}
 #crmRoot .why{font-size:13px;color:var(--muted);margin:0 0 10px;line-height:1.7}
@@ -164,7 +165,9 @@ function shell() {
   ROOT.innerHTML = `
   <div class="card" style="margin-bottom:12px"><div class="hdr" style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center">
     <div><h2 style="margin:0">متابعة العملاء</h2><p class="sub" id="cmeta" style="margin:4px 0 0"></p></div>
-    <div id="cupd" class="cupd"></div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><div id="cupd" class="cupd"></div>
+      ${ROLE === 'admin' || ROLE === 'emp' ? '<button type="button" class="ghost" id="crefresh">🔄 تحديث</button>' : ''}</div>
+    <div class="meta" id="cstat" style="width:100%;margin-top:6px">يتحدّث لوحده الساعة 12 ظهراً · 5 مساءً · 8 مساءً${ROLE === 'admin' || ROLE === 'emp' ? ' — أو دوس «تحديث» لو عايز أحدث أرقام (بياخد ~5 دقايق).' : '.'}</div>
   </div></div>
   <div class="ck" id="ckpi"></div>
   <div class="cbar" id="cbar"></div>
@@ -611,6 +614,45 @@ function updBadge() {
   el.className = 'cupd' + (diff >= 2 ? ' old' : '');
   el.textContent = `${diff >= 2 ? '⚠️' : '🔄'} آخر تحديث: ${when} ${hm}${META.ref ? ' · مشتريات لحد ' + D(META.ref) : ''}`;
 }
+/* (17/11، طلبه) زرار «🔄 تحديث»: بيكتب crm_sys/refresh_req والسيرفر (watch.py) بيرفع القوايم (~5 دقايق) — بنستنى crm/meta.at يتغيّر
+   ونعيد التحميل. كمان السيرفر بيحدّث لوحده 12ظ و5م و8م. القراية وقت الانتظار: مستندين كل 10 ثواني، ومفيش ضغطة جديدة قبل ما الأولى تخلص. */
+const REFR = { busy: false };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function reloadAll() {
+  H = null; BYC = null; IK = null; Object.keys(CUSTOM).forEach(k => delete CUSTOM[k]);
+  await load(); ST.shown = 40; render();
+}
+async function requestRefresh() {
+  if (REFR.busy) return;
+  const btn = $('#crefresh', ROOT), st = $('#cstat', ROOT); if (!btn) return;
+  REFR.busy = true; btn.disabled = true;
+  const before = META.at, id = String(Date.now()), by = ROLE === 'emp' ? MY.name : 'مدير الفرع';
+  const say = t => { const e = $('#cstat', ROOT); if (e) e.textContent = t; };
+  try {
+    if (LOCAL) { say('تجربة محلية — مفيش سيرفر'); return; }
+    try { await setDoc(doc(DB, 'crm_sys', 'refresh_req'), { id, by }); }
+    catch (e) { say('⚠️ الطلب متبعتش: ' + (e.code === 'permission-denied' ? 'القواعد الجديدة لسه متنشرتش' : (e.code || e.message))); return; }
+    say('⏳ طلبت التحديث — السيرفر بيحسب القوايم (حوالي 5 دقايق)… متقفلش الصفحة');
+    const t0 = Date.now();
+    while (Date.now() - t0 < 12 * 60e3) {
+      await sleep(10000);
+      try {
+        const m = await getDoc(doc(DB, 'crm', 'meta'));
+        if (m.exists() && JSON.parse(m.data().d).at !== before) { await reloadAll(); say('✅ اتحدّثت القوايم — ' + (META.at || '')); return; }
+        const s = await getDoc(doc(DB, 'crm_sys', 'refresh_status')), v = s.exists() ? s.data() : null;
+        if (v && v.req === id) {
+          if (v.state === 'error') { say('⚠️ التحديث فشل على السيرفر — جرّب تاني بعد شوية، أو كلّم د. يحيى'); return; }
+          if (v.state === 'expired') { say('الطلب اتأخر قوي، دوس «تحديث» تاني'); return; }
+          if (v.state === 'recent') { await reloadAll(); say('✅ القوايم محدّثة من دقيقتين — ' + (META.at || '')); return; }
+          if (v.state === 'busy') say('⏳ فيه تحديث شغال دلوقتي على السيرفر — هيظهر لوحده أول ما يخلص');
+          if (v.state === 'done') { await reloadAll(); say('✅ اتحدّثت القوايم — ' + (META.at || '')); return; }
+        }
+      } catch (e) { /* نحاول تاني بعد 10 ثواني */ }
+    }
+    say('⌛ السيرفر اتأخر — القوايم هتتحدّث أول ما يخلص، اعمل تحديث للصفحة بعد شوية');
+  } finally { REFR.busy = false; const b = $('#crefresh', ROOT); if (b) b.disabled = false; }
+}
+const wireRefresh = () => { const b = $('#crefresh', ROOT); if (b) b.onclick = requestRefresh; };
 function render() { kpis(); updBadge(); bar(); if (ST.tab === 'mine') mineView(); else if (ST.tab === 'baby') babyView(); else if (ST.tab === 'soc') socView(); else if (ST.tab === 'vit') vitView(); else if (ST.tab === 'find') findView(); else if (ST.tab === 'res') resView(); else if (ST.tab === 'log') logView(); else listView(); }
 
 /* ---------- أدوات ---------- */
@@ -631,7 +673,7 @@ export async function mountCustomers(root, role) {
     root.innerHTML = `<div class="banner bad">مقدرتش أقرا قوايم العملاء: ${esc(e.code || e.message)}${e.code === 'permission-denied' ? ' — حط قواعد Firebase الجديدة الأول' : ''}</div>`; return;
   }
   if (!ok) { root.innerHTML = '<div class="banner">لسه مفيش قوايم — هتظهر بعد أول تشغيل للسيرفر (6 الصبح) بعد التحديث.</div>'; return; }
-  shell(); render();
+  shell(); wireRefresh(); render();
 }
 /* ---------- الموظف: نفس القوايم من حسابه + «عملائي» ---------- */
 export async function mountEmployee(root, uid, name, dev = false) {
@@ -642,10 +684,10 @@ export async function mountEmployee(root, uid, name, dev = false) {
     root.innerHTML = `<div class="banner bad">مقدرتش أحمّل العملاء: ${esc(e.code || e.message)}</div>`; return;
   }
   if (!ok) { root.innerHTML = '<div class="banner">لسه مفيش قوايم.</div>'; return; }
-  ST.tab = 'mine'; shell(); render();
+  ST.tab = 'mine'; shell(); wireRefresh(); render();
 }
 
 // للتجربة المحلية من غير Firestore
 export function mountLocal(root, data, role = 'admin', me = { uid: 'local', name: 'موظف تجربة' }) {
-  ROOT = root; ROLE = role; LOCAL = data; MY = me; CLAIM = data.claim || {}; css(); root.id = 'crmRoot'; load(); if (role === 'emp') ST.tab = 'mine'; shell(); render();
+  ROOT = root; ROLE = role; LOCAL = data; MY = me; CLAIM = data.claim || {}; css(); root.id = 'crmRoot'; load(); if (role === 'emp') ST.tab = 'mine'; shell(); wireRefresh(); render();
 }
