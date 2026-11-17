@@ -7,7 +7,7 @@ import { getApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.
 import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, doc, getDoc, getDocs, setDoc, collection, addDoc, deleteDoc, query, where, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-import { pickTip } from "./tips.js?v=2";
+import { pickTip, tipText } from "./tips.js?v=3";
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = t => String(t == null ? '' : t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -23,7 +23,7 @@ const addDays = (s, n) => { const t = new Date(s + 'T12:00:00Z'); t.setUTCDate(t
 const LISTS = [['قرّب', '⏰ ميعاده قرّب', 'ابعتله قبل ما يخلص — ومعاه التوصيل في 30 دقيقة'],
                ['اتأخر', '⚠️ اتأخر', 'عدّى ميعاده ومجاش — يمكن جاب من برا أو نسي'],
                ['بعد', '💔 بعد عننا', 'مجاش خالص من أكتر من شهرين — رسالة الاسترجاع']];
-const GRP = { lapsed: ['كان بيشتري وبطّل', '#8E5A2B'], med: ['دوا', '#0B8577'], diaper: ['حفاضات', '#2A6FB0'], milk: ['لبن أطفال', '#6B5BA8'], adult: ['كبار السن', '#7F8C8D'], cosmo: ['تجميل', '#C2417A'], soc: ['سوشيال', '#C2417A'] };
+const GRP = { lapsed: ['كان بيشتري وبطّل', '#8E5A2B'], med: ['دوا', '#0B8577'], diaper: ['حفاضات', '#2A6FB0'], milk: ['لبن أطفال', '#6B5BA8'], adult: ['كبار السن', '#7F8C8D'], cosmo: ['تجميل', '#C2417A'], soc: ['سوشيال', '#C2417A'], vit: ['فيتامينات', '#E08A00'] };
 const RES = [['تم', '✅ اتكلمنا', 'ok'], ['بعتنا واتس', '💬 بعتنا واتس', 'wa'], ['مردش', '📵 مردش', 'nr'], ['مش مهتم', '🙅 مش مهتم', 'no']];   // (17/11، طلبه) «رقم غلط» اتشال، و«بعتنا واتس» اتضاف
 const WINDOW = 14;            // اشترى خلال 14 يوم من التواصل = نجاح
 const RETRY_NR = 2;           // مردش: يرجع يظهر بعد يومين
@@ -191,7 +191,7 @@ function kpis() {
     <div style="border-color:#1B7F3B"><div class="l">اشتروا بعد التواصل (7 أيام)</div><div class="v">${N(wk.won.length)}</div><div class="l">${M(wk.rev)}</div></div>`;
   $('#cmeta', ROOT).textContent = `آخر تحديث من السيرفر: ${META.at || '—'} · الأرقام على مشتريات لحد ${D(META.ref)}`;
 }
-const campBtns = () => `<button class="${ST.tab === 'baby' ? 'on' : ''}" data-tab="baby">🍼 حفاضات ولبن</button><button class="${ST.tab === 'soc' ? 'on' : ''}" data-tab="soc">📣 عملاء السوشيال</button>`;
+const campBtns = () => `<button class="${ST.tab === 'baby' ? 'on' : ''}" data-tab="baby">🍼 حفاضات ولبن</button><button class="${ST.tab === 'soc' ? 'on' : ''}" data-tab="soc">📣 عملاء السوشيال</button><button class="${ST.tab === 'vit' ? 'on' : ''}" data-tab="vit">💊 فيتامينات</button>`;
 function bar() {
   const cnt = s => CARDS.filter(c => c.status === s && !(ST.hideDone && contactedRecently(c)) && !(ROLE === 'emp' && owner(c.id))).length;
   if (ROLE === 'emp') {
@@ -242,7 +242,7 @@ function card(c) {
         : `<div class="val">${M(c.monthly)}<div class="meta" style="text-align:left">${c.grp[0] === 'lapsed' ? 'كان بيدفع في الشهر' : 'في الشهر'}</div></div>`}</div>
     <ul class="its">${its}</ul>
     <div class="ph">${c.phones.length ? c.phones.map(phBtn).join('') : '<span class="meta">مفيش رقم متسجل</span>'}</div>
-    <details class="msg"><summary>الرسالة</summary><pre>${esc(msgOf(c))}</pre>${c.tk ? `<div class="tip">💡 ${esc(pickTip(c.id, c.tk))}</div>` : ''}</details>
+    <details class="msg"><summary>الرسالة</summary><pre>${esc(msgOf(c))}</pre>${c.tk ? (x => `<div class="tip">${esc(x.t)}<br><b>❓ ${esc(x.q)}</b></div>`)(pickTip(c.id, c.tk)) : ''}</details>
     <div class="act"><button class="ghost" data-copy="${c.id}">📋 نسخ الرسالة</button>
       ${c.tk ? `<button class="ghost" data-tip="${c.id}">💡 نسخ النصيحة</button>` : ''}
       ${ROLE === 'emp' && !ow ? `<button data-claim="${c.id}">✋ أنا هتابعه</button>` : ''}
@@ -271,7 +271,7 @@ const wireCpn = b => b.querySelectorAll('[data-cpn]').forEach(x => x.onclick = (
 // أزرار الكارت (القوايم + عملائي)
 function hooks(b) {
   b.querySelectorAll('[data-copy]').forEach(x => x.onclick = () => copy(msgOf(cardFor(+x.dataset.copy))));
-  b.querySelectorAll('[data-tip]').forEach(x => x.onclick = () => { const c = cardFor(+x.dataset.tip); copy('💡 نصيحة من صيدلية أنس نحيلة:\n' + pickTip(c.id, c.tk), 'النصيحة اتنسخت ✓'); });
+  b.querySelectorAll('[data-tip]').forEach(x => x.onclick = () => { const c = cardFor(+x.dataset.tip); copy(tipText(c.id, c.tk), 'النصيحة اتنسخت ✓'); });
   // على الكمبيوتر مفيش تليفون يتصل: الدوسة على الرقم بتنسخه بدل ما تفتح برنامج اتصال
   if (!matchMedia('(pointer:coarse)').matches) b.querySelectorAll('.ph a').forEach(x => x.onclick = e => { e.preventDefault(); copy(x.href.replace('tel:', ''), 'الرقم اتنسخ ✓'); });
   wireCpn(b);
@@ -287,7 +287,7 @@ function hooks(b) {
 }
 // الكارت من قايمة النهارده، ولو العميل خرج منها: النسخة اللي اتحفظت لما الموظف حط اسمه
 const CUSTOM = {};                                        // كروت تبويبات الحملات (حفاضات ولبن / سوشيال) — مش في القوايم اليومية
-const cardFor = id => ((ST.tab === 'baby' || ST.tab === 'soc') && CUSTOM[id]) || cardOf(id);
+const cardFor = id => ((ST.tab === 'baby' || ST.tab === 'soc' || ST.tab === 'vit') && CUSTOM[id]) || cardOf(id);
 const cardOf = id => CARDS.find(c => c.id === id) || (CLAIM[id] && CLAIM[id].d ? JSON.parse(CLAIM[id].d) : null);
 function myCards() {
   return Object.keys(CLAIM).filter(id => mine(+id)).map(id => cardOf(+id)).filter(Boolean);
@@ -483,7 +483,7 @@ function lastBox(id) {
 // (12/11) كروت الحملات بقت نفس الكارت الأساسي (card): زرار «أنا هتابعه»، «عملائي»، النصيحة، وتسجيل النتيجة بعد الحجز.
 // camp: 'baby' | 'soc' · grp: مفاتيح GRP · tk: أنواع النصايح ('d' حفاضات / 'm' لبن) · الكارت بيتحفظ كنسخة لما الموظف يحجزه.
 function campCard(r, camp, grp, msg, tk) {
-  CUSTOM[r.c] = { id: r.c, name: r.name, status: camp === 'soc' ? 'سوشيال' : 'حفاضات ولبن', monthly: 0, msg, camp, grp, tk: tk || undefined,
+  CUSTOM[r.c] = { id: r.c, name: r.name, status: camp === 'soc' ? 'سوشيال' : camp === 'vit' ? 'فيتامينات' : 'حفاضات ولبن', monthly: 0, msg, camp, grp, tk: tk || undefined,
     phones: r.ph || [], deliv: !!r.deliv, last: r.last, v90: r.v90 || 0, visit: null, late: 0,
     area: [r.area, r.street].filter(Boolean).join(' — '),
     items: r.keep.slice(0, 5).map(x => [x[0], null, 'آخر شراء', null, x[1], null]) };
@@ -559,6 +559,48 @@ function socView() {
   });
 }
 
+/* ---------- تبويب الفيتامينات (17/11، طلبه): LIMITLESS بأنواعه + فيتامينات تانية معروفة — بنصايح فيتامينات وسؤال للعميل ---------- */
+const LIM_RX = /LIMITL[A-Z]SS/i;
+const VIT_RX = /LIMITL[A-Z]SS|CENTRUM|SUPRADYN|BEROCCA|REVITAL|SEVEN ?SEAS|VITAMIN|فيتامين/i;
+let VT = { q: '', kind: '', from: '2026-09-01', shown: 40 };
+function vitRows() {
+  histIndex(); const rows = [];
+  for (const [c, arr] of Object.entries(BYC)) {
+    const keep = arr.filter(x => VIT_RX.test(x[0]) && x[1] >= VT.from); if (!keep.length) continue;
+    const hasL = keep.some(x => LIM_RX.test(x[0]));
+    if (VT.kind === 'l' && !hasL || VT.kind === 'o' && keep.every(x => LIM_RX.test(x[0]))) continue;
+    const info = H.cust[c] || ['', [], null, false], name = nm(info[0]);
+    if (!name || SOC_RX.test(info[0] || '')) continue;
+    if (ROLE === 'emp' && owner(c)) continue;
+    const q = VT.q.trim().toLowerCase();
+    if (q && !name.toLowerCase().includes(q) && !(info[1] || []).join(' ').includes(q)) continue;
+    keep.sort((a, b) => b[1].localeCompare(a[1]));
+    rows.push({ c: +c, name, ph: info[1] || [], deliv: info[3], keep, last: keep[0][1] });
+  }
+  return rows.sort((a, b) => a.last.localeCompare(b.last));         // الأقدم الأول
+}
+function vitView() {
+  if (!histGate(vitView)) return;
+  const rows = vitRows();
+  const kinds = [['', 'الكل'], ['l', 'ليميت ليس'], ['o', 'فيتامينات تانية']].map(([k, t]) => `<button class="chip ${VT.kind === k ? 'on' : ''}" data-kind="${k}">${t}</button>`).join('');
+  const html = `<p class="why"><b>💊 فيتامينات</b> — كل عميل مسجل اشترى LIMITLESS بأنواعه أو فيتامينات معروفة (Centrum وغيره) من <b>${D(VT.from)}</b>، الأقدم شراءً الأول. الرسالة فيها زرار نصيحة + سؤال يخلّي العميل يرد. <b>${N(rows.length)}</b> عميل.</p>
+    <div class="ctl"><input type="search" id="vq" placeholder="اسم العميل أو التليفون" value="${esc(VT.q)}">
+      <label class="chip">من <input type="date" id="vfrom" value="${VT.from}" style="width:auto;min-height:0"></label></div>
+    <div class="ctl chips">${kinds}</div>
+    <div id="clist">${rows.slice(0, VT.shown).map(r => {
+      const its = r.keep.slice(0, 3).map(x => '• ' + nm(x[0])).join('\n');
+      const msg = `أهلاً ${greetA(r.name)} 🌿\nمعاك صيدلية أنس نحيلة، بنطمن على حضرتك.\n\nآخر مرة أخدت عندنا:\n${its}\n\nمتوفرين عندنا، ولو قرّب يخلص نوصّله لحد باب بيتك، قولنا بس.\nوأي سؤال عن المكمّلات إحنا موجودين 💚`;
+      return campCard(r, 'vit', ['vit'], msg, 'v');
+    }).join('') || '<div class="banner">مفيش عملاء بالفلاتر دي.</div>'}</div>
+    ${rows.length > VT.shown ? `<button class="ghost more" id="vmore">عرض المزيد (${rows.length - VT.shown})</button>` : ''}`;
+  campShell(html, b => {
+    $('#vq', b).oninput = e => { VT.q = e.target.value; VT.shown = 40; const p = e.target.selectionStart; vitView(); const i = $('#vq', ROOT); i.focus(); i.setSelectionRange(p, p); };
+    $('#vfrom', b).onchange = e => { if (e.target.value) { VT.from = e.target.value; VT.shown = 40; vitView(); } };
+    b.querySelectorAll('[data-kind]').forEach(x => x.onclick = () => { VT.kind = x.dataset.kind; VT.shown = 40; vitView(); });
+    if ($('#vmore', b)) $('#vmore', b).onclick = () => { VT.shown += 40; vitView(); };
+  });
+}
+
 // آخر تحديث لبيانات العملاء من السيرفر (زي صفحة الطلبية) — أحمر لو أقدم من يوم ونص
 function updBadge() {
   const el = $('#cupd', ROOT); if (!el) return;
@@ -569,7 +611,7 @@ function updBadge() {
   el.className = 'cupd' + (diff >= 2 ? ' old' : '');
   el.textContent = `${diff >= 2 ? '⚠️' : '🔄'} آخر تحديث: ${when} ${hm}${META.ref ? ' · مشتريات لحد ' + D(META.ref) : ''}`;
 }
-function render() { kpis(); updBadge(); bar(); if (ST.tab === 'mine') mineView(); else if (ST.tab === 'baby') babyView(); else if (ST.tab === 'soc') socView(); else if (ST.tab === 'find') findView(); else if (ST.tab === 'res') resView(); else if (ST.tab === 'log') logView(); else listView(); }
+function render() { kpis(); updBadge(); bar(); if (ST.tab === 'mine') mineView(); else if (ST.tab === 'baby') babyView(); else if (ST.tab === 'soc') socView(); else if (ST.tab === 'vit') vitView(); else if (ST.tab === 'find') findView(); else if (ST.tab === 'res') resView(); else if (ST.tab === 'log') logView(); else listView(); }
 
 /* ---------- أدوات ---------- */
 function toast(t) { const d = document.createElement('div'); d.className = 'toast'; d.textContent = t; document.body.appendChild(d); setTimeout(() => d.remove(), 2200); }
