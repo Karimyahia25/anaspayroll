@@ -32,7 +32,7 @@ let ROOT, ROLE, DB = null, LOCAL = null, META = {}, CARDS = [], VIS = {}, LOG = 
 let ST = { tab: 'قرّب', q: '', grp: '', leak: false, deliv: false, hideDone: true, shown: 40 };
 let H = null, HS = { q: '', sel: null, months: 0, shown: 60 };   // بحث بصنف
 let CLAIM = {}, MY = { uid: '', name: '' };                    // مين حاطط اسمه على العميل {كود العميل: {uid, name, at, d}}
-const LOG_DAYS = 90;           // سجل التواصل اللي بيتحمّل (الأقدم موجود في Firebase بس مبيتقراش)
+const LOG_DAYS = 35;           // سجل التواصل اللي بيتحمّل (الأقدم موجود في Firebase بس مبيتقراش)
 const CLAIM_DAYS = 14;        // الاسم بيفضل على العميل 14 يوم وبعدها يرجع متاح للكل
 
 /* ---------- ستايل ---------- */
@@ -675,7 +675,7 @@ async function requestRefresh() {
     say('⏳ طلبت التحديث — السيرفر بيحسب القوايم (حوالي 5 دقايق)… متقفلش الصفحة');
     const t0 = Date.now();
     while (Date.now() - t0 < 12 * 60e3) {
-      await sleep(10000);
+      await sleep(20000);
       try {
         const m = await getDoc(doc(DB, 'crm', 'meta'));
         if (m.exists() && JSON.parse(m.data().d).at !== before) { await reloadAll(); say('✅ اتحدّثت القوايم — ' + (META.at || '')); return; }
