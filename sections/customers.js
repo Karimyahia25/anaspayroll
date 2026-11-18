@@ -43,6 +43,7 @@ function css() {
 #crmRoot .cbar{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:4px 0 12px;padding:8px;position:sticky;top:8px;z-index:4;border-radius:18px;background:linear-gradient(135deg,#0F1B2D,#0A6B60)}
 #crmRoot .cbar::-webkit-scrollbar{display:none}
 @media(max-width:899px){#crmRoot .cbar{top:58px}}
+@media(min-width:900px){#crmRoot .cbar{flex-wrap:wrap;overflow:visible}}   /* (18/11، طلبه) على الكمبيوتر كل التبويبات ظاهرة على سطرين مفيش سكرول */
 #crmRoot .cbar button{flex:0 0 auto;background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.18);border-radius:999px;padding:9px 15px;font-size:13.5px;font-weight:700;min-height:44px}
 #crmRoot .cbar button.on{background:#FFC83D;color:#10202E;border-color:transparent}
 #crmRoot .cbar .n{display:inline-block;margin-inline-start:6px;background:rgba(0,0,0,.18);border-radius:99px;padding:1px 8px;font-size:12px}
