@@ -23,7 +23,7 @@ const addDays = (s, n) => { const t = new Date(s + 'T12:00:00Z'); t.setUTCDate(t
 const LISTS = [['قرّب', '⏰ ميعاده قرّب', 'ابعتله قبل ما يخلص — ومعاه التوصيل في 30 دقيقة'],
                ['اتأخر', '⚠️ اتأخر', 'عدّى ميعاده ومجاش — يمكن جاب من برا أو نسي'],
                ['بعد', '💔 بعد عننا', 'مجاش خالص من أكتر من شهرين — رسالة الاسترجاع']];
-const GRP = { lapsed: ['كان بيشتري وبطّل', '#8E5A2B'], med: ['دوا', '#0B8577'], diaper: ['حفاضات', '#2A6FB0'], milk: ['لبن أطفال', '#6B5BA8'], adult: ['كبار السن', '#7F8C8D'], cosmo: ['تجميل', '#C2417A'], soc: ['سوشيال', '#C2417A'], vit: ['فيتامينات', '#E08A00'] };
+const GRP = { lapsed: ['كان بيشتري وبطّل', '#8E5A2B'], med: ['دوا', '#0B8577'], diaper: ['حفاضات', '#2A6FB0'], milk: ['لبن أطفال', '#6B5BA8'], adult: ['كبار السن', '#7F8C8D'], cosmo: ['تجميل', '#C2417A'], soc: ['سوشيال', '#C2417A'], vit: ['فيتامينات', '#E08A00'], price: ['سعر اتغير', '#B03A2E'] };
 const RES = [['تم', '✅ اتكلمنا', 'ok'], ['بعتنا واتس', '💬 بعتنا واتس', 'wa'], ['مردش', '📵 مردش', 'nr'], ['مش مهتم', '🙅 مش مهتم', 'no']];   // (17/11، طلبه) «رقم غلط» اتشال، و«بعتنا واتس» اتضاف
 const WINDOW = 14;            // اشترى خلال 14 يوم من التواصل = نجاح
 const RETRY_NR = 2;           // مردش: يرجع يظهر بعد يومين
@@ -100,7 +100,7 @@ function css() {
 
 /* ---------- بيانات ---------- */
 async function load() {
-  if (LOCAL) { ({ meta: META, cards: CARDS, visits: VIS, log: LOG } = LOCAL); dropSocial(); return true; }
+  if (LOCAL) { ({ meta: META, cards: CARDS, visits: VIS, log: LOG } = LOCAL); dropSocial(); await loadPrices(); return true; }
   const m = await getDoc(doc(DB, 'crm', 'meta'));
   if (!m.exists()) return false;
   META = JSON.parse(m.data().d); const n = m.data().chunks; CARDS = [];
@@ -111,6 +111,7 @@ async function load() {
     /* (9/11) آخر LOG_DAYS بس — الحسابات كلها محتاجة 30 يوم بالكتير، والقراية الكاملة كانت بتكبر كل يوم (حد Firebase المجاني) */
     : (await getDocs(query(collection(DB, 'crm_log'), where('day', '>=', addDays(today(), -LOG_DAYS))))).docs.map(d => ({ _id: d.id, ...d.data() }));
   CLAIM = {}; (await getDocs(query(collection(DB, 'crm_claim'), where('at', '>=', addDays(today(), -CLAIM_DAYS))))).docs.forEach(d => { CLAIM[d.id] = d.data(); });
+  await loadPrices();
   dropSocial();
   return true;
 }
@@ -198,7 +199,7 @@ function kpis() {
     <div style="border-color:#1B7F3B"><div class="l">اشتروا بعد التواصل (7 أيام)</div><div class="v">${N(wk.won.length)}</div><div class="l">${M(wk.rev)}</div></div>`;
   $('#cmeta', ROOT).textContent = `آخر تحديث من السيرفر: ${META.at || '—'} · الأرقام على مشتريات لحد ${D(META.ref)}`;
 }
-const campBtns = () => `<button class="${ST.tab === 'baby' ? 'on' : ''}" data-tab="baby">🍼 حفاضات ولبن</button><button class="${ST.tab === 'soc' ? 'on' : ''}" data-tab="soc">📣 عملاء السوشيال</button><button class="${ST.tab === 'vit' ? 'on' : ''}" data-tab="vit">💊 فيتامينات</button>`;
+const campBtns = () => `<button class="${ST.tab === 'baby' ? 'on' : ''}" data-tab="baby">🍼 حفاضات ولبن</button><button class="${ST.tab === 'soc' ? 'on' : ''}" data-tab="soc">📣 عملاء السوشيال</button><button class="${ST.tab === 'vit' ? 'on' : ''}" data-tab="vit">💊 فيتامينات</button><button class="${ST.tab === 'price' ? 'on' : ''}" data-tab="price">💰 أسعار اتغيرت${PR.rows ? `<span class="n">${priceRows().length}</span>` : ''}</button>`;
 const todayBtn = () => `<button class="${ST.tab === 'today' ? 'on' : ''}" data-tab="today">🎯 هدف اليوم<span class="n">${todayDone()}${ROLE === 'emp' ? '/' + DAILY_TARGET : ''}</span></button>`;
 function bar() {
   const cnt = s => CARDS.filter(c => c.status === s && !(ST.hideDone && contactedRecently(c)) && !(ROLE === 'emp' && owner(c.id))).length;
@@ -345,7 +346,7 @@ function hooks(b) {
 }
 // الكارت من قايمة النهارده، ولو العميل خرج منها: النسخة اللي اتحفظت لما الموظف حط اسمه
 const CUSTOM = {};                                        // كروت تبويبات الحملات (حفاضات ولبن / سوشيال) — مش في القوايم اليومية
-const cardFor = id => ((ST.tab === 'baby' || ST.tab === 'soc' || ST.tab === 'vit') && CUSTOM[id]) || cardOf(id);
+const cardFor = id => ((ST.tab === 'baby' || ST.tab === 'soc' || ST.tab === 'vit' || ST.tab === 'price') && CUSTOM[id]) || cardOf(id);
 const cardOf = id => CARDS.find(c => c.id === id) || (CLAIM[id] && CLAIM[id].d ? JSON.parse(CLAIM[id].d) : null);
 function myCards() {
   return Object.keys(CLAIM).filter(id => mine(+id)).map(id => cardOf(+id)).filter(Boolean);
@@ -531,6 +532,43 @@ function wonView() {
   $('#wq', box).oninput = e => { WON.q = e.target.value; WON.shown = 30; const p = e.target.selectionStart; wonView(); const i = $('#wq', ROOT); i.focus(); i.setSelectionRange(p, p); };
   if ($('#wmore', box)) $('#wmore', box).onclick = () => { WON.shown += 30; wonView(); };
 }
+/* ---------- 💰 أسعار اتغيرت (18/11، طلبه) ----------
+   د. يحيى بيبعت أصناف سعرها زاد عند الموردين (من برنامج تحديثات الأسعار) وأنا بحطها في price_alerts.json. السيرفر مع كل تحديث للقوايم بيقارن بسعر السيستم:
+   لو لسه القديم ← بيطلّع العملاء اللي اشتروا الصنف آخر 180 يوم في crm/prices؛ ولو السيستم اتحدّث الصنف بيتشال لوحده. هنا: عميل واحد = كارت واحد بكل أصنافه. */
+const PR = { rows: null, items: [], at: '' };
+async function loadPrices() {
+  try {
+    let j = null;
+    if (LOCAL) j = LOCAL.prices || null;
+    else { const d = await getDoc(doc(DB, 'crm', 'prices')); j = d.exists() ? JSON.parse(d.data().d) : null; }
+    if (j) { PR.rows = j.rows || []; PR.items = j.items || []; PR.at = j.at || ''; }
+  } catch (e) { /* مفيش تبويب لو القراية فشلت */ }
+}
+const priceMax = r => r.items.reduce((m, x) => x.date > m ? x.date : m, '');
+// اللي اتبلّغ بعد تاريخ آخر تنبيه بيختفي (نتيجة التواصل بتتسجل بقايمة «سعر اتغير»)
+const priceDone = r => { const L = logsOf(r.c)[0]; return !!(L && L.list === 'سعر اتغير' && L.day >= priceMax(r)); };
+const priceRows = () => (PR.rows || []).filter(r => !priceDone(r) && !(ROLE === 'emp' && owner(r.c)));
+function priceView() {
+  if (!PR.rows) { $('#cbody', ROOT).innerHTML = '<div class="banner">مفيش أصناف أسعارها اتغيرت دلوقتي. لما د. يحيى يبعت أصناف جديدة وتتحدّث القوايم هتظهر هنا.</div>'; return; }
+  const rows = priceRows(), q = (PRQ.q || '').trim().toLowerCase();
+  const list = rows.filter(r => !q || String(r.name).toLowerCase().includes(q) || (r.ph || []).join(' ').includes(q) || r.items.some(x => String(x.name).toLowerCase().includes(q)));
+  const html = `<p class="why"><b>💰 أسعار اتغيرت</b> — أصناف سعرها زاد عند الموردين وسعرها في السيستم عندنا <b>لسه القديم</b> — والعملاء اللي اشتروها آخر 180 يوم، علشان نبلّغهم إنها لسه متاحة بالسعر القديم. لما السيستم يتحدّث بالسعر الجديد الصنف بيتشال لوحده. آخر حساب: ${esc(PR.at)}. <b>${N(rows.length)}</b> عميل.</p>
+    ${PR.items.length ? `<div class="card tw" style="margin-bottom:10px"><table><tr><th>الصنف</th><th>سعره عندنا (قديم)</th><th>السعر الجديد</th><th>عملاء</th></tr>
+      ${PR.items.map(x => `<tr><td>${esc(x.name)}</td><td>${N(x.old)} ج</td><td><b>${N(x.new)} ج</b></td><td>${N(x.n_custs)}</td></tr>`).join('')}</table></div>` : ''}
+    <div class="ctl"><input type="search" id="prq" placeholder="اسم العميل أو التليفون أو الصنف" value="${esc(PRQ.q || '')}"></div>
+    <div id="clist">${list.slice(0, PRQ.shown).map(r => {
+      const lines = r.items.map(x => `• ${nm(x.name)} — لسه عندنا بـ ${N(x.old)} ج (السعر الجديد ${N(x.new)} ج)`).join('\n');
+      const msg = `أهلاً ${greetA(r.name)} 🌿\nمعاك صيدلية أنس نحيلة 💚\nحبينا نبلّغ حضرتك إن سعر ${r.items.length > 1 ? 'الأصناف دي' : 'الصنف ده'} اتغيّر:\n${lines}\nولسه متوفر عندنا بالسعر القديم لو محتاج منه — ونوصّله لحد باب بيتك لو تحب.`;
+      const keep = r.items.map(x => [`${nm(x.name)} — ${N(x.old)} ← ${N(x.new)} ج`, x.last]);
+      return campCard({ c: r.c, name: r.name, ph: r.ph || [], deliv: false, keep, last: keep.length ? keep[0][1] : '', area: r.area || '', street: '' }, 'price', ['price'], msg);
+    }).join('') || '<div class="banner">مفيش عملاء بالبحث ده.</div>'}</div>
+    ${list.length > PRQ.shown ? `<button class="ghost more" id="prmore">عرض المزيد (${list.length - PRQ.shown})</button>` : ''}`;
+  campShell(html, b => {
+    $('#prq', b).oninput = e => { PRQ.q = e.target.value; PRQ.shown = 40; const pp = e.target.selectionStart; priceView(); const i = $('#prq', ROOT); i.focus(); i.setSelectionRange(pp, pp); };
+    if ($('#prmore', b)) $('#prmore', b).onclick = () => { PRQ.shown += 40; priceView(); };
+  });
+}
+const PRQ = { q: '', shown: 40 };
 function logView() {
   const rows = [...LOG].sort((a, b) => String(b.at).localeCompare(String(a.at)));
   $('#cbody', ROOT).innerHTML = `<p class="why">كل تواصل اتسجل. لو اتسجل غلط، امسحه.</p><div class="card tw"><table>
@@ -672,8 +710,8 @@ function lastBox(id) {
 // (12/11) كروت الحملات بقت نفس الكارت الأساسي (card): زرار «أنا هتابعه»، «عملائي»، النصيحة، وتسجيل النتيجة بعد الحجز.
 // camp: 'baby' | 'soc' · grp: مفاتيح GRP · tk: أنواع النصايح ('d' حفاضات / 'm' لبن) · الكارت بيتحفظ كنسخة لما الموظف يحجزه.
 function campCard(r, camp, grp, msg, tk) {
-  const tk2 = tkOfCust(r.c) || tk || '';
-  CUSTOM[r.c] = { id: r.c, name: r.name, status: camp === 'soc' ? 'سوشيال' : camp === 'vit' ? 'فيتامينات' : 'حفاضات ولبن', monthly: 0, msg, camp, grp, tk: tk2 || undefined,
+  const tk2 = camp === 'price' ? '' : (tkOfCust(r.c) || tk || '');
+  CUSTOM[r.c] = { id: r.c, name: r.name, status: camp === 'soc' ? 'سوشيال' : camp === 'vit' ? 'فيتامينات' : camp === 'price' ? 'سعر اتغير' : 'حفاضات ولبن', monthly: 0, msg, camp, grp, tk: tk2 || undefined,
     phones: r.ph || [], deliv: !!r.deliv, last: r.last, v90: r.v90 || 0, visit: null, late: 0,
     area: [r.area, r.street].filter(Boolean).join(' — '),
     items: r.keep.slice(0, 5).map(x => [x[0], null, 'آخر شراء', null, x[1], null]) };
@@ -806,7 +844,7 @@ function updBadge() {
 const REFR = { busy: false };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function reloadAll() {
-  H = null; BYC = null; IK = null; WON.rows = null; Object.keys(CUSTOM).forEach(k => delete CUSTOM[k]);
+  H = null; BYC = null; IK = null; WON.rows = null; PR.rows = null; Object.keys(CUSTOM).forEach(k => delete CUSTOM[k]);
   await load(); ST.shown = 40; render();
 }
 async function requestRefresh() {
@@ -840,7 +878,7 @@ async function requestRefresh() {
   } finally { REFR.busy = false; const b = $('#crefresh', ROOT); if (b) b.disabled = false; }
 }
 const wireRefresh = () => { const b = $('#crefresh', ROOT); if (b) b.onclick = requestRefresh; };
-function render() { kpis(); updBadge(); bar(); if (ST.tab === 'today') todayView(); else if (ST.tab === 'mine') mineView(); else if (ST.tab === 'baby') babyView(); else if (ST.tab === 'soc') socView(); else if (ST.tab === 'vit') vitView(); else if (ST.tab === 'find') findView(); else if (ST.tab === 'res') resView(); else if (ST.tab === 'log') logView(); else listView(); }
+function render() { kpis(); updBadge(); bar(); if (ST.tab === 'today') todayView(); else if (ST.tab === 'mine') mineView(); else if (ST.tab === 'baby') babyView(); else if (ST.tab === 'soc') socView(); else if (ST.tab === 'vit') vitView(); else if (ST.tab === 'price') priceView(); else if (ST.tab === 'find') findView(); else if (ST.tab === 'res') resView(); else if (ST.tab === 'log') logView(); else listView(); }
 
 /* ---------- أدوات ---------- */
 function toast(t) { const d = document.createElement('div'); d.className = 'toast'; d.textContent = t; document.body.appendChild(d); setTimeout(() => d.remove(), 2200); }
