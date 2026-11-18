@@ -236,8 +236,9 @@ function socFix(c, m) {
 const greetA = n => { const g = greet(n); return g === 'حضرتك' ? g : (/^(ا\/|د[./\s]|دكتور|dr\b)/i.test(g) ? g : 'ا/ ' + g); };
 /* (17/11، طلبه) النصيحة في أي تبويب ومع أي عميل بيشتري حفاضات / لبن / فيتامينات (من مجموعات الكارت وأصنافه، أو من مشترياته لو كارت حملة) */
 function tkFromCard(c) {
-  const g = c.grp || [], names = (c.items || []).map(i => String(i[0]));
-  return (g.includes('diaper') ? 'd' : '') + (g.includes('milk') ? 'm' : '') + (names.some(n => VIT_RX.test(n)) ? 'v' : '');
+  // (18/11) من مجموعة الكارت ومن أسماء الأصناف نفسها (كروت «بعد عننا/كان بيشتري وبطّل» مجموعتها lapsed ومفيهاش diaper/milk)
+  const g = c.grp || [], names = (c.items || []).map(i => String(i[0])), ks = names.map(kindOf);
+  return (g.includes('diaper') || ks.includes('d') ? 'd' : '') + (g.includes('milk') || ks.includes('m') ? 'm' : '') + (names.some(n => VIT_RX.test(n)) ? 'v' : '');
 }
 const tkOf = c => c.tk || tkFromCard(c);
 function tkOfCust(id) {
