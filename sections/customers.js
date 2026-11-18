@@ -154,8 +154,11 @@ function boughtAfter(rec) {
   const hit = v.filter(([d]) => d >= rec.day && d <= end);
   return hit.length ? { day: hit[0][0], amt: hit.reduce((a, x) => a + x[1], 0) } : null;
 }
+/* (18/11، طلبه) «فكّرني»: لو آخر تواصل فيه remind (تاريخ) العميل بيختفي لحد التاريخ ده وبعدين بيرجع أول القايمة بعلامة ⏰ */
+const remindDue = c => { const L = logsOf(c.id)[0]; return !!(L && L.remind && L.remind <= today()); };
 function contactedRecently(c) {
   const L = logsOf(c.id)[0]; if (!L) return false;
+  if (L.remind) return L.remind > today();
   if (L.result === 'مردش') return L.day > addDays(today(), -RETRY_NR);
   return L.day > addDays(today(), -WINDOW);
 }
@@ -195,17 +198,18 @@ function kpis() {
   $('#cmeta', ROOT).textContent = `آخر تحديث من السيرفر: ${META.at || '—'} · الأرقام على مشتريات لحد ${D(META.ref)}`;
 }
 const campBtns = () => `<button class="${ST.tab === 'baby' ? 'on' : ''}" data-tab="baby">🍼 حفاضات ولبن</button><button class="${ST.tab === 'soc' ? 'on' : ''}" data-tab="soc">📣 عملاء السوشيال</button><button class="${ST.tab === 'vit' ? 'on' : ''}" data-tab="vit">💊 فيتامينات</button>`;
+const todayBtn = () => `<button class="${ST.tab === 'today' ? 'on' : ''}" data-tab="today">🎯 هدف اليوم<span class="n">${todayDone()}${ROLE === 'emp' ? '/' + DAILY_TARGET : ''}</span></button>`;
 function bar() {
   const cnt = s => CARDS.filter(c => c.status === s && !(ST.hideDone && contactedRecently(c)) && !(ROLE === 'emp' && owner(c.id))).length;
   if (ROLE === 'emp') {
     const n = myCards().filter(c => !contactedRecently(c)).length;
-    $('#cbar', ROOT).innerHTML = `<button class="${ST.tab === 'mine' ? 'on' : ''}" data-tab="mine">👤 عملائي<span class="n">${n}</span></button>`
+    $('#cbar', ROOT).innerHTML = todayBtn() + `<button class="${ST.tab === 'mine' ? 'on' : ''}" data-tab="mine">👤 عملائي<span class="n">${n}</span></button>`
       + LISTS.map(([k, t]) => `<button class="${ST.tab === k ? 'on' : ''}" data-tab="${k}">${t}<span class="n">${cnt(k)}</span></button>`).join('')
       + campBtns() + `<button class="${ST.tab === 'find' ? 'on' : ''}" data-tab="find">🔎 بحث بصنف</button>`;
     $('#cbar', ROOT).querySelectorAll('button').forEach(b => b.onclick = () => { ST.tab = b.dataset.tab; ST.shown = 40; render(); });
     return;
   }
-  $('#cbar', ROOT).innerHTML = LISTS.map(([k, t]) => `<button class="${ST.tab === k ? 'on' : ''}" data-tab="${k}">${t}<span class="n">${cnt(k)}</span></button>`).join('')
+  $('#cbar', ROOT).innerHTML = todayBtn() + LISTS.map(([k, t]) => `<button class="${ST.tab === k ? 'on' : ''}" data-tab="${k}">${t}<span class="n">${cnt(k)}</span></button>`).join('')
     + campBtns()
     + `<button class="${ST.tab === 'find' ? 'on' : ''}" data-tab="find">🔎 بحث بصنف</button>`
     + `<button class="${ST.tab === 'res' ? 'on' : ''}" data-tab="res">📈 النتايج</button>`
@@ -260,7 +264,7 @@ function card(c) {
     <div class="top"><div><h4>${esc(nm(c.name))}</h4>
       <div class="meta">${c.grp.map(x => `<span class="bd" style="background:${(GRP[x] || GRP.med)[1]}">${(GRP[x] || GRP.med)[0]}</span>`).join('')}
         ${c.deliv ? '<span class="bd dl">عميل توصيل</span>' : ''}${hasDisc(c.name) ? '<span class="bd" style="background:#C2417A">عميل خصم</span>' : ''}${c.leak ? '<span class="bd lk">غالباً بيجيب جزء من برا</span>' : ''}
-        <div class="when">${when}</div>${c.status !== 'بعد' && seen ? `<div>${seen}</div>` : ''}${c.area && c.area !== 'مش متسجل' ? `<div>📍 ${esc(c.area)}</div>` : ''}</div></div>
+        <div class="when">${when}</div>${remindDue(c) ? `<div class="when" style="color:#B0761F">⏰ فكّرني النهارده${(logsOf(c.id)[0] || {}).note ? ' — ' + esc(logsOf(c.id)[0].note) : ''}</div>` : ''}${c.status !== 'بعد' && seen ? `<div>${seen}</div>` : ''}${c.area && c.area !== 'مش متسجل' ? `<div>📍 ${esc(c.area)}</div>` : ''}</div></div>
       ${c.camp ? (c.v90 ? `<div class="val">${M(c.v90)}<div class="meta" style="text-align:left">آخر 90 يوم</div></div>` : '')
         : `<div class="val">${M(c.monthly)}<div class="meta" style="text-align:left">${c.grp[0] === 'lapsed' ? 'كان بيدفع في الشهر' : 'في الشهر'}</div></div>`}</div>
     <ul class="its">${its}</ul>
@@ -315,18 +319,66 @@ const cardOf = id => CARDS.find(c => c.id === id) || (CLAIM[id] && CLAIM[id].d ?
 function myCards() {
   return Object.keys(CLAIM).filter(id => mine(+id)).map(id => cardOf(+id)).filter(Boolean);
 }
+/* ---------- 🎯 هدف اليوم (18/11، طلبه): 20 عميل لكل موظف، بترتيب ذكي ----------
+   الترتيب = قيمة العميل في الشهر × (قرّب ×1.5 · اتأخر ×1.2 · بعد عننا ×0.8)؛ اللي «فكّرني» النهارده الأول، وبعدهم المحجوزين للموظف، وبعدهم الباقي.
+   العملاء من غير تليفون أو اللي عليهم اسم زميل مش بيظهروا. الهدف رقم ثابت (DAILY_TARGET) مش بيتغير بساعات الشغل. */
+const DAILY_TARGET = 20, W_ST = { 'قرّب': 1.5, 'اتأخر': 1.2, 'بعد': 0.8 };
+const TD = { shown: 20 };
+const todayDone = () => new Set(LOG.filter(x => x.day === today() && (ROLE !== 'emp' || x.byName === MY.name)).map(x => x.cust)).size;
+function queue() {
+  const seen = new Set(), out = [], ok = c => c && !contactedRecently(c) && (c.phones || []).length;
+  const add = c => { if (ok(c) && !seen.has(c.id)) { seen.add(c.id); out.push(c); } };
+  if (ROLE === 'emp') myCards().forEach(add);
+  CARDS.forEach(c => { if (!(ROLE === 'emp' && owner(c.id))) add(c); });
+  const sc = c => (c.monthly || 0) * (W_ST[c.status] || 1) + (remindDue(c) ? 1e7 : 0) + (ROLE === 'emp' && mine(c.id) ? 1e5 : 0);
+  return out.sort((a, b) => sc(b) - sc(a));
+}
+function todayView() {
+  const done = todayDone(), q = queue(), left = Math.max(0, DAILY_TARGET - done), pct = Math.min(100, Math.round(done / DAILY_TARGET * 100));
+  const due = q.filter(remindDue).length;
+  $('#cbody', ROOT).innerHTML = `<div class="card" style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center">
+      <b style="font-size:16px">🎯 ${ROLE === 'emp' ? 'هدفك النهارده' : 'الفريق النهارده'}: ${done} ${ROLE === 'emp' ? 'من ' + DAILY_TARGET : 'عميل'}</b>
+      <span class="meta">${ROLE !== 'emp' ? '' : done >= DAILY_TARGET ? '🎉 خلّصت هدف اليوم — كمّل لو تقدر' : `فاضل ${left} عميل`}${due ? ` · ⏰ ${due} فكّرني النهارده` : ''}</span></div>
+      ${ROLE === 'emp' ? `<div style="height:10px;border-radius:99px;background:var(--line);margin-top:8px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${done >= DAILY_TARGET ? '#1B7F3B' : '#FFC83D'};border-radius:99px"></div></div>` : ''}</div>
+    <p class="why">اللي مرتبين لك: <b>⏰ فكّرني النهارده</b> الأول، وبعدهم عملاءك المحجوزين، وبعدهم الأعلى قيمة. الترتيب = قيمة العميل في الشهر × (قرّب ×1.5 · اتأخر ×1.2 · بعد عننا ×0.8). من غير تليفون أو عليه اسم زميل مش بيظهر.</p>
+    <div id="clist">${q.slice(0, TD.shown).map(card).join('') || '<div class="banner">مفيش عملاء متاحين دلوقتي.</div>'}</div>
+    ${q.length > TD.shown ? `<button class="ghost more" id="tmore">عرض المزيد (${q.length - TD.shown})</button>` : ''}`;
+  const b = $('#cbody', ROOT);
+  if ($('#tmore', b)) $('#tmore', b).onclick = () => { TD.shown += 20; todayView(); };
+  hooks(b);
+}
 function mineView() {
   const all = myCards(), todo = all.filter(c => !contactedRecently(c)).sort((a, b) => String(a.due).localeCompare(String(b.due))), fin = all.filter(c => contactedRecently(c));
   $('#cbody', ROOT).innerHTML = `<p class="why">${all.length ? `فاضل <b>${todo.length}</b> من ${all.length} · ابعت الرسالة واتصل، وبعدين دوس النتيجة` : 'لسه محطتش اسمك على حد — افتح «ميعاده قرّب» أو «اتأخر» أو «بعد عننا» ودوس «✋ أنا هتابعه».'}</p>
     <div id="clist">${todo.map(card).join('')}${fin.length ? `<h3 style="margin:16px 4px 8px">خلصتهم (${fin.length})</h3>${fin.map(card).join('')}` : ''}</div>`;
   hooks($('#cbody', ROOT));
 }
+function askNote(c, result) {
+  return new Promise(resolve => {
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:90;display:flex;align-items:center;justify-content:center;padding:16px';
+    const opts = [[0, 'من غير فكّرني'], [1, 'بكرة'], [3, 'بعد 3 أيام'], [7, 'بعد أسبوع'], [14, 'بعد أسبوعين']];
+    let pick = 0;
+    ov.innerHTML = `<div class="card" style="max-width:420px;width:100%"><h3 style="margin:0 0 8px">${result === 'تم' ? '✅ اتكلمنا' : '💬 بعتنا واتس'} — ${esc(nm(c.name))}</h3>
+      <input id="askNote" type="text" placeholder="ملاحظة (اختياري) — مثلاً: هيعدّي بكرة / عايز توصيل" style="width:100%;margin-bottom:10px">
+      <div class="meta" style="margin-bottom:6px">⏰ فكّرني أرجع له:</div>
+      <div class="ctl chips" style="flex-wrap:wrap">${opts.map(([d, t], i) => `<button type="button" class="chip ${i === 0 ? 'on' : ''}" data-d="${d}">${t}</button>`).join('')}</div>
+      <div class="act" style="margin-top:12px"><button type="button" id="askOk">حفظ</button><button type="button" class="ghost" id="askNo">إلغاء</button></div></div>`;
+    ROOT.appendChild(ov);
+    const done = v => { ov.remove(); resolve(v); };
+    ov.querySelectorAll('[data-d]').forEach(b => b.onclick = () => { pick = +b.dataset.d; ov.querySelectorAll('[data-d]').forEach(x => x.classList.toggle('on', x === b)); });
+    $('#askOk', ov).onclick = () => done({ note: $('#askNote', ov).value.trim(), remind: pick ? addDays(today(), pick) : null });
+    $('#askNo', ov).onclick = () => done(null);
+    setTimeout(() => $('#askNote', ov).focus(), 50);
+  });
+}
 async function record(id, result, btn) {
-  const c = cardFor(id); let note = '';
-  if (result === 'تم') note = (prompt('ملاحظة (اختياري) — مثلاً: هيعدّي بكرة / عايز توصيل', '') || '').trim();
+  const c = cardFor(id); let note = '', remind = null;
+  if (result === 'تم' || result === 'بعتنا واتس') { const a = await askNote(c, result); if (!a) return; note = a.note; remind = a.remind; }
   const me = LOCAL ? { uid: 'local' } : getAuth(getApp()).currentUser;
   const rec = { cust: id, name: c.name, result, note, list: c.status, monthly: c.monthly, day: today(), at: new Date().toISOString(),
                 by: me.uid, byName: ROLE === 'emp' ? MY.name : 'مدير الفرع' };
+  if (remind) rec.remind = remind;
   btn.disabled = true;
   try { await saveLog(rec); toast('اتسجّل: ' + result); render(); }
   catch (e) { btn.disabled = false; toast('متسجلش: ' + (e.code || e.message)); }
@@ -338,6 +390,28 @@ function results(days, src = LOG) {
     if (seen.has(r.cust)) continue; const w = boughtAfter(r); if (w) { won.push({ ...r, w }); seen.add(r.cust); }
   }
   return { recs, won, rev: won.reduce((a, x) => a + x.w.amt, 0) };
+}
+/* ---------- تقرير الأثر الأسبوعي (18/11، طلبه) — للمدير وصاحب الصيدلية: كلمنا كام، اشتروا كام، وكام جنيه رجع بسبب المتابعة ---------- */
+const OK_RES = ['تم', 'بعتنا واتس'];
+function weeklyHtml() {
+  const rows = [];
+  for (let w = 0; w < 8; w++) {
+    const to = addDays(today(), -7 * w), from = addDays(to, -6);
+    const recs = LOG.filter(x => x.day >= from && x.day <= to), talked = recs.filter(x => OK_RES.includes(x.result));
+    const wonBy = {}, seen = new Set();
+    for (const r of [...talked].sort((a, b) => a.day.localeCompare(b.day))) { if (seen.has(r.cust)) continue; const b = boughtAfter(r); if (b) { wonBy[r.cust] = b.amt; seen.add(r.cust); } }
+    const tc = new Set(talked.map(x => x.cust)).size, won = Object.keys(wonBy).length;
+    rows.push({ from, to, all: new Set(recs.map(x => x.cust)).size, tc, won, rev: Object.values(wonBy).reduce((a, x) => a + x, 0), open: to > addDays(today(), -WINDOW) });
+  }
+  const byList = {}, from30 = addDays(today(), -30);
+  for (const r of LOG.filter(x => x.day >= from30 && OK_RES.includes(x.result))) { const k = r.list || '—', p = byList[k] || (byList[k] = { n: new Set(), w: new Set() }); p.n.add(r.cust); if (boughtAfter(r)) p.w.add(r.cust); }
+  const pc = (a, b) => b ? Math.round(a / b * 100) + '٪' : '—';
+  return `<div class="card" style="margin-bottom:12px"><h3 style="margin:0 0 8px">📊 الأثر الأسبوعي — كل أسبوع 7 أيام</h3><div class="tw"><table>
+    <tr><th>الأسبوع</th><th>عملاء اتسجل تواصل</th><th>اتكلمنا / بعتنا واتس</th><th>اشتروا بعدها</th><th>نسبة الشراء</th><th>مبيعاتهم</th></tr>
+    ${rows.map(r => `<tr${r.open ? ' style="opacity:.7"' : ''}><td>${D(r.from)} – ${D(r.to)}${r.open ? ' ⏳' : ''}</td><td>${N(r.all)}</td><td>${N(r.tc)}</td><td><b>${N(r.won)}</b></td><td>${pc(r.won, r.tc)}</td><td>${M(r.rev)}</td></tr>`).join('')}</table></div>
+    <p class="why" style="margin:8px 0 0">«اشتروا بعدها» = فاتورة للعميل من يوم التواصل لحد ${WINDOW} يوم بعده (من السيستم). الأسابيع اللي عليها ⏳ لسه بتكمّل (ممكن عملاء تانيين يشتروا). «مبيعاتهم» = كل اللي اشتروه في الفترة دي.</p>
+    ${Object.keys(byList).length ? `<div class="tw" style="margin-top:8px"><table><tr><th>حسب القايمة — آخر 30 يوم</th><th>اتكلمنا معاهم</th><th>اشتروا</th><th>نسبة الشراء</th></tr>
+      ${Object.entries(byList).map(([k, p]) => `<tr><td>${esc(k)}</td><td>${p.n.size}</td><td>${p.w.size}</td><td>${pc(p.w.size, p.n.size)}</td></tr>`).join('')}</table></div>` : ''}</div>`;
 }
 function resView() {
   const blocks = [7, 30].map(d => {
@@ -363,7 +437,7 @@ function resView() {
       ${Object.entries(people).sort((a, b) => b[1].d30.size - a[1].d30.size).map(([k, p]) => `<tr><td>${esc(k)}</td><td>${p.d0.size}</td><td>${p.d7.size}</td><td><b>${p.d30.size}</b></td><td>${p.ok}</td><td>${p.won}</td><td>${M(p.rev)}</td></tr>`).join('')}
       </table></div><p class="why" style="margin:8px 0 0">الأرقام = عدد العملاء المختلفين اللي الموظف سجّل معاهم تواصل (أي نتيجة). «اتكلم معاهم» = اللي ردّوا.</p></div>` : '';
   $('#cbody', ROOT).innerHTML = `<p class="why">"اشترى بعد التواصل" بيتحسب لوحده: أي فاتورة للعميل من يوم المكالمة لحد ${WINDOW} يوم بعدها (من السيستم، مش بالزرار).
-    الفلوس = كل اللي اشتراه في الفترة دي.</p>${byEmp}<div id="wonBox" class="card" style="margin-bottom:12px"><p class="sub">جاري تحميل تقرير «اتكلمنا واشتروا»…</p></div>${blocks}`;
+    الفلوس = كل اللي اشتراه في الفترة دي.</p>${weeklyHtml()}${byEmp}<div id="wonBox" class="card" style="margin-bottom:12px"><p class="sub">جاري تحميل تقرير «اتكلمنا واشتروا»…</p></div>${blocks}`;
   loadWon();
 }
 /* ---------- «اتكلمنا واشتروا» (17/11، طلبه — للمدير وصاحب الصيدلية بس) ----------
@@ -714,7 +788,7 @@ async function requestRefresh() {
   } finally { REFR.busy = false; const b = $('#crefresh', ROOT); if (b) b.disabled = false; }
 }
 const wireRefresh = () => { const b = $('#crefresh', ROOT); if (b) b.onclick = requestRefresh; };
-function render() { kpis(); updBadge(); bar(); if (ST.tab === 'mine') mineView(); else if (ST.tab === 'baby') babyView(); else if (ST.tab === 'soc') socView(); else if (ST.tab === 'vit') vitView(); else if (ST.tab === 'find') findView(); else if (ST.tab === 'res') resView(); else if (ST.tab === 'log') logView(); else listView(); }
+function render() { kpis(); updBadge(); bar(); if (ST.tab === 'today') todayView(); else if (ST.tab === 'mine') mineView(); else if (ST.tab === 'baby') babyView(); else if (ST.tab === 'soc') socView(); else if (ST.tab === 'vit') vitView(); else if (ST.tab === 'find') findView(); else if (ST.tab === 'res') resView(); else if (ST.tab === 'log') logView(); else listView(); }
 
 /* ---------- أدوات ---------- */
 function toast(t) { const d = document.createElement('div'); d.className = 'toast'; d.textContent = t; document.body.appendChild(d); setTimeout(() => d.remove(), 2200); }
@@ -745,10 +819,10 @@ export async function mountEmployee(root, uid, name, dev = false) {
     root.innerHTML = `<div class="banner bad">مقدرتش أحمّل العملاء: ${esc(e.code || e.message)}</div>`; return;
   }
   if (!ok) { root.innerHTML = '<div class="banner">لسه مفيش قوايم.</div>'; return; }
-  ST.tab = 'mine'; shell(); wireRefresh(); render();
+  ST.tab = 'today'; shell(); wireRefresh(); render();
 }
 
 // للتجربة المحلية من غير Firestore
 export function mountLocal(root, data, role = 'admin', me = { uid: 'local', name: 'موظف تجربة' }) {
-  ROOT = root; ROLE = role; LOCAL = data; MY = me; CLAIM = data.claim || {}; css(); root.id = 'crmRoot'; load(); if (role === 'emp') ST.tab = 'mine'; shell(); wireRefresh(); render();
+  ROOT = root; ROLE = role; LOCAL = data; MY = me; CLAIM = data.claim || {}; css(); root.id = 'crmRoot'; load(); if (role === 'emp') ST.tab = 'today'; shell(); wireRefresh(); render();
 }
