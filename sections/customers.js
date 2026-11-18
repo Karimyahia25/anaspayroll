@@ -7,7 +7,7 @@ import { getApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.
 import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, doc, getDoc, getDocs, setDoc, collection, addDoc, deleteDoc, query, where, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-import { pickTip, tipText, tipById } from "./tips.js?v=5";
+import { pickTip, tipText, tipById } from "./tips.js?v=6";
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = t => String(t == null ? '' : t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -227,9 +227,37 @@ function filtered() {
 }
 // (12/11، طلبه) «ا/» قبل اسم العميل في كل الرسايل. رسايل القوايم الأساسية جاية جاهزة من السيرفر فبنظبطها هنا؛
 // اللي اسمه دكتور/د. أو فيه «ا/» أصلاً أو «حضرتك» (من غير اسم) بيتساب زي ما هو.
-const msgOf = c => socFix(c, String(c.msg || '')
-  .replace(/^(أهلاً)\s+(?!ا\/|حضرتك|د[./\s]|دكتور|dr\b)/i, '$1 ا/ ')
-  .replace(/^(السلام عليكم ورحمة الله)\s+(?!ا\/|حضرتك|د[./\s]|دكتور|dr\b)/i, '$1 ا/ '));
+/* (18/11، طلبه) رسالة التذكير: مختصرة وودودة، والنصيحة جواها (هادية ووديّة) — وزرار «🔄 غيّر النصيحة» و«🚫 من غير نصيحة» جنب نسخ الرسالة.
+   رسايل القوايم الأساسية بتتبني هنا (مش من السيرفر)، ورسايل تبويبات الحملات (حفاضات/فيتامينات/سوشيال) بتتبني في تبويباتها. */
+const TIPSHIFT = {}, NOTIP = {};
+const tipFor = c => { const k = tkOf(c); return !k || NOTIP[c.id] ? null : pickTip(c.id, k, TIPSHIFT[c.id] || 0); };
+const withTip = (c, base) => { const x = tipFor(c); return x ? `${base}\n\n🌿 نصيحة هادية لحضرتك:\n${x.t}\n${x.q}` : base; };
+const itemsPhrase = c => {
+  const L = (c.items || []).slice(0, 3).map(i => nm(String(i[0]).replace(/\s*\(آخر مرة:.*?\)/, ''))).filter(Boolean);
+  return { txt: L.length > 2 ? `${L[0]} و${L[1]} وغيرهم` : L.join(' و'), many: L.length > 1 };
+};
+function friendlyMsg(c) {
+  const n = greetA(c.name), hi = n === 'حضرتك' ? '' : ' ' + n, g = c.grp || [];
+  if (c.status === 'بعد' || g[0] === 'lapsed')
+    return `السلام عليكم ورحمة الله${hi} 🌿\nمعاك صيدلية د. أنس نحيلة — وحشتنا حضرتك 💚\nحبينا نطمّن عليك، ولو فيه أي ملاحظة على خدمتنا يهمنا نعرفها. إحنا موجودين 24 ساعة ونوصّل لحد باب بيتك.`;
+  const late = c.status === 'اتأخر', it = itemsPhrase(c);
+  const head = `أهلاً${hi} 🌿\nمعاك صيدلية أنس نحيلة، بنطمن على حضرتك`;
+  const tail = late ? 'لو محتاجه متوفر عندنا' : 'متوفر عندنا';
+  if (g.includes('diaper') || g.includes('milk')) {
+    const what = g.includes('diaper') && g.includes('milk') ? 'الحفاضات واللبن' : g.includes('diaper') ? 'الحفاضات' : 'اللبن';
+    return `${head} وعلى البيبي 💚\n${what} ${late ? 'ممكن يكونوا خلصوا' : 'قربوا يخلصوا'} — متوفرين عندنا بكل المقاسات، ونوصّلهم لحد باب بيتك لو تحب.`;
+  }
+  if (g.includes('adult')) return `${head} 💚\nمستلزمات حضرتك ${late ? 'ممكن تكون خلصت' : 'قربت تخلص'} — ${tail}، ونوصّلها لحد باب بيتك لو تحب.`;
+  const what = it.txt || (g.includes('cosmo') ? 'المنتج' : 'الدوا');
+  const verb = late ? (it.many ? 'ممكن يكونوا خلصوا' : 'ممكن يكون خلص') : (it.many ? 'قربوا يخلصوا' : 'قرّب يخلص');
+  return `${head} 💚\nلاحظنا إن ${what} ${verb} — ${tail}، ونوصّله لحد باب بيتك لو تحب.`;
+}
+const baseMsg = c => c.camp ? String(c.msg || '') : friendlyMsg(c);
+const msgOf = c => socFix(c, withTip(c, baseMsg(c)));
+function refreshMsg(id, el) {                              // بعد تغيير النصيحة: نحدّث نص الرسالة في الكارت ونفتحه
+  const card = el.closest('.cc'), c = cardFor(id), d = card && card.querySelector('details.msg'); if (!d) return;
+  d.querySelector('pre').textContent = msgOf(c); d.open = true;
+}
 /* (17/11، طلبه) أي رسالة لعميل «سوشيال»: سطر الخصم بخط عريض في أول الرسالة + لينك الموقع (www). بيتظبط هنا علشان يغطي كمان الكروت المحجوزة قبل كده. */
 const SOC_LINE = '*🔥 يوجد خصومات على العلاج الشهري تصل لـ 15% 🔥*';
 function socFix(c, m) {
@@ -270,9 +298,9 @@ function card(c) {
         : `<div class="val">${M(c.monthly)}<div class="meta" style="text-align:left">${c.grp[0] === 'lapsed' ? 'كان بيدفع في الشهر' : 'في الشهر'}</div></div>`}</div>
     <ul class="its">${its}</ul>
     <div class="ph">${c.phones.length ? c.phones.map(phBtn).join('') : '<span class="meta">مفيش رقم متسجل</span>'}</div>
-    <details class="msg"><summary>الرسالة</summary><pre>${esc(msgOf(c))}</pre>${tkOf(c) ? (x => `<div class="tip">${esc(x.t)}<br><b>❓ ${esc(x.q)}</b></div>`)(pickTip(c.id, tkOf(c))) : ''}</details>
+    <details class="msg"><summary>الرسالة</summary><pre>${esc(msgOf(c))}</pre></details>
     <div class="act"><button class="ghost" data-copy="${c.id}">📋 نسخ الرسالة</button>
-      ${tkOf(c) ? `<button class="ghost" data-tip="${c.id}">💡 نسخ النصيحة</button>` : ''}
+      ${tkOf(c) ? `<button class="ghost" data-newtip="${c.id}">🔄 غيّر النصيحة</button><button class="ghost" data-notip="${c.id}">${NOTIP[c.id] ? '💡 بنصيحة' : '🚫 من غير نصيحة'}</button>` : ''}
       ${ROLE === 'emp' && !ow ? `<button data-claim="${c.id}">✋ أنا هتابعه</button>` : ''}
       ${edit && (ROLE !== 'emp' || me) ? RES.map(([k, t, cl]) => `<button class="r-${cl}" data-res="${k}" data-id="${c.id}">${t}</button>`).join('') : ''}</div>
     ${ow ? `<div class="asg">👤 ${me ? 'معاك' : `مع <b>${esc(ow.name)}</b>`} من ${ow.at === today() ? 'النهارده' : D(ow.at)}
@@ -298,8 +326,10 @@ const phBtn = p => `<a href="tel:${p}">📞 ${p}</a><button type="button" class=
 const wireCpn = b => b.querySelectorAll('[data-cpn]').forEach(x => x.onclick = () => copy(x.dataset.cpn, 'الرقم اتنسخ ✓'));
 // أزرار الكارت (القوايم + عملائي)
 function hooks(b) {
-  b.querySelectorAll('[data-copy]').forEach(x => x.onclick = () => copy(msgOf(cardFor(+x.dataset.copy))));
-  b.querySelectorAll('[data-tip]').forEach(x => x.onclick = () => { const c = cardFor(+x.dataset.tip); TIPSENT[c.id] = pickTip(c.id, tkOf(c)).id; copy(tipText(c.id, tkOf(c)), 'النصيحة اتنسخت ✓'); });
+  b.querySelectorAll('[data-copy]').forEach(x => x.onclick = () => { const c = cardFor(+x.dataset.copy), t = tipFor(c); if (t) TIPSENT[c.id] = t.id; else delete TIPSENT[c.id]; copy(msgOf(c)); });
+  b.querySelectorAll('[data-newtip]').forEach(x => x.onclick = () => { const id = +x.dataset.newtip; TIPSHIFT[id] = (TIPSHIFT[id] || 0) + 1; delete NOTIP[id]; refreshMsg(id, x);
+    const nb = x.parentElement.querySelector('[data-notip]'); if (nb) nb.textContent = '🚫 من غير نصيحة'; });
+  b.querySelectorAll('[data-notip]').forEach(x => x.onclick = () => { const id = +x.dataset.notip; NOTIP[id] = !NOTIP[id]; x.textContent = NOTIP[id] ? '💡 بنصيحة' : '🚫 من غير نصيحة'; refreshMsg(id, x); });
   // على الكمبيوتر مفيش تليفون يتصل: الدوسة على الرقم بتنسخه بدل ما تفتح برنامج اتصال
   if (!matchMedia('(pointer:coarse)').matches) b.querySelectorAll('.ph a').forEach(x => x.onclick = e => { e.preventDefault(); copy(x.href.replace('tel:', ''), 'الرقم اتنسخ ✓'); });
   wireCpn(b);
@@ -674,7 +704,7 @@ function babyView() {
     <div id="clist">${rows.slice(0, BB.shown).map(r => {
       const grp = [r.hasD && 'diaper', r.hasM && 'milk'].filter(Boolean), tk = (r.hasD ? 'd' : '') + (r.hasM ? 'm' : '');
       const its = r.keep.slice(0, 3).map(x => '• ' + nm(x[0])).join('\n');
-      const msg = `أهلاً ${greetA(r.name)} 🌿\nمعاك صيدلية أنس نحيلة، بنطمن على حضرتك وعلى البيبي.\n\nحسب آخر مرة، الظاهر إن دول قربوا يخلصوا:\n${its}\n\nمتوفرين عندنا بكل المقاسات، ولو تحب نوصلهملك البيت قولنا.\nوأي حاجة تانية تحتاجها، إحنا موجودين 💚`;
+      const msg = `أهلاً ${greetA(r.name)} 🌿\nمعاك صيدلية أنس نحيلة، بنطمن على حضرتك وعلى البيبي 💚\nحسب آخر مرة، الظاهر إن دول قربوا يخلصوا:\n${its}\nمتوفرين بكل المقاسات، ونوصّلهم لحد باب بيتك لو تحب.`;
       return campCard(r, 'baby', grp, msg, tk);
     }).join('') || '<div class="banner">مفيش عملاء بالفلاتر دي.</div>'}</div>
     ${rows.length > BB.shown ? `<button class="ghost more" id="bmore">عرض المزيد (${rows.length - BB.shown})</button>` : ''}`;
@@ -749,7 +779,7 @@ function vitView() {
     <div class="ctl chips">${kinds}</div>
     <div id="clist">${rows.slice(0, VT.shown).map(r => {
       const its = r.keep.slice(0, 3).map(x => '• ' + nm(x[0])).join('\n');
-      const msg = `أهلاً ${greetA(r.name)} 🌿\nمعاك صيدلية أنس نحيلة، بنطمن على حضرتك.\n\nآخر مرة أخدت عندنا:\n${its}\n\nمتوفرين عندنا، ولو قرّب يخلص نوصّله لحد باب بيتك، قولنا بس.\nوأي سؤال عن المكمّلات إحنا موجودين 💚`;
+      const msg = `أهلاً ${greetA(r.name)} 🌿\nمعاك صيدلية أنس نحيلة، بنطمن على حضرتك 💚\nآخر مرة أخدت عندنا:\n${its}\nمتوفرين، ولو قرّب يخلص نوصّله لحد باب بيتك لو تحب.`;
       return campCard(r, 'vit', ['vit'], msg, 'v');
     }).join('') || '<div class="banner">مفيش عملاء بالفلاتر دي.</div>'}</div>
     ${rows.length > VT.shown ? `<button class="ghost more" id="vmore">عرض المزيد (${rows.length - VT.shown})</button>` : ''}`;

@@ -169,14 +169,14 @@ const weekNo = () => Math.floor((Date.now() + 2 * 3600e3) / (7 * 864e5));
 // kinds: 'd' عميل حفاضات · 'm' عميل لبن · 'v' عميل فيتامينات (ممكن أكتر من حرف: 'dv'). الحفاضات ← حفاضات + طفل · اللبن ← طفل + أم · فيتامينات ← فيتامينات؛ وبيتجمّعوا.
 // بترجّع {t: النص بالإيموجي, q: السؤال}
 // (18/11) كل نصيحة ليها id ثابت: diaper3 · baby12 · mom7 · vit25 (الاسم + رقمها في المصفوفة) — بيتسجل في crm_log علشان نقيس أثرها
-export function pickTip(custId, kinds) {
+export function pickTip(custId, kinds, shift = 0) {
   const k = String(kinds || ''), pool = [], seen = new Set();
   const add = key => TIPS[key].forEach((x, i) => { if (!seen.has(key + i)) { seen.add(key + i); pool.push({ id: key + i, t: x[0], q: x[1] }); } });
   if (k.includes('d')) { add('diaper'); add('baby'); }
   if (k.includes('m')) { add('baby'); add('mom'); }
   if (k.includes('v')) add('vit');
   if (!pool.length) return { id: '', t: '', q: '' };
-  return pool[(Math.abs(+custId || 0) * 31 + weekNo()) % pool.length];      // عميل بيشتري أكتر من نوع ← بيتجمّعوا كلهم
+  return pool[(Math.abs(+custId || 0) * 31 + weekNo() + (shift || 0)) % pool.length];      // shift = زرار «غيّر النصيحة»      // عميل بيشتري أكتر من نوع ← بيتجمّعوا كلهم
 }
 export const tipById = id => { const m = /^([a-z]+)(\d+)$/.exec(id || ''); const x = m && TIPS[m[1]] && TIPS[m[1]][+m[2]]; return x ? { t: x[0], q: x[1] } : null; };
 // النص اللي بيتنسخ للعميل
