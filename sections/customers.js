@@ -7,7 +7,7 @@ import { getApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.
 import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, doc, getDoc, getDocs, setDoc, collection, addDoc, deleteDoc, query, where, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-import { pickTip, tipText } from "./tips.js?v=4";
+import { pickTip, tipText, tipById } from "./tips.js?v=5";
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = t => String(t == null ? '' : t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -155,6 +155,7 @@ function boughtAfter(rec) {
   return hit.length ? { day: hit[0][0], amt: hit.reduce((a, x) => a + x[1], 0) } : null;
 }
 /* (18/11، طلبه) «فكّرني»: لو آخر تواصل فيه remind (تاريخ) العميل بيختفي لحد التاريخ ده وبعدين بيرجع أول القايمة بعلامة ⏰ */
+const TIPSENT = {};      // (18/11) آخر نصيحة اتنسخت لكل عميل في الجلسة دي — بتتسجل مع نتيجة التواصل علشان نقيس أثرها
 const remindDue = c => { const L = logsOf(c.id)[0]; return !!(L && L.remind && L.remind <= today()); };
 function contactedRecently(c) {
   const L = logsOf(c.id)[0]; if (!L) return false;
@@ -298,7 +299,7 @@ const wireCpn = b => b.querySelectorAll('[data-cpn]').forEach(x => x.onclick = (
 // أزرار الكارت (القوايم + عملائي)
 function hooks(b) {
   b.querySelectorAll('[data-copy]').forEach(x => x.onclick = () => copy(msgOf(cardFor(+x.dataset.copy))));
-  b.querySelectorAll('[data-tip]').forEach(x => x.onclick = () => { const c = cardFor(+x.dataset.tip); copy(tipText(c.id, tkOf(c)), 'النصيحة اتنسخت ✓'); });
+  b.querySelectorAll('[data-tip]').forEach(x => x.onclick = () => { const c = cardFor(+x.dataset.tip); TIPSENT[c.id] = pickTip(c.id, tkOf(c)).id; copy(tipText(c.id, tkOf(c)), 'النصيحة اتنسخت ✓'); });
   // على الكمبيوتر مفيش تليفون يتصل: الدوسة على الرقم بتنسخه بدل ما تفتح برنامج اتصال
   if (!matchMedia('(pointer:coarse)').matches) b.querySelectorAll('.ph a').forEach(x => x.onclick = e => { e.preventDefault(); copy(x.href.replace('tel:', ''), 'الرقم اتنسخ ✓'); });
   wireCpn(b);
@@ -379,6 +380,8 @@ async function record(id, result, btn) {
   const rec = { cust: id, name: c.name, result, note, list: c.status, monthly: c.monthly, day: today(), at: new Date().toISOString(),
                 by: me.uid, byName: ROLE === 'emp' ? MY.name : 'مدير الفرع' };
   if (remind) rec.remind = remind;
+  const tkk = tkOf(c); if (tkk) rec.tk = tkk;                 // العميل ده كان مؤهل لنصيحة (حفاضات/لبن/فيتامينات)
+  if (TIPSENT[id]) rec.tip = TIPSENT[id];                      // والموظف نسخ نصيحة ليه
   btn.disabled = true;
   try { await saveLog(rec); toast('اتسجّل: ' + result); render(); }
   catch (e) { btn.disabled = false; toast('متسجلش: ' + (e.code || e.message)); }
@@ -413,6 +416,25 @@ function weeklyHtml() {
     ${Object.keys(byList).length ? `<div class="tw" style="margin-top:8px"><table><tr><th>حسب القايمة — آخر 30 يوم</th><th>اتكلمنا معاهم</th><th>اشتروا</th><th>نسبة الشراء</th></tr>
       ${Object.entries(byList).map(([k, p]) => `<tr><td>${esc(k)}</td><td>${p.n.size}</td><td>${p.w.size}</td><td>${pc(p.w.size, p.n.size)}</td></tr>`).join('')}</table></div>` : ''}</div>`;
 }
+/* ---------- أثر النصايح (18/11، طلبه) — بنصيحة ولا من غير؟ وأنهي نصايح أحسن؟ (مدير + صاحب الصيدلية) ---------- */
+function tipsHtml() {
+  const from = addDays(today(), -60), seen = { y: new Set(), n: new Set() }, G = { y: { n: 0, w: 0 }, n: { n: 0, w: 0 } }, byId = {}, byCat = {};
+  const recs = LOG.filter(x => x.day >= from && OK_RES.includes(x.result) && x.tk).sort((a, b) => a.day.localeCompare(b.day));
+  for (const r of recs) {
+    const g = r.tip ? 'y' : 'n', key = g + r.cust; if (seen[g].has(r.cust)) continue; seen[g].add(r.cust);
+    const won = !!boughtAfter(r); G[g].n++; if (won) G[g].w++;
+    if (r.tip) { const cat = r.tip.replace(/\d+$/, ''), t = byId[r.tip] || (byId[r.tip] = { n: 0, w: 0 }), c = byCat[cat] || (byCat[cat] = { n: 0, w: 0 }); t.n++; c.n++; if (won) { t.w++; c.w++; } }
+  }
+  if (!G.y.n && !G.n.n) return `<div class="card" style="margin-bottom:12px"><h3 style="margin:0 0 6px">💡 أثر النصايح</h3><p class="sub">لسه مفيش بيانات: لما الموظفين ينسخوا نصيحة لعميل (حفاضات/لبن/فيتامينات) ويسجلوا النتيجة، هنقارن هنا.</p></div>`;
+  const pc = x => x.n ? Math.round(x.w / x.n * 100) + '٪' : '—', CAT = { diaper: 'حفاضات', baby: 'طفل', mom: 'أم', vit: 'فيتامينات' };
+  const top = Object.entries(byId).filter(([, v]) => v.n >= 3).sort((a, b) => b[1].w / b[1].n - a[1].w / a[1].n || b[1].n - a[1].n).slice(0, 12);
+  return `<div class="card" style="margin-bottom:12px"><h3 style="margin:0 0 8px">💡 أثر النصايح — آخر 60 يوم</h3><div class="tw"><table>
+    <tr><th>عملاء مؤهلين (حفاضات/لبن/فيتامينات)</th><th>اتكلمنا معاهم</th><th>اشتروا</th><th>نسبة الشراء</th></tr>
+    <tr><td>بنصيحة</td><td>${G.y.n}</td><td>${G.y.w}</td><td><b>${pc(G.y)}</b></td></tr><tr><td>من غير نصيحة</td><td>${G.n.n}</td><td>${G.n.w}</td><td><b>${pc(G.n)}</b></td></tr></table></div>
+    ${Object.keys(byCat).length ? `<div class="tw" style="margin-top:8px"><table><tr><th>نوع النصيحة</th><th>اتبعتت</th><th>اشتروا</th><th>النسبة</th></tr>${Object.entries(byCat).map(([k, v]) => `<tr><td>${CAT[k] || k}</td><td>${v.n}</td><td>${v.w}</td><td>${pc(v)}</td></tr>`).join('')}</table></div>` : ''}
+    ${top.length ? `<div class="tw" style="margin-top:8px"><table><tr><th>النصيحة (اتبعتت 3 مرات أو أكتر)</th><th>اتبعتت</th><th>اشتروا</th><th>النسبة</th></tr>${top.map(([id, v]) => `<tr><td>${esc(((tipById(id) || {}).t || id).slice(0, 90))}</td><td>${v.n}</td><td>${v.w}</td><td>${pc(v)}</td></tr>`).join('')}</table></div>` : ''}
+    <p class="why" style="margin:8px 0 0">المقارنة بين نفس نوع العملاء (اللي كان ينفع ياخدوا نصيحة): اللي الموظف نسخلهم نصيحة قصاد اللي لأ. العينة صغيرة في الأول، فخد الأرقام كاتجاه مش حكم — ما تقارنش نصيحة بنصيحة غير بعد ما يبقى عددهم أكبر. الأرقام بتتحسب من التسجيلات الجديدة بس (من 18/11).</p></div>`;
+}
 function resView() {
   const blocks = [7, 30].map(d => {
     const R = results(d), by = k => R.recs.filter(x => x.result === k).length;
@@ -437,7 +459,7 @@ function resView() {
       ${Object.entries(people).sort((a, b) => b[1].d30.size - a[1].d30.size).map(([k, p]) => `<tr><td>${esc(k)}</td><td>${p.d0.size}</td><td>${p.d7.size}</td><td><b>${p.d30.size}</b></td><td>${p.ok}</td><td>${p.won}</td><td>${M(p.rev)}</td></tr>`).join('')}
       </table></div><p class="why" style="margin:8px 0 0">الأرقام = عدد العملاء المختلفين اللي الموظف سجّل معاهم تواصل (أي نتيجة). «اتكلم معاهم» = اللي ردّوا.</p></div>` : '';
   $('#cbody', ROOT).innerHTML = `<p class="why">"اشترى بعد التواصل" بيتحسب لوحده: أي فاتورة للعميل من يوم المكالمة لحد ${WINDOW} يوم بعدها (من السيستم، مش بالزرار).
-    الفلوس = كل اللي اشتراه في الفترة دي.</p>${weeklyHtml()}${byEmp}<div id="wonBox" class="card" style="margin-bottom:12px"><p class="sub">جاري تحميل تقرير «اتكلمنا واشتروا»…</p></div>${blocks}`;
+    الفلوس = كل اللي اشتراه في الفترة دي.</p>${weeklyHtml()}${tipsHtml()}${byEmp}<div id="wonBox" class="card" style="margin-bottom:12px"><p class="sub">جاري تحميل تقرير «اتكلمنا واشتروا»…</p></div>${blocks}`;
   loadWon();
 }
 /* ---------- «اتكلمنا واشتروا» (17/11، طلبه — للمدير وصاحب الصيدلية بس) ----------

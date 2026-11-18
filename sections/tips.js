@@ -168,15 +168,16 @@ const weekNo = () => Math.floor((Date.now() + 2 * 3600e3) / (7 * 864e5));
 
 // kinds: 'd' عميل حفاضات · 'm' عميل لبن · 'v' عميل فيتامينات (ممكن أكتر من حرف: 'dv'). الحفاضات ← حفاضات + طفل · اللبن ← طفل + أم · فيتامينات ← فيتامينات؛ وبيتجمّعوا.
 // بترجّع {t: النص بالإيموجي, q: السؤال}
+// (18/11) كل نصيحة ليها id ثابت: diaper3 · baby12 · mom7 · vit25 (الاسم + رقمها في المصفوفة) — بيتسجل في crm_log علشان نقيس أثرها
 export function pickTip(custId, kinds) {
-  const k = String(kinds || ''), pool = [];
-  const add = a => a.forEach(t => { if (!pool.includes(t)) pool.push(t); });
-  if (k.includes('d')) { add(TIPS.diaper); add(TIPS.baby); }
-  if (k.includes('m')) { add(TIPS.baby); add(TIPS.mom); }
-  if (k.includes('v')) add(TIPS.vit);
-  if (!pool.length) return { t: '', q: '' };
-  const [t, q] = pool[(Math.abs(+custId || 0) * 31 + weekNo()) % pool.length];      // عميل بيشتري أكتر من نوع ← بيتجمّعوا كلهم
-  return { t, q };
+  const k = String(kinds || ''), pool = [], seen = new Set();
+  const add = key => TIPS[key].forEach((x, i) => { if (!seen.has(key + i)) { seen.add(key + i); pool.push({ id: key + i, t: x[0], q: x[1] }); } });
+  if (k.includes('d')) { add('diaper'); add('baby'); }
+  if (k.includes('m')) { add('baby'); add('mom'); }
+  if (k.includes('v')) add('vit');
+  if (!pool.length) return { id: '', t: '', q: '' };
+  return pool[(Math.abs(+custId || 0) * 31 + weekNo()) % pool.length];      // عميل بيشتري أكتر من نوع ← بيتجمّعوا كلهم
 }
+export const tipById = id => { const m = /^([a-z]+)(\d+)$/.exec(id || ''); const x = m && TIPS[m[1]] && TIPS[m[1]][+m[2]]; return x ? { t: x[0], q: x[1] } : null; };
 // النص اللي بيتنسخ للعميل
 export const tipText = (custId, kinds) => { const x = pickTip(custId, kinds); return `نصيحة من صيدلية أنس نحيلة:\n${x.t}\n\n${x.q}`; };
