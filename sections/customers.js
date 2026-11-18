@@ -7,7 +7,7 @@ import { getApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.
 import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, doc, getDoc, getDocs, setDoc, collection, addDoc, deleteDoc, query, where, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-import { pickTip, tipText } from "./tips.js?v=3";
+import { pickTip, tipText } from "./tips.js?v=4";
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = t => String(t == null ? '' : t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -222,10 +222,29 @@ function filtered() {
 }
 // (12/11، طلبه) «ا/» قبل اسم العميل في كل الرسايل. رسايل القوايم الأساسية جاية جاهزة من السيرفر فبنظبطها هنا؛
 // اللي اسمه دكتور/د. أو فيه «ا/» أصلاً أو «حضرتك» (من غير اسم) بيتساب زي ما هو.
-const msgOf = c => String(c.msg || '')
+const msgOf = c => socFix(c, String(c.msg || '')
   .replace(/^(أهلاً)\s+(?!ا\/|حضرتك|د[./\s]|دكتور|dr\b)/i, '$1 ا/ ')
-  .replace(/^(السلام عليكم ورحمة الله)\s+(?!ا\/|حضرتك|د[./\s]|دكتور|dr\b)/i, '$1 ا/ ');
+  .replace(/^(السلام عليكم ورحمة الله)\s+(?!ا\/|حضرتك|د[./\s]|دكتور|dr\b)/i, '$1 ا/ '));
+/* (17/11، طلبه) أي رسالة لعميل «سوشيال»: سطر الخصم بخط عريض في أول الرسالة + لينك الموقع (www). بيتظبط هنا علشان يغطي كمان الكروت المحجوزة قبل كده. */
+const SOC_LINE = '*🔥 يوجد خصومات على العلاج الشهري تصل لـ 15% 🔥*';
+function socFix(c, m) {
+  if (!SOC_RX.test(c.name || '')) return m;
+  if (!m.includes('15%')) { const L = m.split('\n'); L.splice(Math.min(1, L.length), 0, SOC_LINE); m = L.join('\n'); }
+  m = m.replace(/(?<!www\.)anasnehila\.com/g, 'www.anasnehila.com');
+  return /anasnehila\.com/.test(m) ? m : m + '\n🌐 www.anasnehila.com';
+}
 const greetA = n => { const g = greet(n); return g === 'حضرتك' ? g : (/^(ا\/|د[./\s]|دكتور|dr\b)/i.test(g) ? g : 'ا/ ' + g); };
+/* (17/11، طلبه) النصيحة في أي تبويب ومع أي عميل بيشتري حفاضات / لبن / فيتامينات (من مجموعات الكارت وأصنافه، أو من مشترياته لو كارت حملة) */
+function tkFromCard(c) {
+  const g = c.grp || [], names = (c.items || []).map(i => String(i[0]));
+  return (g.includes('diaper') ? 'd' : '') + (g.includes('milk') ? 'm' : '') + (names.some(n => VIT_RX.test(n)) ? 'v' : '');
+}
+const tkOf = c => c.tk || tkFromCard(c);
+function tkOfCust(id) {
+  histIndex(); const lim = addDays(today(), -365); let d = '', m = '', v = '';
+  for (const x of BYC[id] || []) { if (x[1] < lim) continue; if (x[2] === 'd') d = 'd'; if (x[2] === 'm') m = 'm'; if (VIT_RX.test(x[0])) v = 'v'; }
+  return d + m + v;
+}
 function card(c) {
   const g = GRP[c.grp[0]] || GRP.med, L = logsOf(c.id)[0], won = L && boughtAfter(L), edit = ROLE === 'admin' || ROLE === 'emp';
   const ow = owner(c.id), me = ROLE === 'emp' && isMe(ow);
@@ -245,9 +264,9 @@ function card(c) {
         : `<div class="val">${M(c.monthly)}<div class="meta" style="text-align:left">${c.grp[0] === 'lapsed' ? 'كان بيدفع في الشهر' : 'في الشهر'}</div></div>`}</div>
     <ul class="its">${its}</ul>
     <div class="ph">${c.phones.length ? c.phones.map(phBtn).join('') : '<span class="meta">مفيش رقم متسجل</span>'}</div>
-    <details class="msg"><summary>الرسالة</summary><pre>${esc(msgOf(c))}</pre>${c.tk ? (x => `<div class="tip">${esc(x.t)}<br><b>❓ ${esc(x.q)}</b></div>`)(pickTip(c.id, c.tk)) : ''}</details>
+    <details class="msg"><summary>الرسالة</summary><pre>${esc(msgOf(c))}</pre>${tkOf(c) ? (x => `<div class="tip">${esc(x.t)}<br><b>❓ ${esc(x.q)}</b></div>`)(pickTip(c.id, tkOf(c))) : ''}</details>
     <div class="act"><button class="ghost" data-copy="${c.id}">📋 نسخ الرسالة</button>
-      ${c.tk ? `<button class="ghost" data-tip="${c.id}">💡 نسخ النصيحة</button>` : ''}
+      ${tkOf(c) ? `<button class="ghost" data-tip="${c.id}">💡 نسخ النصيحة</button>` : ''}
       ${ROLE === 'emp' && !ow ? `<button data-claim="${c.id}">✋ أنا هتابعه</button>` : ''}
       ${edit && (ROLE !== 'emp' || me) ? RES.map(([k, t, cl]) => `<button class="r-${cl}" data-res="${k}" data-id="${c.id}">${t}</button>`).join('') : ''}</div>
     ${ow ? `<div class="asg">👤 ${me ? 'معاك' : `مع <b>${esc(ow.name)}</b>`} من ${ow.at === today() ? 'النهارده' : D(ow.at)}
@@ -274,7 +293,7 @@ const wireCpn = b => b.querySelectorAll('[data-cpn]').forEach(x => x.onclick = (
 // أزرار الكارت (القوايم + عملائي)
 function hooks(b) {
   b.querySelectorAll('[data-copy]').forEach(x => x.onclick = () => copy(msgOf(cardFor(+x.dataset.copy))));
-  b.querySelectorAll('[data-tip]').forEach(x => x.onclick = () => { const c = cardFor(+x.dataset.tip); copy(tipText(c.id, c.tk), 'النصيحة اتنسخت ✓'); });
+  b.querySelectorAll('[data-tip]').forEach(x => x.onclick = () => { const c = cardFor(+x.dataset.tip); copy(tipText(c.id, tkOf(c)), 'النصيحة اتنسخت ✓'); });
   // على الكمبيوتر مفيش تليفون يتصل: الدوسة على الرقم بتنسخه بدل ما تفتح برنامج اتصال
   if (!matchMedia('(pointer:coarse)').matches) b.querySelectorAll('.ph a').forEach(x => x.onclick = e => { e.preventDefault(); copy(x.href.replace('tel:', ''), 'الرقم اتنسخ ✓'); });
   wireCpn(b);
@@ -514,7 +533,7 @@ function babyRows() {
     const q = BB.q.trim().toLowerCase();
     if (q && !name.toLowerCase().includes(q) && !(info[1] || []).join(' ').includes(q)) continue;
     keep.sort((a, b) => b[1].localeCompare(a[1]));
-    rows.push({ c: +c, name, ph: info[1] || [], deliv: info[3], keep, hasD, hasM, last: keep[0][1] });
+    rows.push({ c: +c, name, ph: info[1] || [], deliv: info[3], keep, hasD, hasM, last: keep[0][1], area: info[4] || '', street: info[5] || '' });
   }
   return rows.sort((a, b) => a.last.localeCompare(b.last));         // الأقدم الأول
 }
@@ -526,7 +545,8 @@ function lastBox(id) {
 // (12/11) كروت الحملات بقت نفس الكارت الأساسي (card): زرار «أنا هتابعه»، «عملائي»، النصيحة، وتسجيل النتيجة بعد الحجز.
 // camp: 'baby' | 'soc' · grp: مفاتيح GRP · tk: أنواع النصايح ('d' حفاضات / 'm' لبن) · الكارت بيتحفظ كنسخة لما الموظف يحجزه.
 function campCard(r, camp, grp, msg, tk) {
-  CUSTOM[r.c] = { id: r.c, name: r.name, status: camp === 'soc' ? 'سوشيال' : camp === 'vit' ? 'فيتامينات' : 'حفاضات ولبن', monthly: 0, msg, camp, grp, tk: tk || undefined,
+  const tk2 = tkOfCust(r.c) || tk || '';
+  CUSTOM[r.c] = { id: r.c, name: r.name, status: camp === 'soc' ? 'سوشيال' : camp === 'vit' ? 'فيتامينات' : 'حفاضات ولبن', monthly: 0, msg, camp, grp, tk: tk2 || undefined,
     phones: r.ph || [], deliv: !!r.deliv, last: r.last, v90: r.v90 || 0, visit: null, late: 0,
     area: [r.area, r.street].filter(Boolean).join(' — '),
     items: r.keep.slice(0, 5).map(x => [x[0], null, 'آخر شراء', null, x[1], null]) };
@@ -590,7 +610,7 @@ function socView() {
       <label class="chip">من <input type="date" id="sfrom" value="${SO.from}" style="width:auto;min-height:0"></label>
       <button class="chip" id="sall">كل الوقت</button></div>
     <div id="clist">${rows.slice(0, SO.shown).map(r => {
-      const msg = `أهلاً ${greetA(r.name)} 🌿\nمعاك صيدلية أنس نحيلة. بنطمن على حضرتك، وحابين نفكرك إننا موجودين 24 ساعة والتوصيل لحد البيت.\nوعندنا خصومات على الأدوية ومستحضرات التجميل.\nلو محتاج حاجة قولنا، وعروضنا على anasnehila.com 💚`;
+      const msg = `أهلاً ${greetA(r.name)} 🌿 معاك صيدلية أنس نحيلة.\n${SOC_LINE}\nبنطمن على حضرتك، وحابين نفكرك إننا موجودين 24 ساعة والتوصيل لحد البيت.\nوعندنا كمان خصومات على مستحضرات التجميل.\nلو محتاج حاجة قولنا، وعروضنا على www.anasnehila.com 💚`;
       return campCard(r, 'soc', ['soc'], msg);
     }).join('') || '<div class="banner">مفيش عملاء بالفلاتر دي.</div>'}</div>
     ${rows.length > SO.shown ? `<button class="ghost more" id="smore">عرض المزيد (${rows.length - SO.shown})</button>` : ''}`;
@@ -618,7 +638,7 @@ function vitRows() {
     const q = VT.q.trim().toLowerCase();
     if (q && !name.toLowerCase().includes(q) && !(info[1] || []).join(' ').includes(q)) continue;
     keep.sort((a, b) => b[1].localeCompare(a[1]));
-    rows.push({ c: +c, name, ph: info[1] || [], deliv: info[3], keep, last: keep[0][1] });
+    rows.push({ c: +c, name, ph: info[1] || [], deliv: info[3], keep, last: keep[0][1], area: info[4] || '', street: info[5] || '' });
   }
   return rows.sort((a, b) => a.last.localeCompare(b.last));         // الأقدم الأول
 }
