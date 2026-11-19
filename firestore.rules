@@ -90,7 +90,8 @@ service cloud.firestore {
     // (17/11، طلبه) زرار «تحديث» في متابعة العملاء: الموظف/الأدمن بيكتب crm_sys/refresh_req {id, by} والسيرفر (feeder)
     // بيشوفه (المراقب watch.py) ويرفع القوايم ويكتب crm_sys/refresh_status. الموظف ميكتبش غير الطلب، والسيرفر الحالة بس.
     match /crm_sys/{doc} {
-      allow read:   if isAdmin() || isViewer() || isStaff() || isCrmDev() || isFeeder();
+      // (19/11) isFeeder() الأول: السيرفر بيسأل هنا كل دقيقة، وكل فحص صلاحية = قراية من الحصة المجانية (كان ~6 قرايات لكل سؤال)
+      allow read:   if isFeeder() || isAdmin() || isViewer() || isStaff() || isCrmDev();
       allow create, update: if doc == 'refresh_req' && (isAdmin() || isStaff() || isCrmDev())
                     && request.resource.data.keys().hasOnly(['id', 'by'])
                     && request.resource.data.id is string && request.resource.data.id.size() < 20;
@@ -101,7 +102,8 @@ service cloud.firestore {
     // orders/<التاريخ> + orders/latest: السيرفر بيكتبها · orders/<التاريخ>_done: علامات «تم الطلب» (الأدمن ومسؤول المشتريات)
     // السيرفر (feeder) بيقرا العلامات + «حفظ الطلبية» علشان يقارنها باللي وصل (orders/<التاريخ>_recv — 23/10)
     match /orders/{doc} {
-      allow read:  if isAdmin() || isViewer() || isBuyer() || isFeeder();
+      // (19/11) isFeeder() الأول — نفس السبب (حصة القراية خلصت ليلة 17 و18/11 ووقّفت الدليفري)
+      allow read:  if isFeeder() || isAdmin() || isViewer() || isBuyer();
       allow write: if isAdmin()
                    || (isFeeder() && !doc.matches('.*_done'))
                    || (isBuyer() && doc.matches('.*_done'));
