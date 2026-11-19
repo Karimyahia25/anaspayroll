@@ -242,17 +242,23 @@ function friendlyMsg(c) {
   const n = greetA(c.name), hi = n === 'حضرتك' ? '' : ' ' + n, g = c.grp || [];
   if (c.status === 'بعد' || g[0] === 'lapsed')
     return `السلام عليكم ورحمة الله${hi} 🌿\nمعاك صيدلية د. أنس نحيلة — وحشتنا حضرتك 💚\nحبينا نطمّن عليك، ولو فيه أي ملاحظة على خدمتنا يهمنا نعرفها. إحنا موجودين 24 ساعة ونوصّل لحد باب بيتك.`;
-  const late = c.status === 'اتأخر', it = itemsPhrase(c);
-  const head = `أهلاً${hi} 🌿\nمعاك صيدلية أنس نحيلة، بنطمن على حضرتك`;
-  const tail = late ? 'لو محتاجه متوفر عندنا' : 'متوفر عندنا';
-  if (g.includes('diaper') || g.includes('milk')) {
-    const what = g.includes('diaper') && g.includes('milk') ? 'الحفاضات واللبن' : g.includes('diaper') ? 'الحفاضات' : 'اللبن';
-    return `${head} وعلى البيبي 💚\n${what} ${late ? 'ممكن يكونوا خلصوا' : 'قربوا يخلصوا'} — متوفرين عندنا بكل المقاسات، ونوصّلهم لحد باب بيتك لو تحب.`;
-  }
-  if (g.includes('adult')) return `${head} 💚\nمستلزمات حضرتك ${late ? 'ممكن تكون خلصت' : 'قربت تخلص'} — ${tail}، ونوصّلها لحد باب بيتك لو تحب.`;
-  const what = it.txt || (g.includes('cosmo') ? 'المنتج' : 'الدوا');
-  const verb = late ? (it.many ? 'ممكن يكونوا خلصوا' : 'ممكن يكون خلص') : (it.many ? 'قربوا يخلصوا' : 'قرّب يخلص');
-  return `${head} 💚\nلاحظنا إن ${what} ${verb} — ${tail}، ونوصّله لحد باب بيتك لو تحب.`;
+  // (19/11، طلبه) عميل بياخد حفاضات/لبن + علاج شهري (مثلاً طارق شعبان): الرسالة بتجمع الاتنين مش الحفاضات بس
+  const head = `أهلاً${hi} 🌿
+معاك صيدلية أنس نحيلة، بنطمن على حضرتك`;
+  const late = c.status === 'اتأخر', hasD = g.includes('diaper'), hasM = g.includes('milk'), hasA = g.includes('adult');
+  const L = (c.items || []).map(i => String(i[0])).filter(l => !/^(حفاضات|لبن)/.test(l)).slice(0, 3).map(l => nm(l.replace(/\s*\(آخر مرة:.*?\)/, ''))).filter(Boolean);
+  const parts = [];
+  if (hasD && hasM) parts.push('الحفاضات واللبن'); else if (hasD) parts.push('الحفاضات'); else if (hasM) parts.push('اللبن');
+  if (hasA) parts.push('مستلزمات كبار السن');
+  const others = L.length > 2 ? [`${L[0]} و${L[1]} وغيرهم`] : L;
+  const all = [...parts, ...others];
+  const what = all.length > 2 ? `${all[0]} و${all[1]} وغيرهم` : all.join(' و') || (g.includes('cosmo') ? 'المنتج' : 'الدوا');
+  const plural = all.length > 1 || hasD;                  // الحفاضات/أكتر من صنف ← جمع
+  const baby = hasD || hasM, mixed = baby && others.length > 0;
+  const verb = late ? (plural ? 'ممكن يكونوا خلصوا' : 'ممكن يكون خلص') : (plural ? 'قربوا يخلصوا' : 'قرّب يخلص');
+  const avail = plural ? (late ? 'لو محتاجينهم متوفرين عندنا' : 'متوفرين عندنا') : (late ? 'لو محتاجه متوفر عندنا' : 'متوفر عندنا');
+  const sizes = hasD && !mixed ? ' بكل المقاسات' : '';
+  return `${head}${baby ? ' وعلى البيبي' : ''} 💚\nلاحظنا إن ${what} ${verb} — ${avail}${sizes}، ونوصّل${plural ? 'هم' : 'ه'} لحد باب بيتك لو تحب.`;
 }
 const baseMsg = c => c.camp ? String(c.msg || '') : friendlyMsg(c);
 const msgOf = c => socFix(c, withTip(c, baseMsg(c)));
