@@ -83,6 +83,7 @@ function css() {
 #crmRoot details.msg{margin-top:6px}#crmRoot details.msg summary{cursor:pointer;color:var(--green);font-size:13px;font-weight:700}
 #crmRoot details.msg pre{white-space:pre-wrap;font-family:inherit;font-size:13px;background:var(--paper);padding:10px;border-radius:10px;margin:6px 0 0;line-height:1.8}
 #crmRoot #crefresh{min-height:44px;padding:8px 14px;font-weight:700}#crmRoot #crefresh:disabled{opacity:.6}
+#crmRoot h4.prof,#crmRoot .hn.prof{cursor:pointer}#crmRoot h4.prof:hover,#crmRoot .hn.prof:hover{text-decoration:underline}
 #crmRoot .tip{margin-top:8px;padding:9px 11px;border-radius:10px;background:var(--green-soft);color:var(--green-deep);font-size:13px;line-height:1.8}
 #crmRoot .more{display:block;margin:12px auto;min-width:200px}
 #crmRoot .why{font-size:13px;color:var(--muted);margin:0 0 10px;line-height:1.7}
@@ -298,7 +299,7 @@ function card(c) {
   const last = L ? `<div class="last ${won ? 'win' : ''}">${won ? `✅ اشترى بعد التواصل: ${M(won.amt)} يوم ${D(won.day)} — ` : ''}
       آخر تواصل: ${esc(L.result)} يوم ${D(L.day)}${L.byName ? ' (' + esc(L.byName) + ')' : ''}${L.note ? ' — ' + esc(L.note) : ''}</div>` : '';
   return `<div class="cc ${contactedRecently(c) ? 'done' : ''}" style="--g:${g[1]}" data-id="${c.id}">
-    <div class="top"><div><h4>${esc(nm(c.name))}</h4>
+    <div class="top"><div><h4 class="prof" data-prof="${c.id}" title="ملف العميل">${esc(nm(c.name))} <span class="meta">ⓘ</span></h4>
       <div class="meta">${c.grp.map(x => `<span class="bd" style="background:${(GRP[x] || GRP.med)[1]}">${(GRP[x] || GRP.med)[0]}</span>`).join('')}
         ${c.deliv ? '<span class="bd dl">عميل توصيل</span>' : ''}${hasDisc(c.name) ? '<span class="bd" style="background:#C2417A">عميل خصم</span>' : ''}${c.leak ? '<span class="bd lk">غالباً بيجيب جزء من برا</span>' : ''}
         <div class="when">${when}</div>${remindDue(c) ? `<div class="when" style="color:#B0761F">⏰ فكّرني النهارده${(logsOf(c.id)[0] || {}).note ? ' — ' + esc(logsOf(c.id)[0].note) : ''}</div>` : ''}${c.status !== 'بعد' && seen ? `<div>${seen}</div>` : ''}${c.area && c.area !== 'مش متسجل' ? `<div>📍 ${esc(c.area)}</div>` : ''}</div></div>
@@ -334,6 +335,7 @@ const phBtn = p => `<a href="tel:${p}">📞 ${p}</a><button type="button" class=
 const wireCpn = b => b.querySelectorAll('[data-cpn]').forEach(x => x.onclick = () => copy(x.dataset.cpn, 'الرقم اتنسخ ✓'));
 // أزرار الكارت (القوايم + عملائي)
 function hooks(b) {
+  b.querySelectorAll('[data-prof]').forEach(x => x.onclick = () => openProfile(+x.dataset.prof));
   b.querySelectorAll('[data-copy]').forEach(x => x.onclick = () => { const c = cardFor(+x.dataset.copy), t = tipFor(c); if (t) TIPSENT[c.id] = t.id; else delete TIPSENT[c.id]; copy(msgOf(c)); });
   b.querySelectorAll('[data-newtip]').forEach(x => x.onclick = () => { const id = +x.dataset.newtip; TIPSHIFT[id] = (TIPSHIFT[id] || 0) + 1; delete NOTIP[id]; refreshMsg(id, x);
     const nb = x.parentElement.querySelector('[data-notip]'); if (nb) nb.textContent = '🚫 من غير نصيحة'; });
@@ -527,7 +529,7 @@ function wonView() {
       آخر حساب: ${esc(WON.at)}. <b>${N(rows.length)}</b> عميل · ${M(tot)}.</p>
     <div class="ctl"><input type="search" id="wq" placeholder="دوّر: اسم العميل أو التليفون أو الموظف" value="${esc(WON.q)}"></div>
     <div>${rows.slice(0, WON.shown).map(r => `<div class="hr">
-      <div class="hn">${esc(nm(r.name))} ${(r.ph || []).map(p => `<a class="bd dl" href="tel:${p}" style="text-decoration:none">${p}</a>`).join(' ')}</div>
+      <div class="hn prof" data-prof="${r.c}">${esc(nm(r.name))} ${(r.ph || []).map(p => `<a class="bd dl" href="tel:${p}" style="text-decoration:none">${p}</a>`).join(' ')}</div>
       <div class="hs">👤 كلّمه <b>${esc(r.by)}</b> يوم ${D(r.cd)} (${esc(r.res === 'تم' ? 'اتكلمنا' : r.res)})${r.note ? ' — ' + esc(r.note) : ''}</div>
       <div class="hs">🛒 اشترى يوم <b>${D(r.pd)}</b> (${r.after ? 'بعدها بـ ' + days(r.after) : 'نفس يوم التواصل'}) بـ <b>${M(r.amt)}</b>${r.more ? ` · + ${r.more} زيارة تانية في الفترة` : ''}</div>
       ${r.first ? '<div class="hs">🆕 مفيش مشتريات قبلها في آخر 120 يوم — مفيش عادة نقارن بيها.</div>' : ''}
@@ -538,6 +540,7 @@ function wonView() {
     ${rows.length > WON.shown ? `<button class="ghost more" id="wmore">عرض المزيد (${rows.length - WON.shown})</button>` : ''}`;
   $('#wq', box).oninput = e => { WON.q = e.target.value; WON.shown = 30; const p = e.target.selectionStart; wonView(); const i = $('#wq', ROOT); i.focus(); i.setSelectionRange(p, p); };
   if ($('#wmore', box)) $('#wmore', box).onclick = () => { WON.shown += 30; wonView(); };
+  box.querySelectorAll('[data-prof]').forEach(x => x.onclick = () => openProfile(+x.dataset.prof));
 }
 /* ---------- 💰 أسعار اتغيرت (18/11، طلبه) ----------
    د. يحيى بيبعت أصناف سعرها زاد عند الموردين (من برنامج تحديثات الأسعار) وأنا بحطها في price_alerts.json. السيرفر مع كل تحديث للقوايم بيقارن بسعر السيستم:
@@ -576,6 +579,45 @@ function priceView() {
   });
 }
 const PRQ = { q: '', shown: 40 };
+/* ---------- 🪪 ملف العميل (19/11، طلبه): دوسة على الاسم = كل حاجة عنه في مكان واحد ----------
+   من نفس بيانات «بحث بصنف» (crm_hist: كل مشترياته من 2024 — عدد المرات وآخر مرة) + مشتريات آخر 90 يوم بالفلوس (crm/visits) + سجل التواصل + أصنافه المتابعة (لو في القوايم).
+   ملحوظة: الموظف بيشوف تواصله هو بس (قواعد crm_log)، والمدير بيشوف الكل. مفيش ملاحظات دايمة (قراره). */
+async function openProfile(id) {
+  ROOT.querySelectorAll('.profOv').forEach(x => x.remove());
+  const ov = document.createElement('div'); ov.className = 'profOv';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:95;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow:auto';
+  ov.onclick = e => { if (e.target === ov) ov.remove(); };
+  ov.innerHTML = '<div class="card" style="max-width:760px;width:100%;margin-top:20px"><p class="sub">جاري تحميل ملف العميل…</p></div>';
+  ROOT.appendChild(ov);
+  try { await loadHist(); } catch (e) { ov.firstChild.innerHTML = `<div class="banner bad">مقدرتش أحمّل المشتريات: ${esc(e.code || e.message)}</div><button class="ghost" id="pfX">إغلاق</button>`; $('#pfX', ov).onclick = () => ov.remove(); return; }
+  const info = (H && H.cust && H.cust[id]) || ['', [], null, false, '', ''], card = cardOf(id) || CUSTOM[id] || null;
+  const name = nm(info[0] || (card && card.name) || String(id)), phones = (info[1] && info[1].length ? info[1] : (card && card.phones) || []);
+  const area = [info[4], info[5]].filter(Boolean).join(' — ') || (card && card.area && card.area !== 'مش متسجل' ? card.area : '');
+  const buys = (H && H.buys ? H.buys : []).filter(b => b[0] === id).map(b => ({ n: nm((H.items && H.items[b[1]]) || ''), times: b[2], last: String(b[3]).slice(0, 10) })).filter(x => x.n).sort((a, b) => b.last.localeCompare(a.last));
+  const vis = (VIS[String(id)] || []).slice().sort((a, b) => b[0].localeCompare(a[0])), vTot = vis.reduce((a, x) => a + x[1], 0);
+  const logs = logsOf(id), ow = owner(id);
+  const badges = [(info[3] || (card && card.deliv)) ? '<span class="bd dl">عميل توصيل</span>' : '', hasDisc(info[0] || name) ? '<span class="bd" style="background:#C2417A">عميل خصم</span>' : '',
+    SOC_RX.test(info[0] || '') ? '<span class="bd" style="background:#C2417A">سوشيال</span>' : '', ...(card && card.grp ? card.grp.map(x => `<span class="bd" style="background:${(GRP[x] || GRP.med)[1]}">${(GRP[x] || GRP.med)[0]}</span>`) : [])].join('');
+  const chron = card && card.items && card.camp == null && card.status !== 'بعد' ? card.items.filter(i => i[1] != null) : [];
+  const showAll = !!ov._all;
+  const section = (t, body) => `<h4 style="margin:14px 0 6px">${t}</h4>${body}`;
+  const draw = () => {
+    const rows = ov._all ? buys : buys.slice(0, 25);
+    ov.firstChild.innerHTML = `<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div><h3 style="margin:0">🪪 ${esc(name)}</h3><div class="meta" style="margin-top:4px">${badges}</div></div><button class="ghost" id="pfX" style="min-height:40px">✕ إغلاق</button></div>
+      <div class="ph" style="margin-top:8px">${phones.length ? phones.map(phBtn).join('') : '<span class="meta">مفيش رقم متسجل</span>'}</div>
+      ${area ? `<div class="meta">📍 ${esc(area)}</div>` : ''}${ow ? `<div class="meta">👤 مع <b>${esc(ow.name)}</b> من ${D(ow.at)}</div>` : ''}
+      ${info[2] ? `<div class="meta">🛒 آخر زيارة للصيدلية: ${D(info[2])} (من ${days(ago(info[2]))})</div>` : ''}
+      ${chron.length ? section('⏰ أصناف بنتابعها معاه', `<ul class="its">${chron.map(i => `<li><span>${esc(nm(i[0]))}</span><span class="s">كل ${i[1]} يوم (${esc(i[2])}) · <b>يخلص حوالي ${D(i[4])}</b></span></li>`).join('')}</ul>`) : ''}
+      ${section(`🧾 آخر 90 يوم (${vis.length} فاتورة — ${M(vTot)})`, vis.length ? `<div class="tw"><table><tr><th>اليوم</th><th>قيمة الفواتير</th></tr>${vis.slice(0, 12).map(x => `<tr><td>${D(x[0])} (${days(ago(x[0]))})</td><td>${M(x[1])}</td></tr>`).join('')}</table></div>${vis.length > 12 ? `<div class="meta">+ ${vis.length - 12} أقدم</div>` : ''}` : '<div class="meta">مفيش فواتير في آخر 90 يوم.</div>')}
+      ${section(`💊 الأصناف اللي اشتراها (${buys.length}) — من أول 2024`, buys.length ? `<div class="tw"><table><tr><th>الصنف</th><th>اشتراه</th><th>آخر مرة</th></tr>${rows.map(x => `<tr><td>${esc(x.n)}</td><td>${times(x.times)}</td><td>${D(x.last)} · من ${days(ago(x.last))}</td></tr>`).join('')}</table></div>${buys.length > 25 && !ov._all ? '<button class="ghost more" id="pfAll">عرض كل الأصناف</button>' : ''}` : '<div class="meta">مفيش مشتريات متسجلة.</div>')}
+      ${section(`📞 التواصل معاه (${logs.length})`, `${ROLE === 'emp' && !MY.dev ? '<div class="meta">بتشوف التواصل اللي سجّلته إنت بس.</div>' : ''}${logs.length ? `<div class="tw"><table><tr><th>اليوم</th><th>النتيجة</th><th>الموظف</th><th>ملاحظة</th><th>اشترى بعدها؟</th></tr>${logs.slice(0, 12).map(r => { const w = boughtAfter(r); return `<tr><td>${D(r.day)}</td><td>${esc(r.result)}${r.remind ? ' ⏰' : ''}</td><td>${esc(r.byName || '')}</td><td>${esc(r.note || '')}</td><td>${w ? '✅ ' + M(w.amt) : ''}</td></tr>`; }).join('')}</table></div>` : '<div class="meta">لسه محدش سجّل تواصل معاه.</div>'}`)}`;
+    $('#pfX', ov).onclick = () => ov.remove();
+    if ($('#pfAll', ov)) $('#pfAll', ov).onclick = () => { ov._all = true; draw(); };
+    wireCpn(ov);
+    if (!matchMedia('(pointer:coarse)').matches) ov.querySelectorAll('.ph a').forEach(x => x.onclick = e => { e.preventDefault(); copy(x.href.replace('tel:', ''), 'الرقم اتنسخ ✓'); });
+  };
+  draw();
+}
 function logView() {
   const rows = [...LOG].sort((a, b) => String(b.at).localeCompare(String(a.at)));
   $('#cbody', ROOT).innerHTML = `<p class="why">كل تواصل اتسجل. لو اتسجل غلط، امسحه.</p><div class="card tw"><table>
@@ -641,7 +683,7 @@ function findView() {
         ${allPh.length ? `<button class="chip" id="hcopy">📋 نسخ كل الأرقام (${allPh.length})</button>` : ''}</div>
       <div class="hl">${rows.slice(0, HS.shown).map(r => {
         const [name, ph, vis, dl] = H.cust[r.c] || ['', [], null, false];
-        return `<div class="hr"><div class="hn">${esc(nm(name))}${dl ? ' <span class="bd dl">توصيل</span>' : ''}${hasDisc(name) ? ' <span class="bd" style="background:#C2417A">خصم</span>' : ''}</div>
+        return `<div class="hr"><div class="hn prof" data-prof="${r.c}">${esc(nm(name))}${dl ? ' <span class="bd dl">توصيل</span>' : ''}${hasDisc(name) ? ' <span class="bd" style="background:#C2417A">خصم</span>' : ''}</div>
           ${HS.sel === '*' ? `<div class="hs">${esc([...r.items].slice(0, 3).join(' · '))}</div>` : ''}
           <div class="ph">${(ph || []).map(phBtn).join('') || '<span class="hs">مفيش رقم</span>'}</div>
           <div class="hs">اشترى ${times(r.n)} · آخر مرة ${D(r.last)} · آخر زيارة للصيدلية ${D(vis)}</div></div>`;
@@ -660,6 +702,7 @@ function findView() {
   body.querySelectorAll('[data-sel]').forEach(x => x.onclick = () => { HS.sel = x.dataset.sel === '*' ? '*' : +x.dataset.sel; HS.shown = 60; findView(); });
   body.querySelectorAll('[data-m]').forEach(x => x.onclick = () => { HS.months = +x.dataset.m; findView(); });
   if ($('#hback', body)) $('#hback', body).onclick = () => { HS.sel = null; findView(); };
+  body.querySelectorAll('[data-prof]').forEach(x => x.onclick = () => openProfile(+x.dataset.prof));
   if ($('#hmore', body)) $('#hmore', body).onclick = () => { HS.shown += 60; findView(); };
   if ($('#hcopy', body)) $('#hcopy', body).onclick = () => {
     const seen = custsFor(ids, since(HS.months)).map(r => ((H.cust[r.c] || [])[1] || [])[0]).filter(Boolean);
