@@ -71,7 +71,7 @@ async function recentSent() {            // {كود: وقت آخر تذكير} �
   if (!ls.get(KEY_LS)) return {};
   try {
     const { events } = await api('/events?limit=300'); const m = {}, lim = Date.now() - GAP_DAYS * 86400e3;
-    for (const e of events) if (e.dir === 'out' && e.t > lim && !TEST_TO.has(e.to) && e.code) m[String(e.code)] = Math.max(m[String(e.code)] || 0, e.t);
+    for (const e of events) if (e.dir === 'out' && e.t > lim && !TEST_TO.has(e.to) && e.code && e.kind !== 'intro') m[String(e.code)] = Math.max(m[String(e.code)] || 0, e.t);
     return m;
   } catch { return {}; }
 }
@@ -274,7 +274,32 @@ async function sendMany(list) {
 
 async function renderSearch(body) {
   body.innerHTML = `<input class="wq" id="waQ" placeholder="اكتب اسم العميل أو رقم موبايله" value="${esc(ST.q)}" autocomplete="off">
-    <p class="sub" id="waQInfo">بيدوّر في كل العملاء المسجلين اللي اشتروا من 2024.</p><div id="waQRes"></div>`;
+    <p class="sub" id="waQInfo">بيدوّر في كل العملاء المسجلين اللي اشتروا من 2024.</p><div id="waQRes"></div>
+    <div class="wrow" style="display:block;margin-top:14px">
+      <div class="wname">📲 رقم مش مسجل عندنا (انت عارفه ووافق)</div>
+      <p class="sub" style="font-size:12px;margin:4px 0 8px">بيتبعتله رسالة تعريف: «معاك صيدلية د/أنس نحيلة… فاتحين 24 ساعة ونوصلك لحد باب بيتك» + زراير اطلب / اسأل / وقف. ابعت بس لحد وافق إنك تبعتله — لو حد عمل بلوك جودة الرقم بتقع.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <input class="wq" id="waNewPh" placeholder="الموبايل 01xxxxxxxxx" inputmode="numeric" style="max-width:190px" autocomplete="off">
+        <input class="wq" id="waNewNm" placeholder="الاسم زي ما هيظهر: أ/ محمد" style="max-width:220px" autocomplete="off">
+        <button id="waNewGo">📤 ابعت رسالة التعريف</button>
+      </div>
+      <div class="res" id="waNewRes"></div>
+    </div>`;
+  $('#waNewGo', body).onclick = async () => {
+    const ph = digits($('#waNewPh', body).value), nm = $('#waNewNm', body).value.trim(), out = $('#waNewRes', body);
+    if (!/^01[0125]\d{8}$/.test(ph)) { out.textContent = '⚠️ الموبايل لازم 11 رقم يبدأ بـ 010 أو 011 أو 012 أو 015'; return; }
+    if (!nm) { out.textContent = '⚠️ اكتب الاسم'; return; }
+    if (!ls.get(KEY_LS)) { out.textContent = '⚠️ حط مفتاح الإرسال الأول (فوق)'; return; }
+    if (!confirm(`هبعت رسالة تعريف لـ «${nm}» على ${ph} (≈ 3.2 ج).
+
+متأكد إنه وافق يستقبل رسايل منك؟`)) return;
+    out.textContent = '⏳…';
+    try {
+      const j = await api('/send', { method: 'POST', body: JSON.stringify({ to: waNum(ph), name: nm, code: '0', kind: 'intro' }) });
+      out.textContent = j.ok ? '✅ اتبعتت' : '⚠️ ' + ({ optout: 'الرقم ده داس «وقف» قبل كده', 'recently reminded': 'اتبعتله من أقل من 20 يوم', 'bad input': 'الرقم أو الاسم مش مظبوط', 'quality YELLOW': 'وقفت: جودة الرقم صفرا', 'quality RED': 'وقفت: جودة الرقم حمرا' }[j.error] || j.error);
+      if (j.ok) { $('#waNewPh', body).value = ''; $('#waNewNm', body).value = ''; stats(); }
+    } catch (e) { out.textContent = '⚠️ ' + e.message; }
+  };
   const q = $('#waQ', body);
   q.oninput = () => { ST.q = q.value; clearTimeout(q._t); q._t = setTimeout(search, 250); };
   q.focus();
@@ -325,7 +350,7 @@ async function renderEvents(body) {
   const KIND = { stop: '🛑 وقف التذكير', start: '🔔 رجّع التذكير', other: '💬 رد' };
   const ST_AR = { sent: '✓ اتبعت', delivered: '✓✓ وصلت', read: '👁️ اتقرت', failed: '⚠️ موصلتش' };
   const rows = events.filter(e => e.dir !== 'st');
-  const replies = rows.filter(e => e.dir === 'in').length, sent = rows.filter(e => e.dir === 'out' && !TEST_TO.has(e.to));   // تجارب د. يحيى على رقمه مش بتتحسب
+  const replies = rows.filter(e => e.dir === 'in').length, sent = rows.filter(e => e.dir === 'out' && !TEST_TO.has(e.to) && e.kind !== 'intro');   // تجارب د. يحيى على رقمه مش بتتحسب
   const read = sent.filter(e => st[e.id] && st[e.id].status === 'read').length;
   // اشترى بعد التذكير؟ فاتورة لنفس العميل من يوم الإرسال لحد ROI_DAYS يوم بعده (من crm/visits — بتتحدّث كل يوم الصبح)
   const day = cairoDay;

@@ -2819,7 +2819,7 @@ window.atab = n => {
 let WA_ON = false;
 async function openWhatsApp(){
   if (WA_ON || !$('waRoot')) return; WA_ON = true;
-  try { const m = await import('./sections/whatsapp.js?v=4'); await m.mountWhatsApp($('waRoot')); }
+  try { const m = await import('./sections/whatsapp.js?v=5'); await m.mountWhatsApp($('waRoot')); }
   catch (e) { WA_ON = false; $('waRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل قسم الواتساب: ${esc(e.code || e.message)}</div>`; }
 }
 
