@@ -38,6 +38,10 @@ export function firstName(raw) {
   return ok(w) ? `${doc_ ? 'د' : 'أ'}/ ${w}` : 'يا فندم';
 }
 const waNum = p => '20' + String(p).replace(/^0/, '');
+const cairoDay = t => new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(t));
+const TEST_TO = new Set(['201004021342']);                // رقم د. يحيى — تجاربه مش بتتحسب في الأثر
+const GAP_DAYS = 20;                                      // نفس حارس الـ Worker: مفيش تذكير لنفس الرقم قبل 20 يوم
+const ECODE = { 131050: 'قفل رسايل التسويق من واتساب نفسه (اتحط في الإيقاف)', 131049: 'ميتا حدّت رسايل التسويق للعميل ده' };
 
 /* ---------- Worker ---------- */
 async function api(path, opt = {}) {
@@ -55,6 +59,21 @@ async function loadList() {
   const d = await getDoc(doc(DB, 'crm', 'wa_list'));
   LIST = d.exists() ? JSON.parse(d.data().d) : { rows: [], at: '' };
   return LIST;
+}
+let HOLD = null;
+async function loadHold() {              // crm/wa_hold: مجموعة المقارنة {كود: أول يوم ظهر فيه} — السيرفر بيكتبها مع قايمة الواتساب
+  if (HOLD) return HOLD;
+  if (LOCAL) return (HOLD = LOCAL.hold || {});
+  const d = await getDoc(doc(DB, 'crm', 'wa_hold'));
+  return (HOLD = d.exists() ? JSON.parse(d.data().d) : {});
+}
+async function recentSent() {            // {كود: وقت آخر تذكير} آخر GAP_DAYS يوم — من سجل الـ Worker
+  if (!ls.get(KEY_LS)) return {};
+  try {
+    const { events } = await api('/events?limit=300'); const m = {}, lim = Date.now() - GAP_DAYS * 86400e3;
+    for (const e of events) if (e.dir === 'out' && e.t > lim && !TEST_TO.has(e.to) && e.code) m[String(e.code)] = Math.max(m[String(e.code)] || 0, e.t);
+    return m;
+  } catch { return {}; }
 }
 let VIS = null;
 async function loadVisits() {           // crm/visits: مشتريات كل عميل آخر 90 يوم {كود: [[يوم, قيمة]]} — بتتحدّث كل يوم الصبح
@@ -119,7 +138,8 @@ function shell() {
       <h2 style="margin:0">💬 تذكير واتساب</h2>
       <div class="wstat" id="waStat"><span class="pill">…</span></div>
     </div>
-    <p class="sub" style="margin:0 0 6px">الرسالة: «السلام عليكم <b>الاسم</b> 👋 … معاد تجديد طلبك الشهري قرّب. تحب نجهزهولك ونوصلهولك لحد البيت؟» + زراير «جهزوا طلبي» و«اسأل الصيدلي» (بيفتحوا واتساب 012 بكود العميل) و«وقف التذكير». ~3.2 ج للرسالة.</p>
+    <p class="sub" style="margin:0 0 6px">3 رسايل حسب العميل (مزمن · حفاضات/لبن · فيتامينات) فيها آخر مرة اشترى + زراير «جهزوا طلبي» و«اسأل الصيدلي» و«وقف التذكير».
+      «جهزوا طلبي» بيفتح واتساب الفرع 012 وأصناف العميل مكتوبة في الرسالة (والفرع بيسجّله برقم موبايله). أي رد كتابي على الرقم ده بيتبلّغ لجروب الفرع. ~3.2 ج للرسالة.</p>
     <div id="waKey"></div>
     <div class="wtabs">
       <button data-t="list">📋 قايمة النهارده</button>
@@ -173,13 +193,15 @@ async function render() {
   } catch (e) { body.innerHTML = `<div class="banner bad">مقدرتش أحمّل: ${esc(e.code || e.message)}</div>`; }
 }
 
-function rowHtml(r, i) {
+function rowHtml(r, why) {          // why: لو متحدد، الصف مش قابل للاختيار (اتبعتله قريب / مجموعة المقارنة) — وده سببه
   const late = /اتأخر/.test(r['الحالة'] || '');
   const res = ST.res[r['الكود']];
-  return `<label class="wrow${ST.sel.has(r['الكود']) ? ' sel' : ''}">
-    <input type="checkbox" data-c="${r['الكود']}" ${ST.sel.has(r['الكود']) ? 'checked' : ''}>
+  const off = typeof why === 'string' && why.startsWith('!');
+  const note = off ? why.slice(1) : (why || '');
+  return `<label class="wrow${ST.sel.has(r['الكود']) ? ' sel' : ''}"${off ? ' style="opacity:.6"' : ''}>
+    <input type="checkbox" data-c="${r['الكود']}" ${ST.sel.has(r['الكود']) ? 'checked' : ''} ${off ? 'disabled' : ''}>
     <div class="wmain">
-      <div class="wname">${esc(String(r['العميل']).replace(/\*/g, ''))} ${r['سوشيال'] ? '<span class="tag soc">سوشيال</span>' : ''}</div>
+      <div class="wname">${esc(String(r['العميل']).replace(/\*/g, ''))} ${r['سوشيال'] ? '<span class="tag soc">سوشيال</span>' : ''}${note ? ` <span class="tag late">${esc(note)}</span>` : ''}</div>
       <div class="wsub">
         <span class="tag">${esc(r['المجموعة'])}</span><span class="tag ${late ? 'late' : ''}">${esc(r['الحالة'])}</span>
         <br>${esc(r['الأصناف'])}
@@ -192,13 +214,23 @@ function rowHtml(r, i) {
 
 async function renderList(body) {
   const L = await loadList();
-  let rows = (L.rows || []).filter(r => !ST.soc || r['سوشيال']);
+  const sentAt = await recentSent();                                    // {كود: وقت آخر تذكير} — آخر 20 يوم
+  const flt = r => !ST.soc || r['سوشيال'];
+  const all = (L.rows || []).filter(flt);
+  const recent = all.filter(r => sentAt[String(r['الكود'])]);
+  const hold = all.filter(r => !sentAt[String(r['الكود'])] && r._hold);
+  let rows = all.filter(r => !sentAt[String(r['الكود'])] && !r._hold);
+  const held = (L.held || []).filter(flt).filter(r => !sentAt[String(r['الكود'])]);
   const skip = Object.entries(L.skip || {}).filter(([, v]) => v).map(([k, v]) => `${k} ${v}`).join(' · ');
+  const when = r => dm(new Date(sentAt[String(r['الكود'])]).toISOString().slice(0, 10));
   body.innerHTML = `
-    <p class="sub">${L.at ? `اتحسبت ${esc(dm(L.at))} (آخر فاتورة ${esc(dm(L.ref))})` : 'لسه مفيش قايمة — بتتعمل مع قوايم العملاء كل يوم الصبح.'} — <b>${rows.length}</b> عميل${skip ? ` · اتشال: ${esc(skip)}` : ''}</p>
+    <p class="sub">${L.at ? `اتحسبت ${esc(dm(L.at))} (آخر فاتورة ${esc(dm(L.ref))})` : 'لسه مفيش قايمة — بتتعمل مع قوايم العملاء كل يوم الصبح.'} — <b>${rows.length}</b> عميل جاهز${recent.length ? ` · ${recent.length} اتبعتلهم قريب` : ''}${hold.length ? ` · ${hold.length} مجموعة مقارنة` : ''}${skip ? ` · اتشال: ${esc(skip)}` : ''}</p>
     <label style="display:inline-flex;gap:6px;align-items:center;margin-bottom:8px"><input type="checkbox" id="waSoc" ${ST.soc ? 'checked' : ''}> سوشيال بس</label>
-    <div id="waRows">${rows.slice(0, ST.shown).map(rowHtml).join('')}</div>
+    <div id="waRows">${rows.slice(0, ST.shown).map(r => rowHtml(r)).join('') || '<p class="sub">مفيش عملاء جاهزين دلوقتي بالشروط دي.</p>'}</div>
     ${rows.length > ST.shown ? `<button class="ghost" id="waMore">اعرض ${Math.min(40, rows.length - ST.shown)} كمان</button>` : ''}
+    ${recent.length ? `<details style="margin-top:10px"><summary class="sub">✅ اتبعتلهم آخر ${GAP_DAYS} يوم (${recent.length}) — مش هيتبعتلهم تاني قبل ما تعدّي</summary>${recent.map(r => rowHtml(r, '!اتبعتله ' + when(r))).join('')}</details>` : ''}
+    ${hold.length ? `<details style="margin-top:10px"><summary class="sub">🧪 مجموعة المقارنة (${hold.length}) — محدش بيبعتلهم الشهر ده علشان نقيس أثر التذكير بجد</summary>${hold.map(r => rowHtml(r, '!🧪 مقارنة')).join('')}</details>` : ''}
+    ${held.length ? `<details style="margin-top:10px"><summary class="sub">📋 اتشالوا (${held.length}) — بعيد / عنوان مش متسجل / اشتروا مرة بس. <b>اختار منهم بإيدك</b> لو انت عارفهم</summary><p class="sub" style="font-size:12px">⚠️ اللي اشترى مرة بس: رسالة «معاد طلبك الشهري المعتاد» مش دقيقة معاه (مفيش «معتاد» لسه) — الأنسب ليه الحفاضات/اللبن أو الفيتامينات. وأي واحد عنوانه مش متسجل ممكن يكون بعيد.</p>${held.map(r => rowHtml(r, r['سبب الاستبعاد'])).join('')}</details>` : ''}
     <div class="bar"><button id="waSend" ${ST.sel.size ? '' : 'disabled'}>📤 ابعت للمحددين (${ST.sel.size})</button>
       <button class="ghost" id="waClr" ${ST.sel.size ? '' : 'disabled'}>إلغاء التحديد</button>
       <span class="sub" id="waProg"></span></div>`;
@@ -207,9 +239,12 @@ async function renderList(body) {
   body.querySelectorAll('input[data-c]').forEach(cb => cb.onchange = () => {
     const c = +cb.dataset.c; cb.checked ? ST.sel.add(c) : ST.sel.delete(c); render(); });
   $('#waClr', body).onclick = () => { ST.sel.clear(); render(); };
-  $('#waSend', body).onclick = () => sendMany((L.rows || []).filter(r => ST.sel.has(r['الكود'])).map(r => ({
+  const heldCodes = new Set((L.held || []).map(r => r['الكود']));
+  const pick = new Map();                                              // الاسم القديم/الجديد لنفس الكود: الصف الأول يكسب (القايمة الأساسية قبل «اتشالوا»)
+  for (const r of [...(L.rows || []), ...(L.held || [])]) if (!pick.has(r['الكود'])) pick.set(r['الكود'], r);
+  $('#waSend', body).onclick = () => sendMany([...ST.sel].map(c => pick.get(c)).filter(r => r && !r._hold && !sentAt[String(r['الكود'])]).map(r => ({
     code: r['الكود'], label: String(r['العميل']).replace(/\*/g, ''), name: r['الاسم في الرسالة'], phone: r['الموبايل'],
-    kind: r._kind, date: r._date, what: r._what, items: r._items })));
+    kind: r._kind, date: r._date, what: r._what, items: r._items, held: heldCodes.has(r['الكود']) && !(L.rows || []).some(x => x['الكود'] === r['الكود']) })));
 }
 
 async function sendMany(list) {
@@ -217,7 +252,9 @@ async function sendMany(list) {
   if (!list.length || ST.busy) return;
   if (list.length > 20) { alert('الحد 20 عميل في المرة.'); return; }
   const cost = Math.round(list.length * 3.2);
-  if (!confirm(`هبعت تذكير لـ ${list.length} عميل (≈ ${cost} ج):\n\n` + list.map(x => `• ${x.label} — «${x.name}»`).join('\n') + '\n\nمتأكد؟')) return;
+  const nh = list.filter(x => x.held).length;
+  if (!confirm(`هبعت تذكير لـ ${list.length} عميل (≈ ${cost} ج):\n\n` + list.map(x => `• ${x.label} — «${x.name}»${x.held ? ' ⚠️ (من اللي اتشالوا)' : ''}`).join('\n') +
+    (nh ? `\n\n⚠️ ${nh} منهم من قسم «اتشالوا» (بعيد / عنوان مجهول / اشترى مرة بس) — انت اللي اخترتهم بإيدك.` : '') + '\n\nمتأكد؟')) return;
   ST.busy = true; let ok = 0;
   for (const [i, x] of list.entries()) {
     const p = $('#waProg', ROOT); if (p) p.textContent = `⏳ ${i + 1} من ${list.length}…`;
@@ -288,11 +325,13 @@ async function renderEvents(body) {
   const KIND = { stop: '🛑 وقف التذكير', start: '🔔 رجّع التذكير', other: '💬 رد' };
   const ST_AR = { sent: '✓ اتبعت', delivered: '✓✓ وصلت', read: '👁️ اتقرت', failed: '⚠️ موصلتش' };
   const rows = events.filter(e => e.dir !== 'st');
-  const replies = rows.filter(e => e.dir === 'in').length, sent = rows.filter(e => e.dir === 'out');
+  const replies = rows.filter(e => e.dir === 'in').length, sent = rows.filter(e => e.dir === 'out' && !TEST_TO.has(e.to));   // تجارب د. يحيى على رقمه مش بتتحسب
   const read = sent.filter(e => st[e.id] && st[e.id].status === 'read').length;
   // اشترى بعد التذكير؟ فاتورة لنفس العميل من يوم الإرسال لحد ROI_DAYS يوم بعده (من crm/visits — بتتحدّث كل يوم الصبح)
-  const day = t => new Date(t + 2 * 3600e3).toISOString().slice(0, 10);
+  const day = cairoDay;
   const plus = (d, n) => { const x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+  const HOLDLOG = await loadHold().catch(() => ({}));
+  const today = day(Date.now()), matureBy = plus(today, -(ROI_DAYS + 1));       // الأيام اللي استنينا فيها ROI_DAYS كاملة وفاتورة آخر يوم فيهم اتحدّثت
   const bought = {};
   for (const e of sent) {
     const d0 = day(e.t), d1 = plus(d0, ROI_DAYS);
@@ -300,14 +339,33 @@ async function renderEvents(body) {
     if (v.length) bought[e.id || e.t] = v.reduce((a, x) => a + x[1], 0);
   }
   const nb = Object.keys(bought).length, rev = Object.values(bought).reduce((a, x) => a + x, 0), cost = sent.length * 3.2;
-  const roi = sent.length ? `<div class="banner" style="background:#EAF7F1">💰 <b>${nb}</b> من ${sent.length} اشتروا خلال ${ROI_DAYS} أيام بعد التذكير بـ <b>${N(rev)}</b> ج
-      · التكلفة ≈ ${N(cost)} ج${rev ? ` · الربح التقريبي (هامش ~28%) ≈ <b>${N(rev * 0.28 - cost)}</b> ج` : ''}
-      <div class="sub" style="font-size:12px">المشتريات بتتحدّث كل يوم الصبح (فاتورة النهارده بتظهر بكره). أي فاتورة للعميل — حتى لو جه الفرع بنفسه.</div></div>` : '';
+  // المقارنة: اللي اتبعتلهم (اتجاب بإيد د. يحيى) قصاد مجموعة المقارنة العشوائية (محدش بعتلهم). بس اللي استنينا لهم ROI_DAYS+1 يوم كاملين.
+  const rate = (pairs) => {                       // pairs: [[كود، يوم البداية]] — كل عميل مرة واحدة
+    const seen = new Map(); for (const [c, d0] of pairs) if (!seen.has(c) || d0 < seen.get(c)) seen.set(c, d0);
+    let n = 0, b = 0, v = 0;
+    for (const [c, d0] of seen) { if (d0 > matureBy) continue; n++;
+      const hit = ((VIS || {})[String(c)] || []).filter(([d]) => d >= d0 && d <= plus(d0, ROI_DAYS)); if (hit.length) { b++; v += hit.reduce((a, x) => a + x[1], 0); } }
+    return { n, b, v, p: n ? b / n : 0 };
+  };
+  const rs = rate(sent.filter(e => !TEST_TO.has(e.to) && e.code).map(e => [String(e.code), day(e.t)]));
+  const rh = rate(Object.entries(HOLDLOG));
+  const pc = x => Math.round(x * 100);
+  let cmp = '';
+  if (rs.n < 10 || rh.n < 10) {
+    cmp = `<div class="sub" style="font-size:12px;margin-top:6px">🧪 المقارنة قصاد مجموعة محدش بعتلهم: لسه بدري — محتاجين 10 عملاء على الأقل في كل جهة، واستنى ${ROI_DAYS + 1} يوم بعد كل تذكير (دلوقتي: اتبعتلهم ${rs.n} · المقارنة ${rh.n}).</div>`;
+  } else {
+    const avgT = rs.b ? rs.v / rs.b : 0, extra = (rs.p - rh.p) * rs.n * avgT * 0.28 - rs.n * 3.2;
+    cmp = `<div style="margin-top:8px">🧪 <b>الأثر الحقيقي:</b> اتبعتلهم: <b>${rs.b}</b> من ${rs.n} اشتروا (${pc(rs.p)}%) · مجموعة المقارنة (محدش بعتلهم): <b>${rh.b}</b> من ${rh.n} (${pc(rh.p)}%)
+      → الفرق <b>${pc(rs.p - rh.p) >= 0 ? '+' : ''}${pc(rs.p - rh.p)}</b> نقطة · الربح الإضافي التقريبي بعد التكلفة ≈ <b>${N(extra)}</b> ج
+      <div class="sub" style="font-size:12px">مؤشر مش دليل قاطع: اللي اتبعتلهم انت اخترتهم بإيدك (بتختار الأحسن)، ومجموعة المقارنة عشوائية.</div></div>`;
+  }
+  const roi = sent.length ? `<div class="banner" style="background:#EAF7F1">💰 مشتريات اللي اتبعتلهم: <b>${nb}</b> من ${sent.length} اشتروا خلال ${ROI_DAYS} أيام بـ <b>${N(rev)}</b> ج · التكلفة ≈ ${N(cost)} ج
+      <div class="sub" style="font-size:12px">ده مش كله بسبب التذكير — جزء منهم كان هيشتري لوحده لأن ميعاده قرّب. المشتريات بتتحدّث كل يوم الصبح (فاتورة النهارده بتظهر بكره).</div>${cmp}</div>` : '';
   body.innerHTML = `<p class="sub">آخر 30 يوم: اتبعت <b>${sent.length}</b> · اتقرى <b>${read}</b> · ردود على الرقم <b>${replies}</b>.
-    دوسة «جهزوا طلبي» بتفتح واتساب 012 — بتوصل الفريق هناك بالكود، ومش بتظهر هنا.</p>${roi}
+    دوسة «جهزوا طلبي» بتفتح واتساب 012 والأصناف مكتوبة في رسالة العميل — بتوصل الفريق هناك ومش بتظهر هنا. والردود الكتابية على الرقم ده بتتبلّغ لجروب الفرع كمان.</p>${roi}
     ${rows.map(e => e.dir === 'in'
       ? `<div class="ev"><div class="t">${tm(e.t)}</div><div><b>${KIND[e.kind] || '💬'}</b> من ${esc(who(e.from))}${e.text && e.kind === 'other' ? `<div class="sub">«${esc(e.text)}»</div>` : ''}</div></div>`
-      : `<div class="ev"><div class="t">${tm(e.t)}</div><div>📤 تذكير لـ ${esc(who(e.to))} «${esc(e.name)}» — ${esc(ST_AR[st[e.id] && st[e.id].status] || '✓ اتبعت')}${st[e.id] && st[e.id].err ? ` (${esc(st[e.id].err)})` : ''}${bought[e.id || e.t] ? ` · <b style="color:#0B6E66">🛒 اشترى بـ ${N(bought[e.id || e.t])} ج</b>` : ''}</div></div>`).join('') || '<p class="sub">لسه مفيش حاجة.</p>'}`;
+      : `<div class="ev"><div class="t">${tm(e.t)}</div><div>📤 تذكير لـ ${esc(who(e.to))} «${esc(e.name)}» — ${esc(ST_AR[st[e.id] && st[e.id].status] || '✓ اتبعت')}${st[e.id] && (st[e.id].err || st[e.id].ecode) ? ` (${esc(ECODE[st[e.id].ecode] || st[e.id].err)})` : ''}${bought[e.id || e.t] ? ` · <b style="color:#0B6E66">🛒 اشترى بـ ${N(bought[e.id || e.t])} ج</b>` : ''}</div></div>`).join('') || '<p class="sub">لسه مفيش حاجة.</p>'}`;
 }
 
 /* ---------- الدخول ---------- */
