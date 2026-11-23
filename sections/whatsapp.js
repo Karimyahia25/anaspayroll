@@ -56,6 +56,15 @@ async function loadList() {
   LIST = d.exists() ? JSON.parse(d.data().d) : { rows: [], at: '' };
   return LIST;
 }
+let VIS = null;
+async function loadVisits() {           // crm/visits: مشتريات كل عميل آخر 90 يوم {كود: [[يوم, قيمة]]} — بتتحدّث كل يوم الصبح
+  if (VIS) return VIS;
+  if (LOCAL) return (VIS = LOCAL.visits || {});
+  const d = await getDoc(doc(DB, 'crm', 'visits'));
+  return (VIS = d.exists() ? JSON.parse(d.data().d) : {});
+}
+const ROI_DAYS = 7;
+
 async function loadCust() {
   if (CUST) return CUST;
   if (LOCAL) { CUST = LOCAL.cust; }
@@ -142,8 +151,12 @@ async function stats() {
   const el = $('#waStat', ROOT); if (!el) return;
   if (!ls.get(KEY_LS)) { el.innerHTML = ''; return; }
   try {
-    const s = await api('/stats');
-    el.innerHTML = `<span class="pill">النهارده <b>${s.sent}</b> من ${s.max}</span><span class="pill">الشهر <b>${s.month}</b> ≈ ${N(s.month * 3.2)} ج</span>`;
+    const [s, h] = await Promise.all([api('/stats'), api('/health').catch(() => null)]);
+    const Q = { GREEN: ['🟢', 'الرقم سليم'], YELLOW: ['🟡', 'صفرا — الإرسال واقف لوحده، ناس كتير عملت بلوك'], RED: ['🔴', 'حمرا — الإرسال واقف'],
+                UNKNOWN: ['⚪', 'لسه بتتحسب (بعد أول رسايل)'] };
+    const q = h ? (Q[h.quality] || ['⚪', h.quality]) : ['⚪', 'مقدرتش أجيب الجودة'];
+    el.innerHTML = `<span class="pill" title="جودة الرقم عند ميتا">${q[0]} ${q[1]}</span>
+      <span class="pill">النهارده <b>${s.sent}</b> من ${s.max}</span><span class="pill">الشهر <b>${s.month}</b> ≈ ${N(s.month * 3.2)} ج</span>`;
     ST.left = Math.max(0, (s.max || 30) - s.sent);
   } catch (e) { el.innerHTML = `<span class="pill">⚠️ ${esc(e.message)}</span>`; }
 }
@@ -209,7 +222,7 @@ async function sendMany(list) {
     const p = $('#waProg', ROOT); if (p) p.textContent = `⏳ ${i + 1} من ${list.length}…`;
     try {
       const j = await api('/send', { method: 'POST', body: JSON.stringify({ to: waNum(x.phone), name: x.name, code: String(x.code) }) });
-      ST.res[x.code] = j.ok ? '✅ اتبعت' : '⚠️ ' + ({ optout: 'داس «وقف التذكير» قبل كده', 'recently reminded': 'اتبعتله تذكير من أقل من 20 يوم', 'bad input': 'الرقم أو الكود مش مظبوط' }[j.error] || j.error);
+      ST.res[x.code] = j.ok ? '✅ اتبعت' : '⚠️ ' + ({ optout: 'داس «وقف التذكير» قبل كده', 'recently reminded': 'اتبعتله تذكير من أقل من 20 يوم', 'bad input': 'الرقم أو الكود مش مظبوط', 'quality YELLOW': 'وقفت: جودة الرقم صفرا', 'quality RED': 'وقفت: جودة الرقم حمرا' }[j.error] || j.error);
       if (j.ok) { ok++; ST.sel.delete(x.code); }
     } catch (e) { ST.res[x.code] = '⚠️ ' + e.message; }
   }
@@ -262,7 +275,7 @@ async function search() {
 
 async function renderEvents(body) {
   if (!ls.get(KEY_LS)) { body.innerHTML = '<div class="banner">حط مفتاح الإرسال الأول (فوق) علشان تشوف الردود.</div>'; return; }
-  const [{ events }] = await Promise.all([api('/events?limit=300'), loadCust().catch(() => null)]);
+  const [{ events }] = await Promise.all([api('/events?limit=300'), loadCust().catch(() => null), loadVisits().catch(() => null)]);
   const who = n => { const x = PHONE_IX && PHONE_IX[n]; return x ? `${String(x.name).replace(/\*/g, '')} (${x.id})` : '0' + String(n).replace(/^20/, ''); };
   const st = {};
   for (const e of events) if (e.dir === 'st') { const rank = { sent: 1, delivered: 2, read: 3, failed: 9 }; if (!st[e.id] || rank[e.status] > rank[st[e.id].status]) st[e.id] = e; }
@@ -272,11 +285,24 @@ async function renderEvents(body) {
   const rows = events.filter(e => e.dir !== 'st');
   const replies = rows.filter(e => e.dir === 'in').length, sent = rows.filter(e => e.dir === 'out');
   const read = sent.filter(e => st[e.id] && st[e.id].status === 'read').length;
+  // اشترى بعد التذكير؟ فاتورة لنفس العميل من يوم الإرسال لحد ROI_DAYS يوم بعده (من crm/visits — بتتحدّث كل يوم الصبح)
+  const day = t => new Date(t + 2 * 3600e3).toISOString().slice(0, 10);
+  const plus = (d, n) => { const x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+  const bought = {};
+  for (const e of sent) {
+    const d0 = day(e.t), d1 = plus(d0, ROI_DAYS);
+    const v = ((VIS || {})[String(e.code)] || []).filter(([d]) => d >= d0 && d <= d1);
+    if (v.length) bought[e.id || e.t] = v.reduce((a, x) => a + x[1], 0);
+  }
+  const nb = Object.keys(bought).length, rev = Object.values(bought).reduce((a, x) => a + x, 0), cost = sent.length * 3.2;
+  const roi = sent.length ? `<div class="banner" style="background:#EAF7F1">💰 <b>${nb}</b> من ${sent.length} اشتروا خلال ${ROI_DAYS} أيام بعد التذكير بـ <b>${N(rev)}</b> ج
+      · التكلفة ≈ ${N(cost)} ج${rev ? ` · الربح التقريبي (هامش ~28%) ≈ <b>${N(rev * 0.28 - cost)}</b> ج` : ''}
+      <div class="sub" style="font-size:12px">المشتريات بتتحدّث كل يوم الصبح (فاتورة النهارده بتظهر بكره). أي فاتورة للعميل — حتى لو جه الفرع بنفسه.</div></div>` : '';
   body.innerHTML = `<p class="sub">آخر 30 يوم: اتبعت <b>${sent.length}</b> · اتقرى <b>${read}</b> · ردود على الرقم <b>${replies}</b>.
-    دوسة «جهزوا طلبي» بتفتح واتساب 012 — بتوصل الفريق هناك بالكود، ومش بتظهر هنا.</p>
+    دوسة «جهزوا طلبي» بتفتح واتساب 012 — بتوصل الفريق هناك بالكود، ومش بتظهر هنا.</p>${roi}
     ${rows.map(e => e.dir === 'in'
       ? `<div class="ev"><div class="t">${tm(e.t)}</div><div><b>${KIND[e.kind] || '💬'}</b> من ${esc(who(e.from))}${e.text && e.kind === 'other' ? `<div class="sub">«${esc(e.text)}»</div>` : ''}</div></div>`
-      : `<div class="ev"><div class="t">${tm(e.t)}</div><div>📤 تذكير لـ ${esc(who(e.to))} «${esc(e.name)}» — ${esc(ST_AR[st[e.id] && st[e.id].status] || '✓ اتبعت')}${st[e.id] && st[e.id].err ? ` (${esc(st[e.id].err)})` : ''}</div></div>`).join('') || '<p class="sub">لسه مفيش حاجة.</p>'}`;
+      : `<div class="ev"><div class="t">${tm(e.t)}</div><div>📤 تذكير لـ ${esc(who(e.to))} «${esc(e.name)}» — ${esc(ST_AR[st[e.id] && st[e.id].status] || '✓ اتبعت')}${st[e.id] && st[e.id].err ? ` (${esc(st[e.id].err)})` : ''}${bought[e.id || e.t] ? ` · <b style="color:#0B6E66">🛒 اشترى بـ ${N(bought[e.id || e.t])} ج</b>` : ''}</div></div>`).join('') || '<p class="sub">لسه مفيش حاجة.</p>'}`;
 }
 
 /* ---------- الدخول ---------- */
