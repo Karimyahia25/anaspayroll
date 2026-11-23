@@ -2588,7 +2588,8 @@ function renderAdmin(){
     <button id="at9" onclick="atab(9)">العملاء</button>
     <button id="at10" onclick="atab(10)">🛒 الطلبية</button>
     <button id="at12" onclick="atab(12)">🛵 الدليفري</button>
-    ${isAdm ? `<button id="at1" onclick="atab(1)">نشر كشف جديد</button>
+    ${isAdm ? `<button id="at13" onclick="atab(13)">💬 واتساب</button>
+    <button id="at1" onclick="atab(1)">نشر كشف جديد</button>
     <button id="at2" onclick="atab(2)">الموظفين</button>
     <button id="at3" onclick="atab(3)">الاستفسارات</button>` : ''}
   </div>
@@ -2603,6 +2604,7 @@ function renderAdmin(){
   <div id="ap10" class="hide"><div id="orderRoot"></div></div>
   <div id="ap12" class="hide"><div id="drvAccts"></div><div id="delRoot"></div></div>
   ${isAdm ? `
+  <div id="ap13" class="hide"><div id="waRoot"></div></div>
   <div id="ap1" class="card hide">${adminUploadUI()}</div>
   <div id="ap2" class="card hide"><h2>الموظفين وحساباتهم</h2><div id="staffBox"><p class="sub">جاري التحميل…</p></div></div>
   <div id="ap3" class="card hide"><h2>استفسارات الموظفين</h2><div id="qBox"><p class="sub">جاري التحميل…</p></div></div>` : ''}`;
@@ -2612,6 +2614,7 @@ function renderAdmin(){
   if (new URLSearchParams(location.search).get('tab') === 'customers') atab(9);
   if (new URLSearchParams(location.search).get('tab') === 'order') atab(10);
   if (new URLSearchParams(location.search).get('tab') === 'delivery') atab(12);
+  if (isAdm && new URLSearchParams(location.search).get('tab') === 'whatsapp') atab(13);
 }
 
 let INV_ON = false;
@@ -2805,12 +2808,20 @@ async function openOrder(){
 }
 
 window.atab = n => {
-  [0,4,5,6,7,11,8,9,10,12,1,2,3].forEach(i => { const p = $('ap'+i), t = $('at'+i);
+  [0,4,5,6,7,11,8,9,10,12,13,1,2,3].forEach(i => { const p = $('ap'+i), t = $('at'+i);
     if (p) p.classList.toggle('hide', i !== n); if (t) t.classList.toggle('on', i === n); });
   $('perBox').style.display = (n === 0 || n === 4) ? '' : 'none';
   if ((n === 0 || n === 4) && !DASH.periods.length) loadDash();
-  if (n === 2) loadStaff(); if (n === 3) loadQ(); if (n === 5) otAdmin(); if (n === 6) pmAdmin(); if (n === 7) cashAdmin(); if (n === 11) advAdmin(); if (n === 8) openInventory(); if (n === 9) openCustomers(); if (n === 10) openOrder(); if (n === 12) openDelivery();
+  if (n === 2) loadStaff(); if (n === 3) loadQ(); if (n === 5) otAdmin(); if (n === 6) pmAdmin(); if (n === 7) cashAdmin(); if (n === 11) advAdmin(); if (n === 8) openInventory(); if (n === 9) openCustomers(); if (n === 10) openOrder(); if (n === 12) openDelivery(); if (n === 13) openWhatsApp();
 };
+
+// (23/11، طلبه) تبويب «💬 واتساب» — للأدمن بس: تذكير الطلب الشهري + بحث بالاسم/الرقم + الردود
+let WA_ON = false;
+async function openWhatsApp(){
+  if (WA_ON || !$('waRoot')) return; WA_ON = true;
+  try { const m = await import('./sections/whatsapp.js?v=1'); await m.mountWhatsApp($('waRoot')); }
+  catch (e) { WA_ON = false; $('waRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل قسم الواتساب: ${esc(e.code || e.message)}</div>`; }
+}
 
 async function loadDash(force){
   if (!DASH.periods.length || force){
