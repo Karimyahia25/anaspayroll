@@ -208,7 +208,8 @@ async function renderList(body) {
     const c = +cb.dataset.c; cb.checked ? ST.sel.add(c) : ST.sel.delete(c); render(); });
   $('#waClr', body).onclick = () => { ST.sel.clear(); render(); };
   $('#waSend', body).onclick = () => sendMany((L.rows || []).filter(r => ST.sel.has(r['الكود'])).map(r => ({
-    code: r['الكود'], label: String(r['العميل']).replace(/\*/g, ''), name: r['الاسم في الرسالة'], phone: r['الموبايل'] })));
+    code: r['الكود'], label: String(r['العميل']).replace(/\*/g, ''), name: r['الاسم في الرسالة'], phone: r['الموبايل'],
+    kind: r._kind, date: r._date, what: r._what, items: r._items })));
 }
 
 async function sendMany(list) {
@@ -221,7 +222,10 @@ async function sendMany(list) {
   for (const [i, x] of list.entries()) {
     const p = $('#waProg', ROOT); if (p) p.textContent = `⏳ ${i + 1} من ${list.length}…`;
     try {
-      const j = await api('/send', { method: 'POST', body: JSON.stringify({ to: waNum(x.phone), name: x.name, code: String(x.code) }) });
+      // (24/11) القالبين الجداد: kind (chronic/baby) + date (آخر مرة d/m) + what (حفاضات/لبن) + items (بتظهر للفرع برقم عشوائي، مش في اللينك)
+      const msg = { to: waNum(x.phone), name: x.name, code: String(x.code) };
+      if (x.kind && x.date) Object.assign(msg, { kind: x.kind, date: x.date }, x.what ? { what: x.what } : {}, x.items && x.items.length ? { items: x.items } : {});
+      const j = await api('/send', { method: 'POST', body: JSON.stringify(msg) });
       ST.res[x.code] = j.ok ? '✅ اتبعت' : '⚠️ ' + ({ optout: 'داس «وقف التذكير» قبل كده', 'recently reminded': 'اتبعتله تذكير من أقل من 20 يوم', 'bad input': 'الرقم أو الكود مش مظبوط', 'quality YELLOW': 'وقفت: جودة الرقم صفرا', 'quality RED': 'وقفت: جودة الرقم حمرا' }[j.error] || j.error);
       if (j.ok) { ok++; ST.sel.delete(x.code); }
     } catch (e) { ST.res[x.code] = '⚠️ ' + e.message; }
@@ -269,7 +273,8 @@ async function search() {
   }).join('');
   out.querySelectorAll('button[data-s]').forEach(b => b.onclick = () => {
     const id = b.dataset.s, c = CUST[id], name = $(`input[data-n="${id}"]`, out).value.trim() || 'يا فندم';
-    sendMany([{ code: +id, label: String(c[0]).replace(/\*/g, ''), name, phone: c[1][0] }]).then(search);
+    const d = (dm(c[2]) || '').split(' ')[0];   // آخر زيارة d/m — للقالب الجديد
+    sendMany([{ code: +id, label: String(c[0]).replace(/\*/g, ''), name, phone: c[1][0], kind: /^\d{1,2}\/\d{1,2}$/.test(d) ? 'chronic' : '', date: d }]).then(search);
   });
 }
 
