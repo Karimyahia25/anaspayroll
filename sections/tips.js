@@ -180,4 +180,4 @@ export function pickTip(custId, kinds, shift = 0) {
 }
 export const tipById = id => { const m = /^([a-z]+)(\d+)$/.exec(id || ''); const x = m && TIPS[m[1]] && TIPS[m[1]][+m[2]]; return x ? { t: x[0], q: x[1] } : null; };
 // النص اللي بيتنسخ للعميل
-export const tipText = (custId, kinds) => { const x = pickTip(custId, kinds); return `نصيحة من صيدلية أنس نحيلة:\n${x.t}\n\n${x.q}`; };
+export const tipText = (custId, kinds) => { const x = pickTip(custId, kinds); return `معلومة في 30 ثانية من صيدلية أنس نحيلة:\n${x.t}\n\n${x.q}`; };

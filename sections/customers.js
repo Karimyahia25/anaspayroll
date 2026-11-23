@@ -234,23 +234,32 @@ function filtered() {
    رسايل القوايم الأساسية بتتبني هنا (مش من السيرفر)، ورسايل تبويبات الحملات (حفاضات/فيتامينات/سوشيال) بتتبني في تبويباتها. */
 const TIPSHIFT = {}, NOTIP = {};
 const tipFor = c => { const k = tkOf(c); return !k || NOTIP[c.id] ? null : pickTip(c.id, k, TIPSHIFT[c.id] || 0); };
-const withTip = (c, base) => { const x = tipFor(c); return x ? `${base}\n\n🌿 نصيحة هادية لحضرتك:\n${x.t}\n${x.q}` : base; };
+const withTip = (c, base) => { const x = tipFor(c); return x ? `${base}\n\n💡 معلومة في 30 ثانية:\n${x.t}\n${x.q}` : base; };
 const itemsPhrase = c => {
   const L = (c.items || []).slice(0, 3).map(i => nm(String(i[0]).replace(/\s*\(آخر مرة:.*?\)/, ''))).filter(Boolean);
   return { txt: L.length > 2 ? `${L[0]} و${L[1]} وغيرهم` : L.join(' و'), many: L.length > 1 };
 };
+/* (23/11، طلبه) اسم اللبن ونوع الحفاضات الفعلي لازم يبان في أي رسالة متابعة: الكارت بيجيب «حفاضات (آخر مرة: MOLFIX ...)» و«لبن/أغذية أطفال (آخر مرة: NAN ...)» ← بنطلّع الاسم اللي جوه */
+function babyNames(c) {
+  const labels = (c.items || []).map(i => String(i[0])), inner = l => nm((/\(آخر مرة:\s*(.*?)\)\s*$/.exec(l) || [])[1] || '');
+  const raw = k => labels.filter(l => !/^(حفاضات|لبن)/.test(l) && kindOf(l) === k).map(l => nm(l));   // كروت «بعد عننا»: الأصناف أسماء خام (NAN 3 400GM MILK)
+  return { d: [...labels.filter(l => /^حفاضات/.test(l)).map(inner), ...raw('d')].filter(Boolean), m: [...labels.filter(l => /^لبن/.test(l)).map(inner), ...raw('m')].filter(Boolean) };
+}
 function friendlyMsg(c) {
-  const n = greetA(c.name), hi = n === 'حضرتك' ? '' : ' ' + n, g = c.grp || [];
-  if (c.status === 'بعد' || g[0] === 'lapsed')
-    return `السلام عليكم ورحمة الله${hi} 🌿\nمعاك صيدلية د. أنس نحيلة — وحشتنا حضرتك 💚\nحبينا نطمّن عليك، ولو فيه أي ملاحظة على خدمتنا يهمنا نعرفها. إحنا موجودين 24 ساعة ونوصّل لحد باب بيتك.`;
+  const n = greetA(c.name), hi = n === 'حضرتك' ? '' : ' ' + n, g = c.grp || [], bn = babyNames(c);
+  if (c.status === 'بعد' || g[0] === 'lapsed') {
+    const had = [bn.d.length ? 'حفاضات ' + bn.d[0] : '', bn.m.length ? 'لبن ' + bn.m[0] : ''].filter(Boolean).join(' و');
+    return `السلام عليكم ورحمة الله${hi} 🌿\nمعاك صيدلية د. أنس نحيلة — وحشتنا حضرتك 💚\n${had ? `كنت بتاخد عندنا ${had}، ومتوفرين لو محتاجه.\n` : ''}حبينا نطمّن عليك، ولو فيه أي ملاحظة على خدمتنا يهمنا نعرفها. إحنا موجودين 24 ساعة ونوصّل لحد باب بيتك.`;
+  }
   // (19/11، طلبه) عميل بياخد حفاضات/لبن + علاج شهري (مثلاً طارق شعبان): الرسالة بتجمع الاتنين مش الحفاضات بس
   const head = `أهلاً${hi} 🌿
 معاك صيدلية أنس نحيلة، بنطمن على حضرتك`;
   const late = c.status === 'اتأخر', hasD = g.includes('diaper'), hasM = g.includes('milk'), hasA = g.includes('adult');
   const L = (c.items || []).map(i => String(i[0])).filter(l => !/^(حفاضات|لبن)/.test(l)).slice(0, 3).map(l => nm(l.replace(/\s*\(آخر مرة:.*?\)/, ''))).filter(Boolean);
-  const parts = [];
-  if (hasD && hasM) parts.push('الحفاضات واللبن'); else if (hasD) parts.push('الحفاضات'); else if (hasM) parts.push('اللبن');
-  if (hasA) parts.push('مستلزمات كبار السن');
+  const parts = [], dn = bn.d.slice();
+  if (hasD) parts.push(dn.length ? `حفاضات ${dn.shift()}` : 'الحفاضات');
+  if (hasA) parts.push(dn.length ? `حفاضات كبار ${dn.shift()}` : 'مستلزمات كبار السن');
+  if (hasM) parts.push(bn.m.length ? `لبن ${bn.m[0]}` : 'اللبن');
   const others = L.length > 2 ? [`${L[0]} و${L[1]} وغيرهم`] : L;
   const all = [...parts, ...others];
   const what = all.length > 2 ? `${all[0]} و${all[1]} وغيرهم` : all.join(' و') || (g.includes('cosmo') ? 'المنتج' : 'الدوا');
