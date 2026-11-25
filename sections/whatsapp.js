@@ -4,7 +4,7 @@
 // الإرسال والردود: Worker anas-wa مباشرة (POST /send، GET /events، /stats) بمفتاح الأدمن — بيتحفظ على الجهاز ده بس (localStorage).
 // الحمايات في الـ Worker نفسه: اللي داس «وقف التذكير» ميتبعتلوش · 20 يوم بين تذكيرين لنفس الرقم · حد يومي.
 import { getApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const WORKER = 'https://anas-wa.anasnehila.workers.dev';
 const KEY_LS = 'wa_admin_key';
@@ -18,7 +18,8 @@ const digits = s => AR(s).replace(/\D/g, '');
 const dm = s => { const m = String(s || '').match(/(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}:\d{2}))?/); return m ? `${+m[3]}/${+m[2]}${m[4] ? ' ' + m[4] : ''}` : (s || ''); };
 
 let ROOT, DB = null, LOCAL = null, LIST = null, CUST = null, PHONE_IX = null;
-let ST = { tab: 'list', soc: false, sel: new Set(), q: '', shown: 40, busy: false, res: {} };
+let ST = { tab: 'list', soc: false, sel: new Set(), q: '', shown: 40, busy: false, res: {},
+           open: { recent: false, hold: false, held: false, dis: false }, sentAt: null, sentT: 0 };   // open = أقسام «اتشالوا/اتبعتلهم…» تفضل مفتوحة بعد أي إعادة رسم
 
 /* ---------- الاسم في الرسالة (نفس قواعد wa_remind.first_name على السيرفر) ---------- */
 const TITLES = new Set(['ا', 'أ', 'د', 'م', 'ح', 'دكتور', 'دكتوره', 'دكتورة', 'مدام', 'استاذ', 'أستاذ', 'استاذة', 'أستاذة', 'الحاج', 'الحاجة', 'حاج', 'حاجة', 'سوشيال']);
@@ -84,6 +85,43 @@ async function loadVisits() {           // crm/visits: مشتريات كل عم�
 }
 const ROI_DAYS = 7;
 
+/* ---------- (26/11، طلبه) شيل عميل من المتابعة 3 أسابيع ----------
+   crm/wa_dismiss = {كود: وقت الشيل} — الأدمن بيكتبه (قاعدة crm الحالية: isAdmin يكتب) فبيظهر على كل أجهزته (موبايل/لابتوب). بعد 21 يوم بيرجع لوحده. */
+const DISMISS_DAYS = 21;
+let DIS = null;
+async function loadDis() {
+  if (DIS) return DIS;
+  if (LOCAL) return (DIS = LOCAL.dis || {});
+  const d = await getDoc(doc(DB, 'crm', 'wa_dismiss'));
+  return (DIS = d.exists() ? JSON.parse(d.data().d) : {});
+}
+const isDis = c => !!(DIS && DIS[String(c)] && DIS[String(c)] > Date.now() - DISMISS_DAYS * 86400e3);
+async function saveDis() {
+  const cut = Date.now() - DISMISS_DAYS * 86400e3;
+  for (const k of Object.keys(DIS)) if (DIS[k] < cut) delete DIS[k];                // اللي عدّى 3 أسابيع بيتشال من الملف
+  if (!LOCAL) await setDoc(doc(DB, 'crm', 'wa_dismiss'), { d: JSON.stringify(DIS) });
+}
+const backIn = c => { const days = Math.ceil((DIS[String(c)] + DISMISS_DAYS * 86400e3 - Date.now()) / 86400e3); return Math.max(1, days); };
+
+/* ---------- (26/11) نص الرسالة اللي هتتبعت — بيظهر تحت كل عميل وفي تأكيد الإرسال ----------
+   النصوص دي هي نصوص القوالب المعتمدة عند ميتا (من ملفات القوالب)؛ قالب الفيتامينات نصه تقريبي (مبني على قالب الحفاضات). الإيموجي في بعض النسخ ممكن تختلف. */
+function tplText(r) {
+  const n = r['الاسم في الرسالة'] || 'يا فندم', d = r._date || '', w = r._what || '';
+  const head = `السلام عليكم ${n} 👋\nمعاك صيدلية د/أنس نحيلة.\n`, tail = '\nدايماً في خدمتكم 💙';
+  let b;
+  if (r._kind === 'baby') b = `حسب آخر مرة (يوم ${d})، معاد ${w} البيبي قرّب.\nتحب نجهزهوملك ونوصلهوملك لحد البيت؟\nولو محتاج مقاس أو نوع تاني، صيدلي متخصص هيرد على حضرتك.`;
+  else if (r._kind === 'vitamins') b = `حسب آخر مرة (يوم ${d})، معاد ${w || 'الفيتامينات'} قرّب.\nتحب نجهزهالك ونوصلهالك لحد البيت؟\nولو حابب تستفسر أكتر، صيدلي متخصص هيرد على حضرتك.\n(نص تقريبي)`;
+  else if (r._kind === 'chronic') b = `بنفكّر حضرتك إن معاد طلبك الشهري المعتاد قرّب — آخر مرة كانت يوم ${d}.\nتحب نجهزهولك ونوصلهولك لحد البيت؟\nولو حابب تستفسر أكتر، صيدلي متخصص هيرد على حضرتك.`;
+  else b = `بنفكّر حضرتك إن معاد تجديد طلبك الشهري قرّب.\nتحب نجهزهولك ونوصلهولك لحد البيت؟\nولو حابب تستفسر أكتر، صيدلي متخصص هيرد على حضرتك.`;
+  return `🖼 صورة واجهة الصيدلية\n${head}${b}${tail}\n— صيدلية د/أنس نحيلة · فاتحين 24 ساعة\n[جهزوا طلبي]  [اسأل الصيدلي]  [وقف التذكير]`;
+}
+
+async function getSent(force) {                      // (26/11) كان بيسأل الـ Worker مع كل علامة — دلوقتي مرة كل دقيقتين أو بعد إرسال
+  if (!force && ST.sentAt && Date.now() - ST.sentT < 120000) return ST.sentAt;
+  ST.sentAt = await recentSent(); ST.sentT = Date.now();
+  return ST.sentAt;
+}
+
 async function loadCust() {
   if (CUST) return CUST;
   if (LOCAL) { CUST = LOCAL.cust; }
@@ -125,6 +163,12 @@ function css() {
 #waRoot input.wq{width:100%;min-height:44px;font-size:16px;border-radius:12px;padding:10px 12px;border:1px solid #d7dde0;background:var(--card)}
 #waRoot .ev{display:flex;gap:10px;padding:10px 12px;background:var(--card);border-radius:12px;margin-bottom:6px;font-size:14px}
 #waRoot .ev .t{color:var(--muted);font-size:12px;min-width:70px}
+#waRoot .wmain label{display:block;cursor:pointer}
+#waRoot .wact{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start;margin-top:6px}
+#waRoot .wbtn{min-height:40px;border-radius:10px;padding:6px 12px;font-size:13px;background:var(--card);color:var(--muted);border:1px solid #d7dde0}
+#waRoot details.wtpl{flex:1 1 100%}
+#waRoot details.wtpl summary{cursor:pointer;color:var(--muted);font-size:13px;min-height:40px;display:flex;align-items:center}
+#waRoot details.wtpl pre{white-space:pre-wrap;font:inherit;font-size:13px;line-height:1.7;background:#EAF7EE;border-radius:12px;padding:10px 12px;margin:4px 0 0}
 #waRoot .msgname{width:130px;min-height:36px;border-radius:8px;border:1px solid #d7dde0;padding:4px 8px;font-size:14px}
 `;
   document.head.appendChild(s);
@@ -182,69 +226,104 @@ async function stats() {
 }
 
 /* ---------- العرض ---------- */
-async function render() {
+async function render(quiet) {                    // quiet = إعادة رسم من غير «جاري التحميل» ومن غير ما الصفحة تقفز لفوق
   ROOT.querySelectorAll('.wtabs button').forEach(b => b.classList.toggle('on', b.dataset.t === ST.tab));
   const body = $('#waBody', ROOT);
-  body.innerHTML = '<p class="sub">جاري التحميل…</p>';
+  const y = window.scrollY;
+  if (!quiet) body.innerHTML = '<p class="sub">جاري التحميل…</p>';
   try {
     if (ST.tab === 'list') await renderList(body);
     else if (ST.tab === 'search') await renderSearch(body);
     else await renderEvents(body);
   } catch (e) { body.innerHTML = `<div class="banner bad">مقدرتش أحمّل: ${esc(e.code || e.message)}</div>`; }
+  if (quiet) window.scrollTo(0, y);
 }
 
-function rowHtml(r, why) {          // why: لو متحدد، الصف مش قابل للاختيار (اتبعتله قريب / مجموعة المقارنة) — وده سببه
+function rowHtml(r, why, act) {     // why: لو متحدد، الصف مش قابل للاختيار (اتبعتله قريب / مجموعة المقارنة) — وده سببه
+  // act: 'dis' = زرار «شيله 3 أسابيع» · 'undo' = «رجّعه» (القسم بتاع المشيلين)
   const late = /اتأخر/.test(r['الحالة'] || '');
   const res = ST.res[r['الكود']];
   const off = typeof why === 'string' && why.startsWith('!');
   const note = off ? why.slice(1) : (why || '');
-  return `<label class="wrow${ST.sel.has(r['الكود']) ? ' sel' : ''}"${off ? ' style="opacity:.6"' : ''}>
-    <input type="checkbox" data-c="${r['الكود']}" ${ST.sel.has(r['الكود']) ? 'checked' : ''} ${off ? 'disabled' : ''}>
+  const c = r['الكود'], sel = ST.sel.has(c);
+  const btn = act === 'dis' ? `<button type="button" class="wbtn" data-dis="${c}">✖ شيله من المتابعة 3 أسابيع</button>`
+            : act === 'undo' ? `<button type="button" class="wbtn" data-undo="${c}">↩️ رجّعه (هيرجع تلقائي بعد ${backIn(c)} يوم)</button>` : '';
+  const tpl = r._kind !== undefined ? `<details class="wtpl"><summary>👁 شوف الرسالة اللي هتتبعت</summary><pre>${esc(tplText(r))}</pre></details>` : '';
+  return `<div class="wrow${sel ? ' sel' : ''}"${off ? ' style="opacity:.6"' : ''} data-row="${c}">
+    <input type="checkbox" id="wc${c}" data-c="${c}" ${sel ? 'checked' : ''} ${off ? 'disabled' : ''}>
     <div class="wmain">
-      <div class="wname">${esc(String(r['العميل']).replace(/\*/g, ''))} ${r['سوشيال'] ? '<span class="tag soc">سوشيال</span>' : ''}${note ? ` <span class="tag late">${esc(note)}</span>` : ''}</div>
-      <div class="wsub">
-        <span class="tag">${esc(r['المجموعة'])}</span><span class="tag ${late ? 'late' : ''}">${esc(r['الحالة'])}</span>
-        <br>${esc(r['الأصناف'])}
-        <br>📍 ${esc(r['المنطقة'])} · اشترى ${r['مرات الشرا']} مرة · ~${N(r['قيمته في الشهر'])} ج/شهر · الكود ${r['الكود']}
-        <br>في الرسالة: <b>${esc(r['الاسم في الرسالة'])}</b> · 📱 ${esc(r['الموبايل'])}
-      </div>
+      <label for="wc${c}">
+        <div class="wname">${esc(String(r['العميل']).replace(/\*/g, ''))} ${r['سوشيال'] ? '<span class="tag soc">سوشيال</span>' : ''}${note ? ` <span class="tag late">${esc(note)}</span>` : ''}</div>
+        <div class="wsub">
+          <span class="tag">${esc(r['المجموعة'])}</span><span class="tag ${late ? 'late' : ''}">${esc(r['الحالة'])}</span>
+          <br>${esc(r['الأصناف'])}
+          <br>📍 ${esc(r['المنطقة'])} · اشترى ${r['مرات الشرا']} مرة · ~${N(r['قيمته في الشهر'])} ج/شهر · الكود ${c}
+          <br>في الرسالة: <b>${esc(r['الاسم في الرسالة'])}</b> · 📱 ${esc(r['الموبايل'])}
+        </div>
+      </label>
       ${res ? `<div class="res">${esc(res)}</div>` : ''}
-    </div></label>`;
+      <div class="wact">${tpl}${btn}</div>
+    </div></div>`;
+}
+
+function barUpdate(body) {                    // تحديث زرار الإرسال من غير إعادة رسم
+  const n = ST.sel.size, s = $('#waSend', body), c = $('#waClr', body);
+  if (s) { s.disabled = !n; s.textContent = `📤 ابعت للمحددين (${n})`; }
+  if (c) c.disabled = !n;
 }
 
 async function renderList(body) {
   const L = await loadList();
-  const sentAt = await recentSent();                                    // {كود: وقت آخر تذكير} — آخر 20 يوم
+  const sentAt = await getSent();                                       // {كود: وقت آخر تذكير} — آخر 20 يوم (متخزن دقيقتين)
+  await loadDis();
   const flt = r => !ST.soc || r['سوشيال'];
+  const isSent = r => !!sentAt[String(r['الكود'])];
   const all = (L.rows || []).filter(flt);
-  const recent = all.filter(r => sentAt[String(r['الكود'])]);
-  const hold = all.filter(r => !sentAt[String(r['الكود'])] && r._hold);
-  let rows = all.filter(r => !sentAt[String(r['الكود'])] && !r._hold);
-  const held = (L.held || []).filter(flt).filter(r => !sentAt[String(r['الكود'])]);
+  const recent = all.filter(isSent);
+  const dismissed = []; { const seen = new Set();                        // المشيلين 3 أسابيع (من القايمة الأساسية و«اتشالوا»)
+    for (const r of [...(L.rows || []), ...(L.held || [])].filter(flt)) if (!seen.has(r['الكود']) && isDis(r['الكود']) && !isSent(r)) { seen.add(r['الكود']); dismissed.push(r); } }
+  const live = r => !isSent(r) && !isDis(r['الكود']);
+  const hold = all.filter(r => live(r) && r._hold);
+  const rows = all.filter(r => live(r) && !r._hold);
+  const held = (L.held || []).filter(flt).filter(live);
   const skip = Object.entries(L.skip || {}).filter(([, v]) => v).map(([k, v]) => `${k} ${v}`).join(' · ');
   const when = r => dm(new Date(sentAt[String(r['الكود'])]).toISOString().slice(0, 10));
+  const op = k => ST.open[k] ? ' open' : '';
   body.innerHTML = `
-    <p class="sub">${L.at ? `اتحسبت ${esc(dm(L.at))} (آخر فاتورة ${esc(dm(L.ref))})` : 'لسه مفيش قايمة — بتتعمل مع قوايم العملاء كل يوم الصبح.'} — <b>${rows.length}</b> عميل جاهز${recent.length ? ` · ${recent.length} اتبعتلهم قريب` : ''}${hold.length ? ` · ${hold.length} مجموعة مقارنة` : ''}${skip ? ` · اتشال: ${esc(skip)}` : ''}</p>
+    <p class="sub">${L.at ? `اتحسبت ${esc(dm(L.at))} (آخر فاتورة ${esc(dm(L.ref))})` : 'لسه مفيش قايمة — بتتعمل مع قوايم العملاء كل يوم الصبح.'} — <b>${rows.length}</b> عميل جاهز${recent.length ? ` · ${recent.length} اتبعتلهم قريب` : ''}${dismissed.length ? ` · ${dismissed.length} مشيلين` : ''}${hold.length ? ` · ${hold.length} مجموعة مقارنة` : ''}${skip ? ` · اتشال: ${esc(skip)}` : ''}</p>
     <label style="display:inline-flex;gap:6px;align-items:center;margin-bottom:8px"><input type="checkbox" id="waSoc" ${ST.soc ? 'checked' : ''}> سوشيال بس</label>
-    <div id="waRows">${rows.slice(0, ST.shown).map(r => rowHtml(r)).join('') || '<p class="sub">مفيش عملاء جاهزين دلوقتي بالشروط دي.</p>'}</div>
+    <div id="waRows">${rows.slice(0, ST.shown).map(r => rowHtml(r, '', 'dis')).join('') || '<p class="sub">مفيش عملاء جاهزين دلوقتي بالشروط دي.</p>'}</div>
     ${rows.length > ST.shown ? `<button class="ghost" id="waMore">اعرض ${Math.min(40, rows.length - ST.shown)} كمان</button>` : ''}
-    ${recent.length ? `<details style="margin-top:10px"><summary class="sub">✅ اتبعتلهم آخر ${GAP_DAYS} يوم (${recent.length}) — مش هيتبعتلهم تاني قبل ما تعدّي</summary>${recent.map(r => rowHtml(r, '!اتبعتله ' + when(r))).join('')}</details>` : ''}
-    ${hold.length ? `<details style="margin-top:10px"><summary class="sub">🧪 مجموعة المقارنة (${hold.length}) — محدش بيبعتلهم الشهر ده علشان نقيس أثر التذكير بجد</summary>${hold.map(r => rowHtml(r, '!🧪 مقارنة')).join('')}</details>` : ''}
-    ${held.length ? `<details style="margin-top:10px"><summary class="sub">📋 اتشالوا (${held.length}) — بعيد / عنوان مش متسجل / اشتروا مرة بس. <b>اختار منهم بإيدك</b> لو انت عارفهم</summary><p class="sub" style="font-size:12px">⚠️ اللي اشترى مرة بس: رسالة «معاد طلبك الشهري المعتاد» مش دقيقة معاه (مفيش «معتاد» لسه) — الأنسب ليه الحفاضات/اللبن أو الفيتامينات. وأي واحد عنوانه مش متسجل ممكن يكون بعيد.</p>${held.map(r => rowHtml(r, r['سبب الاستبعاد'])).join('')}</details>` : ''}
+    ${dismissed.length ? `<details data-k="dis" style="margin-top:10px"${op('dis')}><summary class="sub">⏸️ مشيلين من المتابعة (${dismissed.length}) — بيرجعوا لوحدهم بعد ${DISMISS_DAYS} يوم من الشيل</summary>${dismissed.map(r => rowHtml(r, '!مشيل', 'undo')).join('')}</details>` : ''}
+    ${recent.length ? `<details data-k="recent" style="margin-top:10px"${op('recent')}><summary class="sub">✅ اتبعتلهم آخر ${GAP_DAYS} يوم (${recent.length}) — مش هيتبعتلهم تاني قبل ما تعدّي</summary>${recent.map(r => rowHtml(r, '!اتبعتله ' + when(r))).join('')}</details>` : ''}
+    ${hold.length ? `<details data-k="hold" style="margin-top:10px"${op('hold')}><summary class="sub">🧪 مجموعة المقارنة (${hold.length}) — محدش بيبعتلهم الشهر ده علشان نقيس أثر التذكير بجد</summary>${hold.map(r => rowHtml(r, '!🧪 مقارنة')).join('')}</details>` : ''}
+    ${held.length ? `<details data-k="held" style="margin-top:10px"${op('held')}><summary class="sub">📋 اتشالوا (${held.length}) — بعيد / عنوان مش متسجل / اشتروا مرة بس. <b>اختار منهم بإيدك</b> لو انت عارفهم</summary><p class="sub" style="font-size:12px">⚠️ اللي اشترى مرة بس: رسالة «معاد طلبك الشهري المعتاد» مش دقيقة معاه (مفيش «معتاد» لسه) — الأنسب ليه الحفاضات/اللبن أو الفيتامينات. وأي واحد عنوانه مش متسجل ممكن يكون بعيد.</p>${held.map(r => rowHtml(r, r['سبب الاستبعاد'], 'dis')).join('')}</details>` : ''}
     <div class="bar"><button id="waSend" ${ST.sel.size ? '' : 'disabled'}>📤 ابعت للمحددين (${ST.sel.size})</button>
       <button class="ghost" id="waClr" ${ST.sel.size ? '' : 'disabled'}>إلغاء التحديد</button>
       <span class="sub" id="waProg"></span></div>`;
-  $('#waSoc', body).onchange = e => { ST.soc = e.target.checked; ST.shown = 40; render(); };
-  const more = $('#waMore', body); if (more) more.onclick = () => { ST.shown += 40; render(); };
+  $('#waSoc', body).onchange = e => { ST.soc = e.target.checked; ST.shown = 40; render(true); };
+  const more = $('#waMore', body); if (more) more.onclick = () => { ST.shown += 40; render(true); };
+  // (26/11) العلامة بتتحدّث مكانها: من غير إعادة رسم ولا سؤال للسيرفر ولا قفل للأقسام ولا قفزة لفوق
   body.querySelectorAll('input[data-c]').forEach(cb => cb.onchange = () => {
-    const c = +cb.dataset.c; cb.checked ? ST.sel.add(c) : ST.sel.delete(c); render(); });
-  $('#waClr', body).onclick = () => { ST.sel.clear(); render(); };
+    const c = +cb.dataset.c; cb.checked ? ST.sel.add(c) : ST.sel.delete(c);
+    const row = cb.closest('.wrow'); if (row) row.classList.toggle('sel', cb.checked);
+    barUpdate(body); });
+  body.querySelectorAll('details[data-k]').forEach(d => d.addEventListener('toggle', () => { ST.open[d.dataset.k] = d.open; }));
+  $('#waClr', body).onclick = () => { ST.sel.clear(); body.querySelectorAll('input[data-c]').forEach(cb => { cb.checked = false; const row = cb.closest('.wrow'); if (row) row.classList.remove('sel'); }); barUpdate(body); };
+  body.querySelectorAll('button[data-dis]').forEach(b => b.onclick = async () => {      // شيله 3 أسابيع
+    const c = b.dataset.dis; DIS[c] = Date.now(); ST.sel.delete(+c); b.disabled = true; b.textContent = '⏳…';
+    try { await saveDis(); } catch (e) { delete DIS[c]; alert('مقدرتش أحفظ الشيل: ' + (e.code || e.message)); }
+    render(true); });
+  body.querySelectorAll('button[data-undo]').forEach(b => b.onclick = async () => {     // رجّعه
+    const c = b.dataset.undo; const was = DIS[c]; delete DIS[c]; b.disabled = true; b.textContent = '⏳…';
+    try { await saveDis(); } catch (e) { DIS[c] = was; alert('مقدرتش أحفظ: ' + (e.code || e.message)); }
+    render(true); });
   const heldCodes = new Set((L.held || []).map(r => r['الكود']));
   const pick = new Map();                                              // الاسم القديم/الجديد لنفس الكود: الصف الأول يكسب (القايمة الأساسية قبل «اتشالوا»)
   for (const r of [...(L.rows || []), ...(L.held || [])]) if (!pick.has(r['الكود'])) pick.set(r['الكود'], r);
   $('#waSend', body).onclick = () => sendMany([...ST.sel].map(c => pick.get(c)).filter(r => r && !r._hold && !sentAt[String(r['الكود'])]).map(r => ({
     code: r['الكود'], label: String(r['العميل']).replace(/\*/g, ''), name: r['الاسم في الرسالة'], phone: r['الموبايل'],
-    kind: r._kind, date: r._date, what: r._what, items: r._items, held: heldCodes.has(r['الكود']) && !(L.rows || []).some(x => x['الكود'] === r['الكود']) })));
+    kind: r._kind, date: r._date, what: r._what, items: r._items, tpl: tplText(r), held: heldCodes.has(r['الكود']) && !(L.rows || []).some(x => x['الكود'] === r['الكود']) })));
 }
 
 async function sendMany(list) {
@@ -253,8 +332,11 @@ async function sendMany(list) {
   if (list.length > 20) { alert('الحد 20 عميل في المرة.'); return; }
   const cost = Math.round(list.length * 3.2);
   const nh = list.filter(x => x.held).length;
+  const samples = []; const seenK = new Set();                          // نموذج الرسالة لكل نوع قالب في الدفعة
+  for (const x of list) if (x.tpl && !seenK.has(x.kind || '')) { seenK.add(x.kind || ''); samples.push(x.tpl); }
   if (!confirm(`هبعت تذكير لـ ${list.length} عميل (≈ ${cost} ج):\n\n` + list.map(x => `• ${x.label} — «${x.name}»${x.held ? ' ⚠️ (من اللي اتشالوا)' : ''}`).join('\n') +
-    (nh ? `\n\n⚠️ ${nh} منهم من قسم «اتشالوا» (بعيد / عنوان مجهول / اشترى مرة بس) — انت اللي اخترتهم بإيدك.` : '') + '\n\nمتأكد؟')) return;
+    (nh ? `\n\n⚠️ ${nh} منهم من قسم «اتشالوا» (بعيد / عنوان مجهول / اشترى مرة بس) — انت اللي اخترتهم بإيدك.` : '') +
+    (samples.length ? '\n\n— الرسالة (نموذج' + (samples.length > 1 ? ' لكل نوع' : '') + ') —\n' + samples.join('\n\n———\n') : '') + '\n\nمتأكد؟')) return;
   ST.busy = true; let ok = 0;
   for (const [i, x] of list.entries()) {
     const p = $('#waProg', ROOT); if (p) p.textContent = `⏳ ${i + 1} من ${list.length}…`;
@@ -269,7 +351,8 @@ async function sendMany(list) {
   }
   ST.busy = false;
   alert(`اتبعت ${ok} من ${list.length}. النتيجة جنب كل اسم.`);
-  stats(); render();
+  ST.sentAt = null;                                                   // اتبعت دلوقتي ← اسأل الـ Worker من جديد
+  stats(); render(true);
 }
 
 async function renderSearch(body) {
