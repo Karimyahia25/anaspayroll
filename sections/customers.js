@@ -109,10 +109,11 @@ async function load() {
   META = JSON.parse(m.data().d); const n = m.data().chunks; CARDS = [];
   for (let i = 0; i < n; i++) { const c = await getDoc(doc(DB, 'crm', 'list_' + i)); if (c.exists()) CARDS.push(...JSON.parse(c.data().d)); }
   const v = await getDoc(doc(DB, 'crm', 'visits')); VIS = v.exists() ? JSON.parse(v.data().d) : {};
+  LOG_ALL = false;
   LOG = ROLE === 'emp' && !MY.dev                          // الموظف بيقرا تسجيلاته هو بس (القواعد) — الجهاز المشترك بيقرا الكل
     ? (await getDocs(query(collection(DB, 'crm_log'), where('by', '==', MY.uid)))).docs.map(d => ({ _id: d.id, ...d.data() }))
     /* (9/11) آخر LOG_DAYS بس — الحسابات كلها محتاجة 30 يوم بالكتير، والقراية الكاملة كانت بتكبر كل يوم (حد Firebase المجاني) */
-    : (await getDocs(query(collection(DB, 'crm_log'), where('day', '>=', addDays(today(), -LOG_DAYS))))).docs.map(d => ({ _id: d.id, ...d.data() }));
+    : await loadAllLog();
   CLAIM = {}; (await getDocs(query(collection(DB, 'crm_claim'), where('at', '>=', addDays(today(), -CLAIM_DAYS))))).docs.forEach(d => { CLAIM[d.id] = d.data(); });
   await loadPrices();
   dropSocial();
@@ -140,13 +141,29 @@ async function unclaim(id) {
   if (!LOCAL) await deleteDoc(doc(DB, 'crm_claim', String(id)));
   delete CLAIM[id];
 }
+/* (27/11) كاش سجل التواصل للأدمن/المشاهد/الجهاز المشترك: بيقرا سجل كل الموظفين (مستند لكل تواصل، آلاف القرايات في الفتحة) — بيتحفظ 10 دقايق في الجهاز (sessionStorage)
+   وبيتحدّث محلياً مع كل تسجيل/مسح. تواصل زميل بيظهر خلال 10 دقايق أو مع الريفريش بعدها. (حصة Firebase المجانية) */
+const LOGC_KEY = 'crm_log_cache_v1', LOGC_MS = 600000;
+let logCacheAt = 0, LOG_ALL = false;   // LOG_ALL = السجل اللي في الذاكرة هو سجل الكل (مش سجل موظف واحد)
+const logUid = () => { try { const u = getAuth(getApp()).currentUser; return (u && u.uid) || ''; } catch (e) { return ''; } };
+const logCacheSave = () => { if (!LOG_ALL) return; try { sessionStorage.setItem(LOGC_KEY, JSON.stringify({ at: logCacheAt || Date.now(), days: LOG_DAYS, u: logUid(), rows: LOG })); } catch (e) { /* الكاش اختياري */ } };
+async function loadAllLog() {
+  try {
+    const c = JSON.parse(sessionStorage.getItem(LOGC_KEY) || 'null');
+    if (c && c.days === LOG_DAYS && c.u && c.u === logUid() && Date.now() - c.at < LOGC_MS && Array.isArray(c.rows)) { logCacheAt = c.at; LOG_ALL = true; return c.rows; }
+  } catch (e) {}
+  const rows = (await getDocs(query(collection(DB, 'crm_log'), where('day', '>=', addDays(today(), -LOG_DAYS))))).docs.map(d => ({ _id: d.id, ...d.data() }));
+  logCacheAt = Date.now(); LOG_ALL = true;
+  try { sessionStorage.setItem(LOGC_KEY, JSON.stringify({ at: logCacheAt, days: LOG_DAYS, u: logUid(), rows })); } catch (e) {}
+  return rows;
+}
 async function saveLog(rec) {
   if (LOCAL) { rec._id = 'L' + Date.now(); LOG.push(rec); return; }
-  const r = await addDoc(collection(DB, 'crm_log'), rec); rec._id = r.id; LOG.push(rec);
+  const r = await addDoc(collection(DB, 'crm_log'), rec); rec._id = r.id; LOG.push(rec); logCacheSave();
 }
 async function delLog(id) {
   if (!LOCAL) await deleteDoc(doc(DB, 'crm_log', id));
-  LOG = LOG.filter(x => x._id !== id);
+  LOG = LOG.filter(x => x._id !== id); logCacheSave();
 }
 
 // علامة d/D في اسم العميل = ليه خصم عندنا (مش متسجل في السيستم، في الاسم بس): "علاء d" · "D MANAR" · "*Dايمان"
