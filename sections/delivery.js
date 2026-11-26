@@ -636,7 +636,7 @@ function locRow(d) {
   const l = LOC.get(nm(d).toLowerCase());
   if (!l || !l.on || l.lat == null) return '<div class="loc off">⚪ التتبع مش شغال عنده (المندوب يشغّله من التطبيق)</div>';
   const age = Math.max(0, Date.now() - atMs(l.at)), sec = Math.round(age / 1000), mn = Math.round(age / MIN);
-  const cls = age <= 150e3 ? 'live' : age <= 10 * MIN ? 'old' : 'lost';
+  const cls = age <= 210e3 ? 'live' : age <= 10 * MIN ? 'old' : 'lost';
   const txt = cls === 'live' ? `🟢 مباشر · آخر تحديث من ${sec} ث` : cls === 'old' ? `🟡 آخر موقع من ${mn} د` : `🔴 فقدنا الإشارة من ${mn >= 60 ? Math.floor(mn / 60) + ' س ' + (mn % 60) + ' د' : mn + ' د'} (الموبايل اتقفل أو النت واقع)`;
   return `<div class="loc ${cls}"><span>${txt}</span><a href="https://www.google.com/maps?q=${l.lat},${l.lng}" target="_blank" rel="noopener">🗺 مكانه دلوقتي</a></div>`;
 }
@@ -985,17 +985,18 @@ function subDone() {   // اللي اتسلّم من 9 الصبح (اليوم ا
   }, e => toast('أوردرات النهارده: ' + (e.code || e.message)));
 }
 
-export async function mountDelivery(root, role) {
-  ROOT = root; ROLE = role; css(); SEEN = null;
-  ROOT.id = ROOT.id || 'delRoot'; ROOT.classList.add('delwrap');
-  const app = getApp(); DB = getFirestore(app); UID = getAuth(app).currentUser ? getAuth(app).currentUser.uid : '';
-  UNSUB.forEach(u => u()); UNSUB = []; if (UDONE) { UDONE(); UDONE = null; } clearInterval(TICK); clearInterval(REFRESH);
-  const fail = e => { ROOT.innerHTML = `<div class="banner bad">مقدرتش أقرا الدليفري: ${esc(e.code || e.message)}${e.code === 'permission-denied' ? ' — حط قواعد Firebase الجديدة الأول' : ''}</div>`; };
+/* (27/11) توفير حصة Firebase: كل شاشة مفتوحة بتستقبل كل كتابة (أوردر/موقع مندوب). الأدمن والمشاهد لو التبويب اتخبّى 10 دقايق ← بنفصل الاشتراكات، وأول ما يرجعوا بنوصل تاني.
+   الكاشير مبيتفصلش أبداً (محتاج تنبيه الأوردر الجديد حتى والشاشة في الخلفية). */
+let PAUSED = false, HIDE_T = null;
+const PAUSE_AFTER = 10 * 60e3;
+const fail = e => { ROOT.innerHTML = `<div class="banner bad">مقدرتش أقرا الدليفري: ${esc(e.code || e.message)}${e.code === 'permission-denied' ? ' — حط قواعد Firebase الجديدة الأول' : ''}</div>`; };
+function detachLive() { UNSUB.forEach(u => u()); UNSUB = []; if (UDONE) { UDONE(); UDONE = null; } }
+function attachLive() {
+  detachLive();
   UNSUB.push(onSnapshot(query(collection(DB, 'deliv_orders'), where('status', '==', 'PENDING')), s => {
     OPEN = new Map(s.docs.map(d => [d.id, { id: d.id, ...d.data() }])); READY = 1; checkDelivered(); checkNew(); rebuild(); safeRender();
   }, fail));
   subDone();
-  if (!ROOT._wired) { ROOT._wired = 1; ROOT.addEventListener('input', () => { LAST_UI = Date.now(); }); document.addEventListener('pointerdown', armAudio, true); }
   UNSUB.push(onSnapshot(collection(DB, 'deliv_drivers'), s => {
     DRIVERS = s.docs.map(d => ({ id: d.id, ...d.data() }));
     safeRender();
@@ -1003,7 +1004,29 @@ export async function mountDelivery(root, role) {
   UNSUB.push(onSnapshot(collection(DB, 'deliv_loc'), s => { LOC = new Map(s.docs.map(d => [nm(d.data().name || d.id).toLowerCase(), d.data()])); safeRender(); }, () => { LOC = new Map(); }));
   UNSUB.push(onSnapshot(doc(DB, 'deliv_cfg', 'live'), s => { LIVE = { enabled: !s.exists() || s.data().enabled !== false }; safeRender(); }, () => { }));
   UNSUB.push(onSnapshot(doc(DB, 'deliv_cfg', 'track'), s => { TRK = { enabled: !s.exists() || s.data().enabled !== false }; safeRender(); }, () => { }));
+}
+function wireVisibility() {
+  if (document._delVis) return; document._delVis = 1;
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      if (ROLE !== 'admin' && ROLE !== 'viewer') return;
+      clearTimeout(HIDE_T);
+      HIDE_T = setTimeout(() => { if (document.hidden && ROOT && ROOT.isConnected && !PAUSED) { PAUSED = true; detachLive(); } }, PAUSE_AFTER);
+    } else {
+      clearTimeout(HIDE_T);
+      if (PAUSED && ROOT && ROOT.isConnected) { PAUSED = false; attachLive(); }
+    }
+  });
+}
+
+export async function mountDelivery(root, role) {
+  ROOT = root; ROLE = role; css(); SEEN = null; PAUSED = false;
+  ROOT.id = ROOT.id || 'delRoot'; ROOT.classList.add('delwrap');
+  const app = getApp(); DB = getFirestore(app); UID = getAuth(app).currentUser ? getAuth(app).currentUser.uid : '';
+  UNSUB.forEach(u => u()); UNSUB = []; if (UDONE) { UDONE(); UDONE = null; } clearInterval(TICK); clearInterval(REFRESH);
+  attachLive(); wireVisibility();
+  if (!ROOT._wired) { ROOT._wired = 1; ROOT.addEventListener('input', () => { LAST_UI = Date.now(); }); document.addEventListener('pointerdown', armAudio, true); }
   TICK = setInterval(() => { if (ROOT.isConnected) tick(); }, 1000);
-  REFRESH = setInterval(() => { if (!ROOT.isConnected) return; if (ST.liveDay !== opDay(Date.now())) subDone(); if (ST.view === 'live') safeRender(); }, 30000);
+  REFRESH = setInterval(() => { if (!ROOT.isConnected || PAUSED) return; if (ST.liveDay !== opDay(Date.now())) subDone(); if (ST.view === 'live') safeRender(); }, 30000);
   render();
 }

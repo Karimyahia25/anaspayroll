@@ -169,7 +169,7 @@ export function mountDriver(root, { db, driverName, uid }) {
 
   /* ===== (13/11، طلبه) التتبع المباشر: المندوب بيشغّله بزرار، وبيبعت موقعه لـ deliv_loc/{uid}؛ الكاشير بيشوفه. المتصفح بيوقفه لو الشاشة اتقفلت ===== */
   let LIVEOK = true, TON = sget('drv_trk') === '1', WATCH = null, HB = null, LAST = null, LASTSENT = 0, SENT = 0, TERR = '';
-  const SEND_EVERY = 30e3, HEARTBEAT = 60e3, MIN_MOVE = 30;
+  const SEND_EVERY = 60e3, HEARTBEAT = 120e3, MIN_MOVE = 30;   // (27/11) كانت 30/60 ثانية — كل كتابة موقع بتتعاد قراءتها على كل شاشة دليفري مفتوحة (حصة Firebase)
   const dist = (a, b) => { const R = 6371000, r = x => x * Math.PI / 180, dl = r(b.lat - a.lat), dg = r(b.lng - a.lng); const h = Math.sin(dl / 2) ** 2 + Math.cos(r(a.lat)) * Math.cos(r(b.lat)) * Math.sin(dg / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); };
   async function pushLoc(on) {
     const data = on && LAST ? { name: driverName, on: true, lat: LAST.lat, lng: LAST.lng, acc: Math.round(LAST.acc || 0), spd: LAST.spd == null ? null : Math.round(LAST.spd * 3.6), at: serverTimestamp() } : { name: driverName, on: false, at: serverTimestamp() };
