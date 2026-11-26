@@ -42,7 +42,7 @@ const waNum = p => '20' + String(p).replace(/^0/, '');
 const cairoDay = t => new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(t));
 const TEST_TO = new Set(['201004021342']);                // رقم د. يحيى — تجاربه مش بتتحسب في الأثر
 // (26/11) قالب «اللي اشتروا مرة» (once_checkin_v1) اتقدم لميتا ومستني الموافقة + رفع الـ Worker الجديد — لحد ما الاتنين يحصلوا الإرسال له واقف (الـ Worker القديم كان هيبعت القالب الغلط)
-const ONCE_READY = false;
+const ONCE_READY = true;
 const GAP_DAYS = 20;                                      // نفس حارس الـ Worker: مفيش تذكير لنفس الرقم قبل 20 يوم
 const ECODE = { 131050: 'قفل رسايل التسويق من واتساب نفسه (اتحط في الإيقاف)', 131049: 'ميتا حدّت رسايل التسويق للعميل ده' };
 
