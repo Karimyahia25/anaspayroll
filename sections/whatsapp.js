@@ -4,7 +4,8 @@
 // الإرسال والردود: Worker anas-wa مباشرة (POST /send، GET /events، /stats) بمفتاح الأدمن — بيتحفظ على الجهاز ده بس (localStorage).
 // الحمايات في الـ Worker نفسه: اللي داس «وقف التذكير» ميتبعتلوش · 20 يوم بين تذكيرين لنفس الرقم · حد يومي.
 import { getApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, doc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getDoc } from "./rc.js?v=1";
 
 const WORKER = 'https://anas-wa.anasnehila.workers.dev';
 const KEY_LS = 'wa_admin_key';

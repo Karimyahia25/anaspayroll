@@ -416,9 +416,10 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged,
          createUserWithEmailAndPassword, updatePassword }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { initializeFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc,
+import { initializeFirestore, doc, setDoc, collection, addDoc,
          updateDoc, deleteDoc, deleteField, query, where, serverTimestamp }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getDoc, getDocs } from "./sections/rc.js?v=1";   // عدّاد القراءات (?rc=1)
 
 const CFG = {
   apiKey: "AIzaSyCRumjMVIdmhgkQdFU35a4EDineIIjgfWE",
@@ -956,7 +957,7 @@ async function crmDevStart(name){
   try { sessionStorage.setItem('crmWho', name); } catch(e){}
   $('cdPick').classList.add('hide'); $('myCustRoot').classList.remove('hide');
   $('cdWho').innerHTML = `شغال باسم <b>${esc(name)}</b> · <a href="#" onclick="crmDevSwitch();return false">مش انت؟ غيّر الاسم</a>`;
-  try { const m = await import('./sections/customers.js?v=35'); await m.mountEmployee($('myCustRoot'), ME.uid, name, true); }
+  try { const m = await import('./sections/customers.js?v=36'); await m.mountEmployee($('myCustRoot'), ME.uid, name, true); }
   catch (e) { $('myCustRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل العملاء: ${esc(e.code || e.message)}</div>`; }
 }
 window.crmDevSwitch = () => { try { sessionStorage.removeItem('crmWho'); } catch(e){} renderCrmDev(); };
@@ -968,8 +969,8 @@ async function renderBuyer(){
   await buyerBody();
 }
 async function buyerBody(){
-  try { const o = await import('./sections/order.js?v=24'); await o.mountOrder($('orderRoot'), 'buyer'); } catch (e) {}
-  try { const m = await import('./sections/inventory.js?v=26'); await m.mountBuyer($('buyerRoot')); }
+  try { const o = await import('./sections/order.js?v=25'); await o.mountOrder($('orderRoot'), 'buyer'); } catch (e) {}
+  try { const m = await import('./sections/inventory.js?v=27'); await m.mountBuyer($('buyerRoot')); }
   catch (e) { $('buyerRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل الشاشة: ${esc(e.code || e.message)}</div>`; }
 }
 
@@ -1170,7 +1171,7 @@ async function openMyCustomers(){
   if (MYCUST_ON) return; MYCUST_ON = true;
   let nm_ = '';
   try { const x = await getDoc(doc(db, 'staff', ME.uid)); if (x.exists()) nm_ = x.data().name || ''; } catch(e){}
-  try { const m = await import('./sections/customers.js?v=35'); await m.mountEmployee($('myCustRoot'), ME.uid, nm_); }
+  try { const m = await import('./sections/customers.js?v=36'); await m.mountEmployee($('myCustRoot'), ME.uid, nm_); }
   catch (e) { MYCUST_ON = false; $('myCustRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل عملائك: ${esc(e.code || e.message)}</div>`; }
 }
 window.etab = n => { if (n === 6) otMine(); if (n === 7) cashEmp(); if (n === 8) openMyCustomers(); [1,2,3,4,5,6,7,8].forEach(i => {
@@ -1459,11 +1460,13 @@ async function otMine(){
   } catch (e) { box.innerHTML = `<p class="err">مشكلة: ${esc(e.code || e.message)}</p>`; }
 }
 
+const REQ_DAYS = 120;
+const daysAgoIso = n => { const d = new Date(Date.now() - n * 864e5); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 async function otAdmin(){
   const box = $('otBox'); if (!box) return;
   box.innerHTML = '<p class="sub">جاري التحميل…</p>';
   let list = [];
-  try { const snap = await getDocs(collection(db, 'overtime'));
+  try { const snap = await getDocs(query(collection(db, 'overtime'), where('date', '>=', daysAgoIso(REQ_DAYS))));   // (26/11) آخر 120 يوم بس — قبل كده كل الطلبات من الأول في كل فتحة
     snap.forEach(d => list.push({ id: d.id, ...d.data() }));
   } catch (e) { box.innerHTML = `<p class="err">مشكلة: ${esc(e.code || e.message)}</p>`; return; }
   list.sort((a,b) => a.date < b.date ? 1 : -1);
@@ -1550,7 +1553,7 @@ async function pmAdmin(){
   const box = $('pmBox'); if (!box) return;
   box.innerHTML = '<p class="sub">جاري التحميل…</p>';
   let list = [];
-  try { const snap = await getDocs(collection(db, 'permits'));
+  try { const snap = await getDocs(query(collection(db, 'permits'), where('date', '>=', daysAgoIso(REQ_DAYS))));
     snap.forEach(d => list.push({ id: d.id, ...d.data() }));
   } catch (e) { box.innerHTML = `<p class="err">مشكلة: ${esc(e.code || e.message)}</p>`; return; }
   list.sort((a,b) => a.date < b.date ? 1 : -1);
@@ -2227,10 +2230,13 @@ window.cashAcctMake = async () => {
 window.cmSetMonth = v => { if (!v) return; CM.month = v; CM.day = ''; cashAdmin(); };
 
 // رصيد الخزنة الجوانية = آخر جرد + نقدي التقفيلات اللي بعده − السحب + الإيداع
-async function safeLedger(){
+let LEDGER_C = { at: 0, key: '', val: null };   // (26/11) كاش 5 دقايق — كل فتحة للتبويب كانت بتقرا كل تقفيلات الكاشير من آخر جرد
+async function safeLedger(force){
   const S = CM.safe.slice().sort((x, y) => (x.at?.seconds || 0) - (y.at?.seconds || 0));
   let base = null; S.forEach(e => { if (e.kind === 'جرد') base = e; });
   const baseSec = base ? (base.at?.seconds || 0) : 0;
+  const ckey = baseSec + '|' + S.length;
+  if (!force && LEDGER_C.val && LEDGER_C.key === ckey && Date.now() - LEDGER_C.at < 300000) return LEDGER_C.val;
   const cl = [];
   try {
     const from = base ? new Date((baseSec - 2 * 86400) * 1000).toISOString().slice(0, 10) : '0000';
@@ -2242,7 +2248,9 @@ async function safeLedger(){
   const inC = r2(cl.reduce((a, c) => a + (+c.cashToSafe || 0), 0));
   const out = r2(after.filter(e => e.kind === 'سحب').reduce((a, e) => a + (+e.amount || 0), 0));
   const dep = r2(after.filter(e => e.kind === 'إيداع').reduce((a, e) => a + (+e.amount || 0), 0));
-  return { base, inC, out, dep, n: cl.length, bal: r2((base ? +base.amount : 0) + inC - out + dep), entries: S.slice().reverse() };
+  const val = { base, inC, out, dep, n: cl.length, bal: r2((base ? +base.amount : 0) + inC - out + dep), entries: S.slice().reverse() };
+  LEDGER_C = { at: Date.now(), key: ckey, val };
+  return val;
 }
 
 function cashStats(){
@@ -2387,7 +2395,7 @@ window.cmDay = d => { CM.day = CM.day === d ? '' : d; cashRender();
 async function cmUpdate(id, data, patch){
   try { await updateDoc(doc(db, 'closings', id), { ...data, reviewedAt: serverTimestamp() });
     Object.assign(CM.list.find(x => x.id === id) || {}, patch || data);
-    CM.ledger = await safeLedger(); cashRender(); }
+    CM.ledger = await safeLedger(true); cashRender(); }
   catch (e) { alert('مشكلة: ' + (e.code || e.message)); }
 }
 window.cmReview = id => cmUpdate(id, { review: 'تمت المراجعة' });
@@ -2620,7 +2628,7 @@ function renderAdmin(){
 let INV_ON = false;
 async function openInventory(){
   if (INV_ON) return; INV_ON = true;
-  try { const m = await import('./sections/inventory.js?v=26'); await m.mountInventory($('stockRoot'), ROLE); }
+  try { const m = await import('./sections/inventory.js?v=27'); await m.mountInventory($('stockRoot'), ROLE); }
   catch (e) { INV_ON = false; $('stockRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل قسم المخزون: ${esc(e.code || e.message)}</div>`; }
 }
 
@@ -2660,7 +2668,7 @@ window.crmAcctMake = async () => {
 let CRM_ON = false;
 async function openCustomers(){
   if (CRM_ON) return; CRM_ON = true;
-  try { const m = await import('./sections/customers.js?v=35'); await m.mountCustomers($('crmRoot'), ROLE); }
+  try { const m = await import('./sections/customers.js?v=36'); await m.mountCustomers($('crmRoot'), ROLE); }
   catch (e) { CRM_ON = false; $('crmRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل قسم العملاء: ${esc(e.code || e.message)}</div>`; }
 }
 
@@ -2796,14 +2804,14 @@ let DEL_ON = false;
 async function openDelivery(root, role){
   if (DEL_ON) return; DEL_ON = true;
   if (!root && ROLE === 'admin') drvAccts();
-  try { const m = await import('./sections/delivery.js?v=39'); await m.mountDelivery(root || $('delRoot'), role || ROLE); }
+  try { const m = await import('./sections/delivery.js?v=40'); await m.mountDelivery(root || $('delRoot'), role || ROLE); }
   catch (e) { DEL_ON = false; (root || $('delRoot')).innerHTML = `<div class="banner bad">مقدرتش أحمّل قسم الدليفري: ${esc(e.code || e.message)}</div>`; }
 }
 
 let ORD_ON = false;
 async function openOrder(){
   if (ORD_ON) return; ORD_ON = true;
-  try { const m = await import('./sections/order.js?v=24'); await m.mountOrder($('orderRoot'), ROLE); }
+  try { const m = await import('./sections/order.js?v=25'); await m.mountOrder($('orderRoot'), ROLE); }
   catch (e) { ORD_ON = false; $('orderRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل الطلبية: ${esc(e.code || e.message)}</div>`; }
 }
 
@@ -2819,7 +2827,7 @@ window.atab = n => {
 let WA_ON = false;
 async function openWhatsApp(){
   if (WA_ON || !$('waRoot')) return; WA_ON = true;
-  try { const m = await import('./sections/whatsapp.js?v=8'); await m.mountWhatsApp($('waRoot')); }
+  try { const m = await import('./sections/whatsapp.js?v=9'); await m.mountWhatsApp($('waRoot')); }
   catch (e) { WA_ON = false; $('waRoot').innerHTML = `<div class="banner bad">مقدرتش أحمّل قسم الواتساب: ${esc(e.code || e.message)}</div>`; }
 }
 

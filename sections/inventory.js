@@ -2,7 +2,8 @@
 // على Firestore (inventory/bundle_meta + bundle_items_N) — الأدمن بس بيرفع، والأدمن وصاحب الصيدلية بيشوفوا.
 import { getApp, getApps, initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, collection, query, where, documentId, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, doc, setDoc, collection, query, where, documentId } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getDoc, getDocs } from "./rc.js?v=1";
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = t => String(t == null ? '' : t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));

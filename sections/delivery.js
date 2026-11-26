@@ -7,7 +7,8 @@
 // العمولة: بتتخزن على الأوردر وقت التسليم (comm) فتغيير السعر بعدين مبيغيّرش القديم.
 import { getApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, setDoc, getDoc, updateDoc, deleteDoc, addDoc, collection, onSnapshot, query, orderBy, limit, where, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, doc, setDoc, updateDoc, deleteDoc, addDoc, collection, query, orderBy, limit, where, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getDoc, getDocs, onSnapshot } from "./rc.js?v=1";
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = t => String(t == null ? '' : t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -448,11 +449,16 @@ async function fetchRange(a, b) {
   const snap = await getDocs(query(collection(DB, 'deliv_orders'), where('endTime', '>=', st), where('endTime', '<=', en), limit(5000)));
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
+// (26/11) توفير حصة Firebase: الفترة بتتسحب لحد امبارح بس (اللي خلص عمره ما بيتغير ← كاش 6 ساعات) والنهارده بييجي من الشاشة الحية (DONE) من غير قراية تانية.
+// قبل كده كل فتحة «آخر 90 يوم/الشهر» كانت بتسحب لحد 5000 أوردر وتتعاد كل 10 دقايق على كل جهاز.
+const PAST_MS = 6 * 3600e3;
+const pastKey = hk => { const [a, b] = hk.split('|'), t = opDay(Date.now()), e = b >= t ? addDay(t, -1) : b; return a > e ? '' : a + '|' + e; };
 async function loadHist(hk) {
-  const c = HC.get(hk);
+  const pk = pastKey(hk), c = pk && HC.get(pk);
   try {
-    if (c && Date.now() - c.at < 600000) HIST = c.rows;
-    else { const [a, b] = hk.split('|'); const rows = await fetchRange(a, b); HC.set(hk, { at: Date.now(), rows }); HIST = rows; }
+    if (!pk) HIST = [];
+    else if (c && Date.now() - c.at < PAST_MS) HIST = c.rows;
+    else { const [a, b] = pk.split('|'); const rows = await fetchRange(a, b); HC.set(pk, { at: Date.now(), rows }); HIST = rows; }
   } catch (e) { toast('مقدرتش أحمّل الفترة: ' + (e.code || e.message)); HIST = []; }
   ST.histKey = hk; ST.loading = false; safeRender();
 }
@@ -460,7 +466,7 @@ function commEnsure() {   // عمولة يوم غير النهارده: بنسح
   const day = ST.cday || opDay(Date.now());
   if (day === opDay(Date.now())) return;
   const k = day + '|' + day, c = HC.get(k);
-  if ((c && Date.now() - c.at < 600000) || ST.commLoading === k) return;
+  if ((c && Date.now() - c.at < PAST_MS) || ST.commLoading === k) return;
   ST.commLoading = k;
   fetchRange(day, day).then(rows => HC.set(k, { at: Date.now(), rows })).catch(e => { toast('عمولة اليوم: ' + (e.code || e.message)); HC.set(k, { at: Date.now(), rows: [] }); })
     .finally(() => { ST.commLoading = ''; safeRender(); });
@@ -725,7 +731,7 @@ function statsHtml() {
   <h3 class="sec">يوم بيوم</h3><div class="tw"><table><tr><th class="l">اليوم</th><th>أوردرات</th><th>متوسط من الفاتورة</th><th>&gt;30 د</th><th>خارج المعمورة</th><th>عمولة الدليفري</th><th>القيمة</th></tr>
   ${Object.keys(days).sort().reverse().map(k => { const a = days[k], t = a.reduce((s, o) => s + totMs(o), 0), ou = a.filter(isOut); return `<tr><td class="l">${k.slice(8)}/${k.slice(5, 7)}</td><td>${a.length}</td><td>${durMin(t / a.length)}</td><td>${a.filter(o => totMs(o) > PROMISE).length}</td><td>${ou.length}</td><td><b style="color:#b45309">${M(ou.reduce((s, o) => s + commOf(o), 0))}</b></td><td>${M(a.reduce((s, o) => s + (o.orderValue || 0), 0))}</td></tr>`; }).join('') || '<tr><td colspan="7" class="empty">—</td></tr>'}</table></div>
   <div class="ctl"><button class="ghost" data-xl>📥 تنزيل إكسل (السجل + الطيارين)</button><button class="ghost" data-rep>📋 نسخ تقرير للواتساب</button><button class="ghost" data-reload>🔄 تحديث الأرقام</button></div>
-  <p class="sub">اتحمّل ${N(HIST.length)} أوردر للفترة دي (بيتحفظوا 10 دقايق، والتحديث بيقرا من جديد).</p>`;
+  <p class="sub">اتحمّل ${N(HIST.length)} أوردر للفترة دي (لحد امبارح، بيتحفظوا 6 ساعات — والنهارده من الشاشة الحية؛ زرار التحديث بيقرا من جديد).</p>`;
 }
 
 function logHtml() {
@@ -790,7 +796,7 @@ function bind() {
   ROOT.querySelectorAll('[data-aa]').forEach(b => b.onclick = () => { ST.audAct = b.dataset.aa; render(); });
   const ar = $('[data-aref]', ROOT); if (ar) ar.onclick = () => { AUD = null; render(); };
   ROOT.querySelectorAll('[data-ao]').forEach(b => b.onclick = () => { ST.audOpen = ST.audOpen || {}; ST.audOpen[b.dataset.ao] = !ST.audOpen[b.dataset.ao]; render(); });
-  const rl = $('[data-reload]', ROOT); if (rl) rl.onclick = () => { HC.delete(periodRange().join('|')); ST.histKey = ''; render(); };
+  const rl = $('[data-reload]', ROOT); if (rl) rl.onclick = () => { HC.delete(pastKey(periodRange().join('|'))); ST.histKey = ''; render(); };
   const ws = $('#whoSel', ROOT); if (ws) ws.onchange = () => { ST.ask.sel = ws.value; };
   const wo = $('[data-whook]', ROOT); if (wo) wo.onclick = () => { const v = ($('#whoSel', ROOT).value || '').trim(); if (!v) { toast('اختار اسمك الأول'); return; } localStorage.setItem('del_emp', v); const a = ST.ask; ST.ask = null; render(); a.res(v); };
   const wn = $('[data-whono]', ROOT); if (wn) wn.onclick = () => { const a = ST.ask; ST.ask = null; render(); a.res(null); };

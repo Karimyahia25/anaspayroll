@@ -5,7 +5,8 @@
 // دي اللي بتتقارن باللي وصل الفرع فعلاً من فواتير الشرا: السيرفر بيكتب orders/<التاريخ>_recv (6 الصبح لطلبية امبارح +
 // أمر «وصل» في البوت)، والصفحة بتحط على كل صنف ✅ وصل · ⚠️ ناقص · 🔄 مورد تاني · ❌ موصلش — نفس قواعد receive.py.
 import { getApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot, deleteField } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, doc, setDoc, updateDoc, deleteField } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getDoc, onSnapshot } from "./rc.js?v=1";
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = t => String(t == null ? '' : t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));

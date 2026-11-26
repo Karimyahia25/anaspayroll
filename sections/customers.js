@@ -5,7 +5,8 @@
 // التواصل بيتسجل في crm_log. "اشترى" بيتعرف لوحده: فاتورة للعميل بعد يوم التواصل بـ 14 يوم أو أقل (من crm/visits).
 import { getApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, getDoc, getDocs, setDoc, collection, addDoc, deleteDoc, query, where, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, doc, setDoc, collection, addDoc, deleteDoc, query, where, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getDoc, getDocs } from "./rc.js?v=1";
 
 import { pickTip, tipText, tipById } from "./tips.js?v=6";
 
