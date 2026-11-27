@@ -409,7 +409,7 @@ button:not(.ghost):not(.secH):not(.tabs button):hover{filter:brightness(1.08);tr
 <div id="delivery" class="hide"></div>
 <div id="driverapp" class="hide"></div>
 
-<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-11-23-A</b></div>
+<div class="foot">صيدلية أنس نحيلة — نظام المرتبات · نسخة <b>V-2026-11-27-A</b></div>
 </div>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
@@ -692,7 +692,9 @@ function realCust(code, name){
 /* حافز أوردر السوشيال (قرار د. يحيى 3/11): 5 ج للبائع عن كل فاتورة بيع اسم العميل فيها «سوشيال»، من 1/11/2026.
    البائع social = محدش ياخد · صاحب الصيدلية (dr ans) مش في شيت الموظفين فمبياخدش · المرتجع مبيتخصمش (فاتورة المرتجع
    مفيهاش اسم العميل ولا رابط للفاتورة الأصلية). بيتخصم من ربح الحملة في تقرير السوشيال (سيرفر الصيدلية). */
-const SOCIAL_ORDER = { from: new Date(2026, 10, 1), each: 5 };
+/* (27/11، قراره) بيتخصم 20% من عدد أوردرات السوشيال لكل موظف قبل الحساب (مرتجعات/أوردرات مش بتتم) — العدد المدفوع = round(N × 0.8) */
+const SOCIAL_ORDER = { from: new Date(2026, 10, 1), each: 5, cut: 0.2 };
+const socialPaid = n => Math.round((+n || 0) * (1 - SOCIAL_ORDER.cut));
 const isSocialOrder = x => !x.ret && x.dt >= SOCIAL_ORDER.from && x.cust.includes('سوشيال')
   && x.seller && x.seller.toLowerCase() !== 'social';
 function parseSales(wb, ps, pe, rates){
@@ -808,7 +810,7 @@ function buildKPI(people, sales, items, W0, crmFn){
       pushValue: Math.round(it.pushValue*100)/100,
       pushComm: commOK ? Math.round(it.pushComm*100)/100 : 0,
       pushPct: b.gross ? it.pushValue / b.gross : 0,
-      socialN: b.social, socialBonus: b.social * SOCIAL_ORDER.each });
+      socialN: b.social, socialBonus: socialPaid(b.social) * SOCIAL_ORDER.each });
   });
 
   const inc = rows.filter(r => r.include);
@@ -1010,7 +1012,7 @@ async function renderEmp(){
     x.value < 0 ? 'minus' : 'plus'));
   if (d.pushAuto) br += R('عمولة البوشينج', (d.pushAuto < 0 ? '− ' : '+ ') + F(Math.abs(d.pushAuto)) + ' ج',
     d.pushAuto < 0 ? 'minus' : 'plus');
-  if (d.socialAuto) br += R(`حافز أوردر السوشيال (${d.socialN || 0} أوردر × ${SOCIAL_ORDER.each} ج)`, '+ ' + F(d.socialAuto) + ' ج', 'plus');
+  if (d.socialAuto) br += R(`حافز أوردر السوشيال (${d.socialN || 0} أوردر − ${SOCIAL_ORDER.cut * 100}% = ${socialPaid(d.socialN)} × ${SOCIAL_ORDER.each} ج)`, '+ ' + F(d.socialAuto) + ' ج', 'plus');
   if (d.lateDed) br += R(`خصم التأخير (${(d.q||0)+(d.half||0)} مرة)`, '− ' + F(d.lateDed) + ' ج', 'minus');
   if (d.absPen) br += R(`جزاء غياب (${d.absDays||0} يوم)`, '− ' + F(d.absPen) + ' ج', 'minus');
   if (d.adminPen) br += R('جزاءات إدارية', '− ' + F(d.adminPen) + ' ج', 'minus');
@@ -2925,7 +2927,7 @@ function payPanel(rows){
       {label:'خصم التأخير', value:F(sum('lateDed'))+' ج', k:'late'},
       {label:'الحوافز', value:F(sum('bonus') - comm - soc)+' ج', k:'bon'},
       {label:'عمولة البوشينج', value:F(comm)+' ج', k:'push'},
-      {label:'حافز أوردر السوشيال', value:F(soc)+' ج', sub:`5 ج × ${tot.reduce((a,r)=>a+(+r.socialN||0),0)} أوردر`, k:'social'},
+      {label:'حافز أوردر السوشيال', value:F(soc)+' ج', sub:`5 ج × ${tot.reduce((a,r)=>a+socialPaid(r.socialN),0)} أوردر (بعد خصم ${SOCIAL_ORDER.cut * 100}% من ${tot.reduce((a,r)=>a+(+r.socialN||0),0)})`, k:'social'},
       {label:'جزاءات إدارية', value:F(sum('adminPen'))+' ج', k:'pen'},
       {label:'المسحوبات', value:F(sum('adv'))+' ج', k:'adv'}], 'tileBox')}
     <div id="tileBox"></div>
@@ -2996,7 +2998,7 @@ window.drill = uid => {
   (r.extra || []).forEach(x => br += R(x.label, (x.value < 0 ? '− ' : '+ ') + F(Math.abs(x.value)) + ' ج',
     x.value < 0 ? 'minus' : 'plus'));
   if (+r.pushAuto) br += R('عمولة البوشينج', '+ ' + F(r.pushAuto) + ' ج', 'plus');
-  if (+r.socialAuto) br += R(`حافز أوردر السوشيال (${r.socialN || 0} أوردر)`, '+ ' + F(r.socialAuto) + ' ج', 'plus');
+  if (+r.socialAuto) br += R(`حافز أوردر السوشيال (${r.socialN || 0} أوردر − ${SOCIAL_ORDER.cut * 100}% = ${socialPaid(r.socialN)})`, '+ ' + F(r.socialAuto) + ' ج', 'plus');
   if (+r.lateDed) br += R(`خصم التأخير (${(r.q||0)+(r.half||0)} مرة)`, '− ' + F(r.lateDed) + ' ج', 'minus');
   if (+r.absPen) br += R(`جزاء غياب (${r.absDays||0} يوم)`, '− ' + F(r.absPen) + ' ج', 'minus');
   if (+r.adminPen) br += R('جزاءات إدارية', '− ' + F(r.adminPen) + ' ج', 'minus');
